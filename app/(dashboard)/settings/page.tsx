@@ -11,7 +11,9 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu } from 'lucide-react'
+import { navigationItems, getEnabledMenuIds, setEnabledMenuIds } from '@/lib/config/navigation'
 import {
   Dialog,
   DialogContent,
@@ -156,10 +158,16 @@ export default function SettingsPage() {
     role: 'staff' as UserRole,
   })
 
-  // Load accounts on mount
+  // Menu visibility state
+  const [enabledMenus, setEnabledMenus] = useState<string[]>([])
+
+  // Load accounts and menu settings on mount
   useEffect(() => {
     const loadedAccounts = accountManager.getAccounts()
     setAccounts(loadedAccounts)
+
+    const enabledIds = getEnabledMenuIds()
+    setEnabledMenus(enabledIds)
   }, [])
 
   const handleSaveOrganization = () => {
@@ -321,6 +329,48 @@ export default function SettingsPage() {
         description: `${account?.name} 계정이 삭제되었습니다.`,
       })
     }
+  }
+
+  // Menu visibility functions
+  const handleToggleMenu = (menuId: string) => {
+    const newEnabledMenus = enabledMenus.includes(menuId)
+      ? enabledMenus.filter(id => id !== menuId)
+      : [...enabledMenus, menuId]
+
+    setEnabledMenus(newEnabledMenus)
+    setEnabledMenuIds(newEnabledMenus)
+
+    // Dispatch custom event to update sidebars
+    window.dispatchEvent(new Event('menuSettingsChanged'))
+
+    const menuName = navigationItems.find(item => item.id === menuId)?.name || menuId
+    toast({
+      title: '메뉴 설정 변경',
+      description: `${menuName} 메뉴가 ${enabledMenus.includes(menuId) ? '비활성화' : '활성화'}되었습니다.`,
+    })
+  }
+
+  const handleEnableAllMenus = () => {
+    const allMenuIds = navigationItems.map(item => item.id)
+    setEnabledMenus(allMenuIds)
+    setEnabledMenuIds(allMenuIds)
+    window.dispatchEvent(new Event('menuSettingsChanged'))
+    toast({
+      title: '모든 메뉴 활성화',
+      description: '모든 메뉴가 활성화되었습니다.',
+    })
+  }
+
+  const handleDisableAllMenus = () => {
+    // Keep only settings menu enabled
+    const essentialMenus = ['settings']
+    setEnabledMenus(essentialMenus)
+    setEnabledMenuIds(essentialMenus)
+    window.dispatchEvent(new Event('menuSettingsChanged'))
+    toast({
+      title: '메뉴 비활성화',
+      description: '설정 메뉴를 제외한 모든 메뉴가 비활성화되었습니다.',
+    })
   }
 
   const roomColumns: ColumnDef<Room>[] = [
@@ -546,6 +596,7 @@ export default function SettingsPage() {
           <TabsTrigger value="branches">지점 관리</TabsTrigger>
           <TabsTrigger value="rooms">교실 관리</TabsTrigger>
           <TabsTrigger value="accounts">계정 관리</TabsTrigger>
+          <TabsTrigger value="menus">메뉴 관리</TabsTrigger>
           <TabsTrigger value="automation">자동화</TabsTrigger>
           <TabsTrigger value="notifications">알림</TabsTrigger>
         </TabsList>
@@ -832,6 +883,125 @@ export default function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Menus Tab */}
+        <TabsContent value="menus" className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>메뉴 관리</CardTitle>
+                <CardDescription>
+                  사이드바에 표시할 메뉴를 선택하세요. 사용하지 않는 메뉴는 비활성화할 수 있습니다.
+                </CardDescription>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleDisableAllMenus}>
+                  모두 비활성화
+                </Button>
+                <Button variant="default" size="sm" onClick={handleEnableAllMenus}>
+                  모두 활성화
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {navigationItems.map((item) => {
+                  const Icon = item.icon
+                  const isEnabled = enabledMenus.includes(item.id)
+                  const isEssential = item.id === 'settings'
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        'flex items-center justify-between p-4 border rounded-lg transition-colors',
+                        isEnabled ? 'bg-background' : 'bg-muted/30'
+                      )}
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <Icon className={cn(
+                          'h-5 w-5 shrink-0',
+                          isEnabled ? 'text-primary' : 'text-muted-foreground'
+                        )} />
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <span className={cn(
+                            'font-medium',
+                            isEnabled ? 'text-foreground' : 'text-muted-foreground'
+                          )}>
+                            {item.name}
+                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {item.badges.map((badge) => (
+                              <span
+                                key={badge}
+                                className={cn(
+                                  'px-1.5 py-0.5 text-[10px] font-medium rounded',
+                                  badge === '학원용' && 'bg-blue-50 text-blue-600',
+                                  badge === '독서실' && 'bg-green-50 text-green-600',
+                                  badge === '공부방' && 'bg-orange-50 text-orange-600'
+                                )}
+                              >
+                                {badge}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={isEnabled}
+                        onCheckedChange={() => handleToggleMenu(item.id)}
+                        disabled={isEssential}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+              {enabledMenus.length < navigationItems.length && (
+                <div className="mt-4 p-3 border border-yellow-200 bg-yellow-50 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    <strong>참고:</strong> 비활성화된 메뉴는 사이드바에 표시되지 않습니다. 설정 메뉴는 항상 활성화되어 있습니다.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Menu Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 메뉴</CardTitle>
+                <Menu className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{navigationItems.length}개</div>
+                <p className="text-xs text-muted-foreground">전체 메뉴 개수</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">활성화된 메뉴</CardTitle>
+                <Menu className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{enabledMenus.length}개</div>
+                <p className="text-xs text-muted-foreground">사이드바에 표시</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">비활성화된 메뉴</CardTitle>
+                <Menu className="h-4 w-4 text-gray-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-600">
+                  {navigationItems.length - enabledMenus.length}개
+                </div>
+                <p className="text-xs text-muted-foreground">사이드바에 숨김</p>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Automation Tab */}

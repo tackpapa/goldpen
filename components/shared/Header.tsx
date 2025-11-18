@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -10,15 +11,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { LogOut, User, Settings } from 'lucide-react'
+import { LogOut, User, Settings, Menu } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
+import { MobileSidebar } from './MobileSidebar'
 
 export function Header() {
   const router = useRouter()
   const { toast } = useToast()
   const supabase = createClient()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -39,20 +42,33 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between px-4">
-        {/* 로고 */}
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-            <span className="text-lg font-bold text-primary-foreground">C</span>
+      <div className="flex h-14 md:h-16 items-center justify-between px-3 md:px-6">
+        <div className="flex items-center gap-2 md:gap-4">
+          {/* 모바일 햄버거 메뉴 */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            onClick={() => setMobileMenuOpen(true)}
+          >
+            <Menu className="h-5 w-5" />
+            <span className="sr-only">메뉴 열기</span>
+          </Button>
+
+          {/* 로고 */}
+          <div className="flex items-center gap-2">
+            <div className="flex h-7 w-7 md:h-8 md:w-8 items-center justify-center rounded-md bg-primary">
+              <span className="text-base md:text-lg font-bold text-primary-foreground">C</span>
+            </div>
+            <h1 className="text-lg md:text-xl font-bold hidden sm:block">ClassFlow OS</h1>
           </div>
-          <h1 className="text-xl font-bold">ClassFlow OS</h1>
         </div>
 
         {/* 사용자 프로필 */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-              <Avatar>
+            <Button variant="ghost" className="relative h-8 w-8 md:h-10 md:w-10 rounded-full">
+              <Avatar className="h-8 w-8 md:h-10 md:w-10">
                 <AvatarImage src="/avatars/01.png" alt="User" />
                 <AvatarFallback>U</AvatarFallback>
               </Avatar>
@@ -84,6 +100,9 @@ export function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {/* 모바일 사이드바 */}
+      <MobileSidebar open={mobileMenuOpen} onOpenChange={setMobileMenuOpen} />
     </header>
   )
 }

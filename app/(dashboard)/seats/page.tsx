@@ -35,6 +35,14 @@ interface Seat {
   student_id: string | null
   student_name: string | null
   status: 'checked_in' | 'checked_out' | 'vacant'
+  type_name?: string
+}
+
+interface SeatType {
+  id: string
+  startNumber: number
+  endNumber: number
+  typeName: string
 }
 
 // Grade options
@@ -63,7 +71,7 @@ const mockStudents = [
 ]
 
 // Initialize seats with some mock data
-const initializeSeats = (totalSeats: number): Seat[] => {
+const initializeSeats = (totalSeats: number, seatTypes: SeatType[] = []): Seat[] => {
   const seats: Seat[] = []
   for (let i = 1; i <= totalSeats; i++) {
     // Assign some students to first few seats for demo
@@ -76,12 +84,19 @@ const initializeSeats = (totalSeats: number): Seat[] => {
     }
 
     const assignment = mockAssignments[i]
+
+    // Find seat type for this seat number
+    const seatType = seatTypes.find(
+      type => i >= type.startNumber && i <= type.endNumber
+    )
+
     seats.push({
       id: `seat-${i}`,
       number: i,
       student_id: assignment?.student_id || null,
       student_name: assignment?.student_name || null,
       status: assignment?.status || 'vacant',
+      type_name: seatType?.typeName,
     })
   }
   return seats
@@ -92,11 +107,13 @@ export default function SeatsPage() {
 
   const { toast } = useToast()
   const [totalSeats, setTotalSeats] = useState(20)
-  const [seats, setSeats] = useState<Seat[]>(initializeSeats(20))
+  const [seatTypes, setSeatTypes] = useState<SeatType[]>([])
+  const [seats, setSeats] = useState<Seat[]>(initializeSeats(20, []))
   const [isConfigDialogOpen, setIsConfigDialogOpen] = useState(false)
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false)
   const [selectedSeat, setSelectedSeat] = useState<Seat | null>(null)
   const [tempTotalSeats, setTempTotalSeats] = useState(20)
+  const [tempSeatTypes, setTempSeatTypes] = useState<SeatType[]>([])
   const [selectedStudentId, setSelectedStudentId] = useState<string>('')
   const [studentSearchQuery, setStudentSearchQuery] = useState('')
 
@@ -138,14 +155,63 @@ export default function SeatsPage() {
       return
     }
 
+    // Validate seat types
+    for (const type of tempSeatTypes) {
+      if (!type.typeName.trim()) {
+        toast({
+          title: '타입 이름 오류',
+          description: '모든 타입 이름을 입력해주세요.',
+          variant: 'destructive',
+        })
+        return
+      }
+      if (type.startNumber < 1 || type.endNumber > tempTotalSeats || type.startNumber > type.endNumber) {
+        toast({
+          title: '좌석 범위 오류',
+          description: '좌석 범위가 올바르지 않습니다.',
+          variant: 'destructive',
+        })
+        return
+      }
+    }
+
     setTotalSeats(tempTotalSeats)
-    setSeats(initializeSeats(tempTotalSeats))
+    setSeatTypes(tempSeatTypes)
+    setSeats(initializeSeats(tempTotalSeats, tempSeatTypes))
     setIsConfigDialogOpen(false)
 
     toast({
       title: '좌석 설정 완료',
       description: `총 ${tempTotalSeats}개의 좌석이 설정되었습니다.`,
     })
+  }
+
+  const handleAddSeatType = () => {
+    const lastType = tempSeatTypes[tempSeatTypes.length - 1]
+    const startNumber = lastType ? lastType.endNumber + 1 : 1
+    const endNumber = Math.min(startNumber + 9, tempTotalSeats)
+
+    setTempSeatTypes([
+      ...tempSeatTypes,
+      {
+        id: `type-${Date.now()}`,
+        startNumber,
+        endNumber,
+        typeName: '',
+      },
+    ])
+  }
+
+  const handleRemoveSeatType = (id: string) => {
+    setTempSeatTypes(tempSeatTypes.filter(type => type.id !== id))
+  }
+
+  const handleUpdateSeatType = (id: string, field: keyof SeatType, value: string | number) => {
+    setTempSeatTypes(
+      tempSeatTypes.map(type =>
+        type.id === id ? { ...type, [field]: value } : type
+      )
+    )
   }
 
   const handleSeatClick = (seat: Seat) => {
@@ -334,53 +400,13 @@ export default function SeatsPage() {
         </div>
         <Button variant="outline" onClick={() => {
           setTempTotalSeats(totalSeats)
+          setTempSeatTypes(seatTypes)
           setIsConfigDialogOpen(true)
         }} className="w-full sm:w-auto">
           <Settings2 className="mr-2 h-4 w-4" />
           좌석 설정
         </Button>
       </div>
-
-      {/* Checked In Students List */}
-      <Card className="border-2 border-green-200 bg-green-50/30">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <UserCheck className="h-5 w-5 text-green-600" />
-            <CardTitle className="text-lg">현재 출근한 학생 ({checkedInSeats}명)</CardTitle>
-          </div>
-          <CardDescription>
-            현재 독서실에서 공부 중인 학생들입니다
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {seats
-              .filter(seat => seat.status === 'checked_in')
-              .map(seat => {
-                const student = mockStudents.find(s => s.id === seat.student_id)
-                return (
-                  <div
-                    key={seat.id}
-                    className="flex flex-col gap-1 p-3 bg-white border border-green-200 rounded-lg hover:shadow-md transition-all cursor-pointer"
-                    onClick={() => handleSeatClick(seat)}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-green-600">{seat.number}번</span>
-                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                    </div>
-                    <div className="text-sm font-medium truncate">{seat.student_name}</div>
-                    <div className="text-xs text-muted-foreground">{student?.grade}</div>
-                  </div>
-                )
-              })}
-            {checkedInSeats === 0 && (
-              <div className="col-span-full text-center py-8 text-muted-foreground">
-                현재 출근한 학생이 없습니다
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Stats Cards */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -449,10 +475,17 @@ export default function SeatsPage() {
                 onClick={() => handleSeatClick(seat)}
               >
                 <CardContent className="p-4 space-y-3">
-                  {/* Seat Number */}
+                  {/* Seat Number and Type */}
                   <div className="flex items-center justify-between">
-                    <div className="text-lg font-bold">
-                      {seat.number}번
+                    <div className="flex flex-col gap-1">
+                      <div className="text-lg font-bold">
+                        {seat.number}번
+                      </div>
+                      {seat.type_name && (
+                        <div className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                          {seat.type_name}
+                        </div>
+                      )}
                     </div>
                     {getStatusBadge(seat.status)}
                   </div>
@@ -496,15 +529,15 @@ export default function SeatsPage() {
 
       {/* Configure Total Seats Dialog */}
       <Dialog open={isConfigDialogOpen} onOpenChange={setIsConfigDialogOpen}>
-        <DialogContent className="max-w-md w-[95vw] sm:w-full">
+        <DialogContent className="max-w-2xl w-[95vw] sm:w-full max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>좌석 수 설정</DialogTitle>
             <DialogDescription>
-              독서실 전체 좌석 개수를 설정합니다 (1~100개)
+              독서실 전체 좌석 개수와 타입을 설정합니다 (1~100개)
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-6 py-4">
             <div className="space-y-2">
               <Label htmlFor="total-seats">좌석 개수</Label>
               <Input
@@ -517,6 +550,83 @@ export default function SeatsPage() {
               />
               <p className="text-xs text-muted-foreground">
                 ⚠️ 좌석 수를 변경하면 기존 배정 정보가 초기화됩니다
+              </p>
+            </div>
+
+            {/* Seat Types Configuration */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>좌석 타입 설정 (선택사항)</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddSeatType}
+                >
+                  타입 추가
+                </Button>
+              </div>
+
+              {tempSeatTypes.length > 0 && (
+                <div className="space-y-3 border rounded-lg p-3">
+                  {tempSeatTypes.map((type, index) => (
+                    <div key={type.id} className="flex gap-2 items-start">
+                      <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">시작 번호</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={tempTotalSeats}
+                            value={type.startNumber}
+                            onChange={(e) =>
+                              handleUpdateSeatType(type.id, 'startNumber', parseInt(e.target.value) || 1)
+                            }
+                            className="h-8"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">종료 번호</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={tempTotalSeats}
+                            value={type.endNumber}
+                            onChange={(e) =>
+                              handleUpdateSeatType(type.id, 'endNumber', parseInt(e.target.value) || 1)
+                            }
+                            className="h-8"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">타입 이름</Label>
+                          <Input
+                            type="text"
+                            placeholder="예: A구역"
+                            value={type.typeName}
+                            onChange={(e) =>
+                              handleUpdateSeatType(type.id, 'typeName', e.target.value)
+                            }
+                            className="h-8"
+                          />
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRemoveSeatType(type.id)}
+                        className="h-8 w-8 p-0 mt-5"
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground">
+                예: 1~10번 "A구역", 11~20번 "B구역"
               </p>
             </div>
           </div>

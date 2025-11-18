@@ -18,6 +18,7 @@ export interface Student {
   address?: string
   subjects: string[] // 수강 과목 배열
   status: 'active' | 'inactive' | 'graduated'
+  enrollment_date: string // 입교 날짜
   notes?: string
 }
 
@@ -122,9 +123,10 @@ export interface Consultation {
   goals?: string
   preferred_times?: string
   scheduled_date?: string
-  status: 'new' | 'scheduled' | 'completed' | 'cancelled'
+  status: 'new' | 'scheduled' | 'enrolled' | 'rejected' | 'on_hold' | 'waitlist'
   notes?: string
   result?: string
+  enrolled_date?: string // 입교 날짜 (상태가 enrolled일 때)
 }
 
 export type ConsultationInsert = Omit<Consultation, 'id' | 'created_at' | 'updated_at'>
