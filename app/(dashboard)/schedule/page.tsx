@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
@@ -276,7 +275,6 @@ export default function SchedulePage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
-      <PagePermissions pageId="schedule" />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>

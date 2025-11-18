@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -24,9 +23,61 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, UserCheck, UserX, Settings2, Armchair } from 'lucide-react'
+import { Users, UserCheck, UserX, Settings2, Armchair, Moon, DoorOpen, Copy, Check } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
+import type { Student } from '@/lib/types/database'
+import { useSeatRealtimeStatus } from '@/hooks/use-seat-realtime-status'
+import { createClient } from '@/lib/supabase/client'
+
+// LiveScreen State Types
+interface LiveScreenState {
+  student_id: string
+  seat_number: number
+  date: string
+  sleep_count: number
+  is_out: boolean
+  timer_running: boolean
+  current_sleep_id?: string
+  current_outing_id?: string
+}
+
+interface SleepRecord {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string
+  sleep_time: string
+  wake_time?: string
+  duration_minutes?: number
+  status: 'sleeping' | 'awake'
+}
+
+interface OutingRecord {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string
+  outing_time: string
+  return_time?: string
+  duration_minutes?: number
+  reason: string
+  status: 'out' | 'returned'
+}
+
+interface CallRecord {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string
+  call_time: string
+  acknowledged_time?: string
+  message: string
+  status: 'calling' | 'acknowledged'
+}
 
 // Types
 interface Seat {
@@ -36,6 +87,7 @@ interface Seat {
   student_name: string | null
   status: 'checked_in' | 'checked_out' | 'vacant'
   type_name?: string
+  check_in_time?: string // ISO string for check-in time
 }
 
 interface SeatType {
@@ -71,15 +123,243 @@ const mockStudents = [
 ]
 
 // Initialize seats with some mock data
+// Helper function to get live screen state from localStorage
+const getLiveScreenState = (studentId: string, seatNumber: number): LiveScreenState | null => {
+  if (typeof window === 'undefined') return null
+
+  const today = new Date().toISOString().split('T')[0]
+  const key = `livescreen-state-${studentId}-${seatNumber}`
+  const data = localStorage.getItem(key)
+
+  if (!data) return null
+
+  try {
+    const state = JSON.parse(data) as LiveScreenState
+    // Only return state if it's from today
+    if (state.date === today) {
+      return state
+    }
+  } catch {
+    return null
+  }
+
+  return null
+}
+
+// Helper function to get current sleep record
+const getCurrentSleepRecord = (studentId: string, seatNumber: number): SleepRecord | null => {
+  if (typeof window === 'undefined') return null
+
+  const today = new Date().toISOString().split('T')[0]
+  const key = `sleep-records-${studentId}-${seatNumber}`
+  const data = localStorage.getItem(key)
+
+  if (!data) return null
+
+  try {
+    const records = JSON.parse(data) as SleepRecord[]
+    // Find the most recent sleeping record for today
+    const currentSleep = records.find(
+      r => r.date === today && r.status === 'sleeping'
+    )
+    return currentSleep || null
+  } catch {
+    return null
+  }
+}
+
+// Helper function to get current outing record
+const getCurrentOutingRecord = (studentId: string, seatNumber: number): OutingRecord | null => {
+  if (typeof window === 'undefined') return null
+
+  const today = new Date().toISOString().split('T')[0]
+  const key = `outing-records-${studentId}-${seatNumber}`
+  const data = localStorage.getItem(key)
+
+  if (!data) return null
+
+  try {
+    const records = JSON.parse(data) as OutingRecord[]
+    // Find the most recent outing record for today
+    const currentOuting = records.find(
+      r => r.date === today && r.status === 'out'
+    )
+    return currentOuting || null
+  } catch {
+    return null
+  }
+}
+
+// Sleep Status Component - shows remaining time for sleeping students
+function SleepStatus({
+  sleepRecord,
+  onSleepExpired
+}: {
+  sleepRecord: SleepRecord
+  onSleepExpired?: (seatNumber: number, studentName: string) => void
+}) {
+  const [remaining, setRemaining] = useState('')
+  const [isExpiring, setIsExpiring] = useState(false)
+  const [hasNotified, setHasNotified] = useState(false)
+
+  useEffect(() => {
+    const calculateRemaining = () => {
+      const now = Date.now()
+      const sleepStart = new Date(sleepRecord.sleep_time).getTime()
+      const elapsed = now - sleepStart
+      const maxDuration = 1 * 60 * 1000 // 1 minute in milliseconds
+      const remaining = maxDuration - elapsed
+
+      if (remaining <= 0) {
+        setRemaining('시간 종료')
+        setIsExpiring(true)
+
+        // Trigger notification only once
+        if (!hasNotified && onSleepExpired) {
+          setHasNotified(true)
+          onSleepExpired(sleepRecord.seat_number, '')
+        }
+        return
+      }
+
+      const minutes = Math.floor(remaining / (1000 * 60))
+      const seconds = Math.floor((remaining % (1000 * 60)) / 1000)
+
+      setRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`)
+      setIsExpiring(remaining <= 30 * 1000) // Last 30 seconds
+    }
+
+    calculateRemaining()
+    const interval = setInterval(calculateRemaining, 1000)
+
+    return () => clearInterval(interval)
+  }, [sleepRecord.sleep_time, sleepRecord.seat_number, hasNotified, onSleepExpired])
+
+  return (
+    <div className={cn(
+      "flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded",
+      isExpiring ? "bg-red-100 text-red-700" : "bg-red-100 text-red-700"
+    )}>
+      <Moon className="h-3.5 w-3.5" />
+      <span>잠자기 {remaining}</span>
+    </div>
+  )
+}
+
+// Outing Status Component - shows elapsed time for students who are out
+function OutingStatus({ outingRecord }: { outingRecord: OutingRecord }) {
+  const [elapsed, setElapsed] = useState('')
+
+  useEffect(() => {
+    const calculateElapsed = () => {
+      const now = Date.now()
+      const outingStart = new Date(outingRecord.outing_time).getTime()
+      const diff = now - outingStart
+
+      const hours = Math.floor(diff / (1000 * 60 * 60))
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+
+      if (hours > 0) {
+        setElapsed(`${hours}시간 ${minutes}분`)
+      } else {
+        setElapsed(`${minutes}분`)
+      }
+    }
+
+    calculateElapsed()
+    const interval = setInterval(calculateElapsed, 1000)
+
+    return () => clearInterval(interval)
+  }, [outingRecord.outing_time])
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded bg-blue-100 text-blue-700">
+      <DoorOpen className="h-3.5 w-3.5" />
+      <span>외출 {elapsed}</span>
+    </div>
+  )
+}
+
+// Elapsed Time Component
+function ElapsedTime({ checkInTime }: { checkInTime: string }) {
+  const [elapsed, setElapsed] = useState('')
+
+  useEffect(() => {
+    const calculateElapsed = () => {
+      const now = Date.now()
+      const checkIn = new Date(checkInTime).getTime()
+      const diff = now - checkIn
+
+      const hours = Math.floor(diff / (1000 * 60 * 60))
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000)
+
+      if (hours > 0) {
+        setElapsed(`${hours}시간 ${minutes}분`)
+      } else if (minutes > 0) {
+        setElapsed(`${minutes}분 ${seconds}초`)
+      } else {
+        setElapsed(`${seconds}초`)
+      }
+    }
+
+    calculateElapsed()
+    const interval = setInterval(calculateElapsed, 1000)
+
+    return () => clearInterval(interval)
+  }, [checkInTime])
+
+  return (
+    <div className="text-xs text-primary font-medium">
+      ⏱️ {elapsed}
+    </div>
+  )
+}
+
+// Live Status Indicator - monitors real-time sleep/outing status from Supabase
+function LiveStatusIndicator({
+  studentId,
+  seatNumber,
+  studentName,
+  onSleepExpired
+}: {
+  studentId: string
+  seatNumber: number
+  studentName: string
+  onSleepExpired?: (seatNumber: number, studentName: string) => void
+}) {
+  const { sleepRecord, outingRecord, loading } = useSeatRealtimeStatus(studentId, seatNumber)
+
+  if (loading) return null
+
+  // Show sleep status first (higher priority)
+  if (sleepRecord) {
+    return (
+      <SleepStatus
+        sleepRecord={sleepRecord}
+        onSleepExpired={(seatNum) => onSleepExpired?.(seatNum, studentName)}
+      />
+    )
+  }
+
+  // Then show outing status
+  if (outingRecord) {
+    return <OutingStatus outingRecord={outingRecord} />
+  }
+
+  // No active status
+  return null
+}
+
 const initializeSeats = (totalSeats: number, seatTypes: SeatType[] = []): Seat[] => {
   const seats: Seat[] = []
   for (let i = 1; i <= totalSeats; i++) {
     // Assign some students to first few seats for demo
-    const mockAssignments: Record<number, { student_id: string; student_name: string; status: 'checked_in' | 'checked_out' }> = {
-      1: { student_id: 'student-1', student_name: '김민준', status: 'checked_in' },
-      2: { student_id: 'student-2', student_name: '이서연', status: 'checked_in' },
+    const mockAssignments: Record<number, { student_id: string; student_name: string; status: 'checked_in' | 'checked_out'; check_in_time?: string }> = {
+      1: { student_id: 'student-1', student_name: '김민준', status: 'checked_in', check_in_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }, // 2시간 전
+      2: { student_id: 'student-2', student_name: '이서연', status: 'checked_in', check_in_time: new Date(Date.now() - 45 * 60 * 1000).toISOString() }, // 45분 전
       3: { student_id: 'student-3', student_name: '박준호', status: 'checked_out' },
-      5: { student_id: 'student-5', student_name: '정하은', status: 'checked_in' },
+      5: { student_id: 'student-5', student_name: '정하은', status: 'checked_in', check_in_time: new Date(Date.now() - 3.5 * 60 * 60 * 1000).toISOString() }, // 3.5시간 전
       7: { student_id: 'student-7', student_name: '조시우', status: 'checked_out' },
     }
 
@@ -97,6 +377,7 @@ const initializeSeats = (totalSeats: number, seatTypes: SeatType[] = []): Seat[]
       student_name: assignment?.student_name || null,
       status: assignment?.status || 'vacant',
       type_name: seatType?.typeName,
+      check_in_time: assignment?.check_in_time,
     })
   }
   return seats
@@ -122,6 +403,26 @@ export default function SeatsPage() {
   const [newStudentName, setNewStudentName] = useState('')
   const [newStudentGrade, setNewStudentGrade] = useState('')
   const [newStudentSchool, setNewStudentSchool] = useState('')
+  const [newStudentPhone, setNewStudentPhone] = useState('')
+
+  // Sleep expiration alert state
+  const [sleepAlertOpen, setSleepAlertOpen] = useState(false)
+  const [sleepAlertInfo, setSleepAlertInfo] = useState<{ seatNumber: number; studentName: string } | null>(null)
+  const [alarmInterval, setAlarmInterval] = useState<NodeJS.Timeout | null>(null)
+
+  // Call student modal state
+  const [callModalOpen, setCallModalOpen] = useState(false)
+  const [callMessage, setCallMessage] = useState('카운터로 와주세요')
+  const [callStudentInfo, setCallStudentInfo] = useState<{ seatNumber: number; studentId: string; studentName: string } | null>(null)
+
+  // Track call records for each seat
+  const [callRecords, setCallRecords] = useState<Map<number, CallRecord>>(new Map())
+
+  // Manager call alert state
+  const [managerCallAlert, setManagerCallAlert] = useState<{ seatNumber: number; studentName: string } | null>(null)
+
+  // URL copy state
+  const [urlCopied, setUrlCopied] = useState(false)
 
   // Filter students by search query
   const filteredStudents = mockStudents.filter(student =>
@@ -144,6 +445,307 @@ export default function SeatsPage() {
   const vacantSeats = seats.filter(s => s.status === 'vacant').length
   const checkedInSeats = seats.filter(s => s.status === 'checked_in').length
   const checkedOutSeats = seats.filter(s => s.status === 'checked_out').length
+
+  // Subscribe to call_records
+  useEffect(() => {
+    const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
+
+    // Initial fetch
+    const fetchCallRecords = async () => {
+      const { data, error } = await supabase
+        .from('call_records')
+        .select('*')
+        .eq('date', today)
+        .in('status', ['calling', 'acknowledged'])
+
+      if (error) {
+        console.error('Error fetching call records:', error)
+        return
+      }
+
+      if (data) {
+        const newMap = new Map<number, CallRecord>()
+        data.forEach((record: CallRecord) => {
+          newMap.set(record.seat_number, record)
+        })
+        setCallRecords(newMap)
+      }
+    }
+
+    fetchCallRecords()
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('call-records-all')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'call_records',
+          filter: `date=eq.${today}`,
+        },
+        (payload) => {
+          console.log('Call record change (seats page):', payload)
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const record = payload.new as CallRecord
+            setCallRecords((prev) => {
+              const newMap = new Map(prev)
+              if (record.status === 'calling' || record.status === 'acknowledged') {
+                newMap.set(record.seat_number, record)
+              } else {
+                newMap.delete(record.seat_number)
+              }
+              return newMap
+            })
+          } else if (payload.eventType === 'DELETE') {
+            const record = payload.old as CallRecord
+            setCallRecords((prev) => {
+              const newMap = new Map(prev)
+              newMap.delete(record.seat_number)
+              return newMap
+            })
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [])
+
+  // Subscribe to manager_calls
+  useEffect(() => {
+    const supabase = createClient()
+    const today = new Date().toISOString().split('T')[0]
+
+    console.log('[Manager Calls] Setting up subscription for date:', today)
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('manager-calls-all')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'manager_calls',
+        },
+        (payload) => {
+          console.log('[Manager Calls] ✅ Received INSERT event:', payload)
+          const record = payload.new as any
+          console.log('[Manager Calls] Setting alert state:', {
+            seatNumber: record.seat_number,
+            studentName: record.student_name,
+          })
+          setManagerCallAlert({
+            seatNumber: record.seat_number,
+            studentName: record.student_name,
+          })
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Manager Calls] Subscription status:', status)
+      })
+
+    return () => {
+      console.log('[Manager Calls] Unsubscribing')
+      channel.unsubscribe()
+    }
+  }, [])
+
+  // Debug: Log managerCallAlert changes
+  useEffect(() => {
+    console.log('[Manager Calls] 🚨 Alert state changed:', managerCallAlert)
+  }, [managerCallAlert])
+
+  // Play alarm when manager call is received
+  useEffect(() => {
+    if (!managerCallAlert) return
+
+    console.log('[Manager Calls] 🔔 Starting alarm')
+    const interval = setInterval(() => {
+      playAlarmBeep()
+    }, 2000) // Beep every 2 seconds
+
+    return () => {
+      console.log('[Manager Calls] 🔕 Stopping alarm')
+      clearInterval(interval)
+    }
+  }, [managerCallAlert])
+
+  // Play alarm beep
+  const playAlarmBeep = () => {
+    try {
+      const context = new (window.AudioContext || (window as any).webkitAudioContext)()
+
+      // First beep
+      const oscillator1 = context.createOscillator()
+      const gainNode1 = context.createGain()
+
+      oscillator1.connect(gainNode1)
+      gainNode1.connect(context.destination)
+
+      oscillator1.frequency.value = 800
+      oscillator1.type = 'sine'
+      gainNode1.gain.setValueAtTime(0.3, context.currentTime)
+
+      oscillator1.start(context.currentTime)
+      oscillator1.stop(context.currentTime + 0.2)
+
+      // Second beep after delay
+      setTimeout(() => {
+        const oscillator2 = context.createOscillator()
+        const gainNode2 = context.createGain()
+
+        oscillator2.connect(gainNode2)
+        gainNode2.connect(context.destination)
+
+        oscillator2.frequency.value = 800
+        oscillator2.type = 'sine'
+        gainNode2.gain.setValueAtTime(0.3, context.currentTime)
+
+        oscillator2.start(context.currentTime)
+        oscillator2.stop(context.currentTime + 0.2)
+      }, 300)
+    } catch (err) {
+      console.error('Failed to play beep:', err)
+    }
+  }
+
+  // Handle sleep expiration notification
+  const handleSleepExpired = (seatNumber: number, studentName: string) => {
+    console.log('⏰ Sleep expired:', { seatNumber, studentName })
+
+    // Play alarm immediately
+    playAlarmBeep()
+
+    // Continue playing alarm every 2 seconds
+    const interval = setInterval(() => {
+      playAlarmBeep()
+    }, 2000)
+
+    setAlarmInterval(interval)
+
+    // Show modal
+    setSleepAlertInfo({ seatNumber, studentName })
+    setSleepAlertOpen(true)
+  }
+
+  // Handle closing sleep alert
+  const handleCloseSleepAlert = () => {
+    // Stop alarm
+    if (alarmInterval) {
+      clearInterval(alarmInterval)
+      setAlarmInterval(null)
+    }
+
+    // Close modal
+    setSleepAlertOpen(false)
+  }
+
+  // Handle copying livescreen URL
+  const handleCopyUrl = async () => {
+    const url = `${window.location.origin}/classflow/livescreen/1`
+    try {
+      await navigator.clipboard.writeText(url)
+      setUrlCopied(true)
+      toast({
+        title: 'URL 복사 완료',
+        description: 'LiveScreen URL이 클립보드에 복사되었습니다.',
+      })
+      setTimeout(() => setUrlCopied(false), 2000)
+    } catch (error) {
+      toast({
+        title: '복사 실패',
+        description: 'URL 복사에 실패했습니다.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Open call modal
+  const handleCallStudent = (seatNumber: number, studentId: string, studentName: string) => {
+    setCallStudentInfo({ seatNumber, studentId, studentName })
+    setCallMessage('카운터로 와주세요')
+    setCallModalOpen(true)
+  }
+
+  // Send call to student
+  const handleSendCall = async () => {
+    if (!callStudentInfo) return
+
+    try {
+      const today = new Date().toISOString().split('T')[0]
+      const supabase = createClient()
+
+      const { error } = await supabase
+        .from('call_records')
+        .insert({
+          student_id: callStudentInfo.studentId,
+          seat_number: callStudentInfo.seatNumber,
+          date: today,
+          call_time: new Date().toISOString(),
+          message: callMessage,
+          status: 'calling',
+        })
+
+      if (error) throw error
+
+      setCallModalOpen(false)
+      toast({
+        title: '학생 호출',
+        description: `${callStudentInfo.seatNumber}번 ${callStudentInfo.studentName} 학생에게 호출을 보냈습니다.`,
+      })
+    } catch (error) {
+      console.error('Error calling student:', error)
+      toast({
+        title: '호출 실패',
+        description: '학생 호출에 실패했습니다.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Clear acknowledged call (to allow new call)
+  const handleClearAcknowledgedCall = async (seatNumber: number) => {
+    const callRecord = callRecords.get(seatNumber)
+    if (!callRecord) return
+
+    try {
+      const supabase = createClient()
+      console.log('Deleting call record:', callRecord.id)
+
+      const { error } = await supabase
+        .from('call_records')
+        .delete()
+        .eq('id', callRecord.id)
+
+      if (error) throw error
+
+      // Immediately remove from local state
+      setCallRecords((prev) => {
+        const newMap = new Map(prev)
+        newMap.delete(seatNumber)
+        console.log('Removed from local state, new size:', newMap.size)
+        return newMap
+      })
+
+      toast({
+        title: '호출 확인 완료',
+        description: '새로운 호출을 보낼 수 있습니다.',
+      })
+    } catch (error) {
+      console.error('Error clearing call record:', error)
+      toast({
+        title: '오류',
+        description: '호출 기록 삭제에 실패했습니다.',
+        variant: 'destructive',
+      })
+    }
+  }
 
   const handleConfigureTotalSeats = () => {
     if (tempTotalSeats < 1 || tempTotalSeats > 100) {
@@ -261,10 +863,10 @@ export default function SeatsPage() {
       })
     } else {
       // New student registration and assignment
-      if (!newStudentName.trim() || !newStudentGrade || !newStudentSchool.trim()) {
+      if (!newStudentName.trim() || !newStudentGrade || !newStudentSchool.trim() || !newStudentPhone.trim()) {
         toast({
           title: '정보 입력 필요',
-          description: '학생 이름, 학년, 학교를 모두 입력해주세요.',
+          description: '학생 이름, 학년, 학교, 전화번호를 모두 입력해주세요.',
           variant: 'destructive',
         })
         return
@@ -273,13 +875,36 @@ export default function SeatsPage() {
       // Create new student ID
       const newStudentId = `student-${Date.now()}`
 
-      // Add to mockStudents (in real app, this would be API call)
+      // Create full student object for database
+      const newStudent: Student = {
+        id: newStudentId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        org_id: 'org-1',
+        name: newStudentName.trim(),
+        grade: newStudentGrade,
+        school: newStudentSchool.trim(),
+        phone: newStudentPhone.trim(),
+        parent_name: '',
+        parent_phone: '',
+        subjects: [],
+        status: 'active',
+        enrollment_date: new Date().toISOString(),
+      }
+
+      // Add to mockStudents
       mockStudents.push({
         id: newStudentId,
         name: newStudentName.trim(),
         grade: newStudentGrade,
         school: newStudentSchool.trim(),
       })
+
+      // Save to localStorage (students database)
+      const studentsData = localStorage.getItem('students')
+      let allStudents: Student[] = studentsData ? JSON.parse(studentsData) : []
+      allStudents.push(newStudent)
+      localStorage.setItem('students', JSON.stringify(allStudents))
 
       // Assign to seat
       const updatedSeats = seats.map(seat =>
@@ -305,6 +930,7 @@ export default function SeatsPage() {
       setNewStudentName('')
       setNewStudentGrade('')
       setNewStudentSchool('')
+      setNewStudentPhone('')
     }
   }
 
@@ -335,7 +961,11 @@ export default function SeatsPage() {
     const updatedSeats = seats.map(seat => {
       if (seat.id === seatId && seat.student_id) {
         const newStatus: Seat['status'] = seat.status === 'checked_in' ? 'checked_out' : 'checked_in'
-        return { ...seat, status: newStatus }
+        return {
+          ...seat,
+          status: newStatus,
+          check_in_time: newStatus === 'checked_in' ? new Date().toISOString() : undefined
+        }
       }
       return seat
     })
@@ -343,7 +973,7 @@ export default function SeatsPage() {
     setSeats(updatedSeats)
 
     const seat = seats.find(s => s.id === seatId)
-    const newStatus = seat?.status === 'checked_in' ? '퇴근' : '출근'
+    const newStatus = seat?.status === 'checked_in' ? '하원' : '등원'
 
     toast({
       title: '출결 상태 변경',
@@ -357,14 +987,14 @@ export default function SeatsPage() {
         return (
           <Badge className="bg-green-500 hover:bg-green-600">
             <UserCheck className="mr-1 h-3 w-3" />
-            출근
+            등원
           </Badge>
         )
       case 'checked_out':
         return (
           <Badge variant="secondary" className="bg-gray-200 hover:bg-gray-300">
             <UserX className="mr-1 h-3 w-3" />
-            퇴근
+            하원
           </Badge>
         )
       case 'vacant':
@@ -389,23 +1019,44 @@ export default function SeatsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
-      <PagePermissions pageId="seats" />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">자리현황판</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">독서실 관리</h1>
           <p className="text-sm md:text-base text-muted-foreground">
             독서실 좌석 배정 및 출결 상태를 관리합니다
           </p>
         </div>
-        <Button variant="outline" onClick={() => {
-          setTempTotalSeats(totalSeats)
-          setTempSeatTypes(seatTypes)
-          setIsConfigDialogOpen(true)
-        }} className="w-full sm:w-auto">
-          <Settings2 className="mr-2 h-4 w-4" />
-          좌석 설정
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          {/* LiveScreen URL */}
+          <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-md">
+            <span className="text-sm text-muted-foreground hidden md:inline">학생 화면:</span>
+            <code className="text-xs sm:text-sm font-mono bg-background px-2 py-1 rounded border">
+              {typeof window !== 'undefined' ? `${window.location.origin}/classflow/livescreen/1` : '/classflow/livescreen/1'}
+            </code>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopyUrl}
+              className="h-7 w-7 p-0"
+            >
+              {urlCopied ? (
+                <Check className="h-4 w-4 text-green-600" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+
+          <Button variant="outline" onClick={() => {
+            setTempTotalSeats(totalSeats)
+            setTempSeatTypes(seatTypes)
+            setIsConfigDialogOpen(true)
+          }} className="w-full sm:w-auto">
+            <Settings2 className="mr-2 h-4 w-4" />
+            좌석 설정
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -423,7 +1074,7 @@ export default function SeatsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">출근 (공부 중)</CardTitle>
+            <CardTitle className="text-sm font-medium">등원 (공부 중)</CardTitle>
             <UserCheck className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
@@ -434,7 +1085,7 @@ export default function SeatsPage() {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">퇴근 (자리 비움)</CardTitle>
+            <CardTitle className="text-sm font-medium">하원 (자리 비움)</CardTitle>
             <UserX className="h-4 w-4 text-gray-600" />
           </CardHeader>
           <CardContent>
@@ -500,19 +1151,90 @@ export default function SeatsPage() {
                         </div>
                       </div>
 
+                      {/* Live Status Indicator (Sleep/Outing) */}
+                      {seat.student_id && (
+                        <LiveStatusIndicator
+                          studentId={seat.student_id}
+                          seatNumber={seat.number}
+                          studentName={seat.student_name}
+                          onSleepExpired={handleSleepExpired}
+                        />
+                      )}
+
+                      {/* Elapsed Time (only show when checked in) */}
+                      {seat.status === 'checked_in' && seat.check_in_time && (
+                        <ElapsedTime checkInTime={seat.check_in_time} />
+                      )}
+
                       {/* Toggle Button */}
                       {seat.status !== 'vacant' && (
-                        <Button
-                          size="sm"
-                          variant={seat.status === 'checked_in' ? 'outline' : 'default'}
-                          className="w-full"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleToggleAttendance(seat.id)
-                          }}
-                        >
-                          {seat.status === 'checked_in' ? '퇴근 처리' : '출근 처리'}
-                        </Button>
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            size="sm"
+                            variant={seat.status === 'checked_in' ? 'outline' : 'default'}
+                            className="w-full"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleToggleAttendance(seat.id)
+                            }}
+                          >
+                            {seat.status === 'checked_in' ? '하원 처리' : '등원 처리'}
+                          </Button>
+                          {seat.status === 'checked_in' && seat.student_id && (() => {
+                            const callRecord = callRecords.get(seat.number)
+
+                            if (callRecord) {
+                              if (callRecord.status === 'calling') {
+                                // 호출 대기 중
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="w-full animate-pulse bg-yellow-500 hover:bg-yellow-600 text-white"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      // 클릭해도 아무 동작 안 함 (대기 중)
+                                    }}
+                                  >
+                                    유저응답대기중
+                                  </Button>
+                                )
+                              } else if (callRecord.status === 'acknowledged') {
+                                // 유저가 응답함
+                                return (
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    className="w-full bg-green-500 hover:bg-green-600 text-white"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      handleClearAcknowledgedCall(seat.number)
+                                    }}
+                                  >
+                                    유저응답 OK
+                                  </Button>
+                                )
+                              }
+                            }
+
+                            // 일반 호출 버튼
+                            return (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="w-full border-2 border-red-500 hover:border-red-600"
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  if (seat.student_id && seat.student_name) {
+                                    handleCallStudent(seat.number, seat.student_id, seat.student_name)
+                                  }
+                                }}
+                              >
+                                호출
+                              </Button>
+                            )
+                          })()}
+                        </div>
                       )}
                     </>
                   ) : (
@@ -738,6 +1460,16 @@ export default function SeatsPage() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="new-student-phone">전화번호 *</Label>
+                <Input
+                  id="new-student-phone"
+                  placeholder="예: 010-1234-5678"
+                  value={newStudentPhone}
+                  onChange={(e) => setNewStudentPhone(e.target.value)}
+                />
+              </div>
+
               <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
                 💡 신규 학생을 등록하고 바로 좌석에 배정합니다
               </div>
@@ -761,6 +1493,123 @@ export default function SeatsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Sleep Expiration Alert Dialog */}
+      <Dialog open={sleepAlertOpen} onOpenChange={(open) => {
+        if (!open) handleCloseSleepAlert()
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-red-600">⏰ 잠자기 시간 종료</DialogTitle>
+            <DialogDescription className="text-lg pt-4">
+              {sleepAlertInfo && (
+                <div className="space-y-2">
+                  <p className="font-semibold text-foreground">
+                    {sleepAlertInfo.seatNumber}번 학생 <span className="text-primary">{sleepAlertInfo.studentName}</span> 깨워주세요
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    1분 잠자기 시간이 종료되었습니다.
+                  </p>
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={handleCloseSleepAlert} className="w-full">
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Call Student Modal */}
+      <Dialog open={callModalOpen} onOpenChange={setCallModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>학생 호출</DialogTitle>
+            <DialogDescription>
+              {callStudentInfo && (
+                <span>
+                  {callStudentInfo.seatNumber}번 {callStudentInfo.studentName} 학생에게 보낼 메시지를 입력하세요
+                </span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="call-message">메시지</Label>
+              <Input
+                id="call-message"
+                value={callMessage}
+                onChange={(e) => setCallMessage(e.target.value)}
+                placeholder="카운터로 와주세요"
+                className="mt-2"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCallModalOpen(false)}>
+              취소
+            </Button>
+            <Button onClick={handleSendCall}>
+              호출하기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manager Call Alert - Full Screen Red Overlay */}
+      {managerCallAlert && (
+        <div className="fixed inset-0 z-50 bg-red-600 flex flex-col items-center justify-center">
+          <div className="text-white text-center space-y-8">
+            <div className="space-y-4">
+              <h1 className="text-6xl md:text-8xl font-bold animate-pulse">
+                매니저 호출
+              </h1>
+              <p className="text-3xl md:text-5xl font-semibold">
+                {managerCallAlert.seatNumber}번 {managerCallAlert.studentName} 학생이 호출했습니다
+              </p>
+            </div>
+            <Button
+              size="lg"
+              variant="secondary"
+              onClick={async () => {
+                // Mark as acknowledged in database
+                try {
+                  const supabase = createClient()
+                  const today = new Date().toISOString().split('T')[0]
+
+                  const { error } = await supabase
+                    .from('manager_calls')
+                    .delete()
+                    .eq('seat_number', managerCallAlert.seatNumber)
+                    .eq('date', today)
+                    .eq('status', 'calling')
+
+                  if (error) throw error
+
+                  setManagerCallAlert(null)
+
+                  toast({
+                    title: '호출 확인',
+                    description: '매니저 호출이 확인되었습니다.',
+                  })
+                } catch (error) {
+                  console.error('Error acknowledging manager call:', error)
+                  toast({
+                    title: '오류',
+                    description: '호출 확인에 실패했습니다.',
+                    variant: 'destructive',
+                  })
+                }
+              }}
+              className="text-2xl px-12 py-8 mt-8"
+            >
+              확인
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

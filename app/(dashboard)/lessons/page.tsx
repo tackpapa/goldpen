@@ -1,9 +1,17 @@
 'use client'
 
+/**
+ * 수업일지 페이지 (Lessons/Class Journal) - 강사용
+ *
+ * TODO: 강사 계정 필터링 구현 필요
+ * - 현재: 모든 수업일지 데이터 표시 (개발용)
+ * - 향후: 로그인한 강사 본인의 수업일지만 필터링
+ *   예: .eq('teacher_id', currentTeacherId)
+ */
+
 import { useState } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
@@ -21,8 +29,9 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Edit, BookOpen, TrendingUp, Sparkles, Calendar, Clock } from 'lucide-react'
+import { Plus, Edit, BookOpen, TrendingUp, Sparkles, Calendar, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { LessonNote } from '@/lib/types/database'
+import { Checkbox } from '@/components/ui/checkbox'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
@@ -33,6 +42,72 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+
+interface StudentAttendance {
+  student_id: string
+  student_name: string
+  status: 'present' | 'absent' | 'late' | 'excused'
+}
+
+interface ScheduledClass {
+  id: string
+  class_name: string
+  lesson_time: string
+  teacher_name: string
+  class_type: '1:1' | '1:다수'
+  students: { id: string; name: string }[]
+}
+
+// Mock scheduled classes for today
+const mockScheduledClasses: ScheduledClass[] = [
+  {
+    id: 'schedule-1',
+    class_name: '수학 특강반',
+    lesson_time: '09:00',
+    teacher_name: '김선생',
+    class_type: '1:다수',
+    students: [
+      { id: '1', name: '김민준' },
+      { id: '2', name: '이서연' },
+      { id: '3', name: '박지우' },
+      { id: '4', name: '최서준' },
+      { id: '5', name: '정하은' },
+    ],
+  },
+  {
+    id: 'schedule-2',
+    class_name: '영어 회화반',
+    lesson_time: '11:00',
+    teacher_name: '박선생',
+    class_type: '1:다수',
+    students: [
+      { id: '6', name: '강민서' },
+      { id: '7', name: '윤서준' },
+      { id: '8', name: '조유진' },
+    ],
+  },
+  {
+    id: 'schedule-3',
+    class_name: '국어 1:1 개인과외',
+    lesson_time: '14:00',
+    teacher_name: '이선생',
+    class_type: '1:1',
+    students: [{ id: '9', name: '신예은' }],
+  },
+  {
+    id: 'schedule-4',
+    class_name: '과학 특강반',
+    lesson_time: '16:00',
+    teacher_name: '최선생',
+    class_type: '1:다수',
+    students: [
+      { id: '10', name: '한지호' },
+      { id: '11', name: '임서현' },
+      { id: '12', name: '송민재' },
+      { id: '13', name: '오지안' },
+    ],
+  },
+]
 
 // Mock data
 const mockLessons: LessonNote[] = [
@@ -131,9 +206,8 @@ const mockLessons: LessonNote[] = [
   },
 ]
 
-// Today's lessons (filtering for today)
-const today = '2025-06-18'
-const todayLessons = mockLessons.filter((lesson) => lesson.lesson_date === today)
+// Today's lessons (filtering for selected date)
+const initialDate = '2025-06-18'
 
 // Mock statistics data
 const monthlyProgressData = [
@@ -163,16 +237,49 @@ export default function LessonsPage() {
 
   const { toast } = useToast()
   const [lessons, setLessons] = useState<LessonNote[]>(mockLessons)
-  const [todayLessonsList, setTodayLessonsList] = useState<LessonNote[]>(todayLessons)
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate)
   const [selectedLesson, setSelectedLesson] = useState<LessonNote | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
+  const [isGeneratingFinalMessage, setIsGeneratingFinalMessage] = useState(false)
   const [selectedClass, setSelectedClass] = useState<string>('all')
 
+  // Schedule selection
+  const [selectedSchedule, setSelectedSchedule] = useState<string>('')
+  const [selectedScheduleData, setSelectedScheduleData] = useState<ScheduledClass | null>(null)
+
+  // Attendance state
+  const [studentAttendances, setStudentAttendances] = useState<StudentAttendance[]>([])
+  const [isAttendanceExpanded, setIsAttendanceExpanded] = useState(true)
+  const [allPresent, setAllPresent] = useState(true)
+
+  // Mock user role - TODO: 실제 사용자 권한에서 가져오기
+  const userRole = 'director' // 'teacher' | 'director' | 'admin'
+
+  // Calculate today's lessons based on selected date
+  const todayLessonsList = lessons.filter((lesson) => lesson.lesson_date === selectedDate)
+
+  // Date navigation functions
+  const handlePreviousDay = () => {
+    const currentDate = new Date(selectedDate)
+    currentDate.setDate(currentDate.getDate() - 1)
+    setSelectedDate(currentDate.toISOString().split('T')[0])
+  }
+
+  const handleNextDay = () => {
+    const currentDate = new Date(selectedDate)
+    currentDate.setDate(currentDate.getDate() + 1)
+    setSelectedDate(currentDate.toISOString().split('T')[0])
+  }
+
   // Form state
-  const [formData, setFormData] = useState<Partial<LessonNote>>({
-    lesson_date: today,
+  const [formData, setFormData] = useState<Partial<LessonNote & {
+    director_feedback?: string
+    final_message?: string
+    homework_submitted?: boolean
+  }>>({
+    lesson_date: selectedDate,
     lesson_time: '',
     class_id: '',
     class_name: '',
@@ -183,12 +290,17 @@ export default function LessonsPage() {
     homework_assigned: '',
     next_lesson_plan: '',
     parent_feedback: '',
+    director_feedback: '',
+    final_message: '',
+    homework_submitted: undefined,
   })
 
   const handleCreateLesson = () => {
     setIsEditing(false)
+    setSelectedSchedule('')
+    setSelectedScheduleData(null)
     setFormData({
-      lesson_date: today,
+      lesson_date: selectedDate,
       lesson_time: '',
       class_id: '',
       class_name: '',
@@ -200,14 +312,113 @@ export default function LessonsPage() {
       next_lesson_plan: '',
       parent_feedback: '',
     })
+    setStudentAttendances([])
+    setIsAttendanceExpanded(true)
+    setAllPresent(true)
     setIsDialogOpen(true)
+  }
+
+  const handleScheduleChange = (scheduleId: string) => {
+    setSelectedSchedule(scheduleId)
+    const schedule = mockScheduledClasses.find((s) => s.id === scheduleId)
+
+    if (schedule) {
+      setSelectedScheduleData(schedule)
+      setFormData((prev) => ({
+        ...prev,
+        lesson_time: schedule.lesson_time,
+        class_name: schedule.class_name,
+        class_id: schedule.id,
+      }))
+
+      // Initialize attendance with all students present
+      setStudentAttendances(
+        schedule.students.map((s) => ({
+          student_id: s.id,
+          student_name: s.name,
+          status: 'present',
+        }))
+      )
+
+      // Auto-expand if 1:다수, collapse if 1:1
+      setIsAttendanceExpanded(schedule.class_type === '1:다수')
+      setAllPresent(true)
+    }
+  }
+
+  const handleAttendanceChange = (studentId: string, status: 'present' | 'absent' | 'late' | 'excused') => {
+    setStudentAttendances((prev) =>
+      prev.map((att) =>
+        att.student_id === studentId ? { ...att, status } : att
+      )
+    )
+    setAllPresent(false)
+  }
+
+  const handleAllPresentChange = (checked: boolean) => {
+    setAllPresent(checked)
+    if (checked) {
+      setStudentAttendances((prev) =>
+        prev.map((att) => ({ ...att, status: 'present' }))
+      )
+    }
   }
 
   const handleEditLesson = (lesson: LessonNote) => {
     setIsEditing(true)
     setSelectedLesson(lesson)
     setFormData(lesson)
+    setIsAttendanceExpanded(false)
     setIsDialogOpen(true)
+  }
+
+  const handleSendNotification = () => {
+    if (isEditing && selectedLesson) {
+      // Update notification sent status
+      const updatedLessons = lessons.map((lesson) =>
+        lesson.id === selectedLesson.id
+          ? {
+              ...lesson,
+              // @ts-ignore - notification_sent는 타입에 없지만 런타임에서 처리
+              notification_sent: true,
+              notification_sent_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }
+          : lesson
+      )
+      setLessons(updatedLessons)
+    }
+
+    // TODO: 실제 알림톡 전송 API 호출
+    toast({
+      title: '알림톡 전송 완료',
+      description: '학부모님께 수업일지 알림톡이 전송되었습니다.',
+    })
+    setIsDialogOpen(false)
+  }
+
+  const handleUpdateFeedback = () => {
+    if (isEditing && selectedLesson) {
+      // Update only feedback fields
+      const updatedLessons = lessons.map((lesson) =>
+        lesson.id === selectedLesson.id
+          ? {
+              ...lesson,
+              parent_feedback: formData.parent_feedback,
+              // @ts-ignore - director_feedback는 타입에 없지만 런타임에서 처리
+              director_feedback: formData.director_feedback,
+              updated_at: new Date().toISOString()
+            }
+          : lesson
+      )
+      setLessons(updatedLessons)
+
+      toast({
+        title: '피드백 수정 완료',
+        description: '피드백이 성공적으로 수정되었습니다.',
+      })
+    }
+    setIsDialogOpen(false)
   }
 
   const handleGenerateFeedback = () => {
@@ -231,6 +442,48 @@ export default function LessonsPage() {
     }, 1500)
   }
 
+  const handleGenerateFinalMessage = () => {
+    setIsGeneratingFinalMessage(true)
+
+    // Mock GPT final message generation
+    setTimeout(() => {
+      let finalMessage = `[${formData.class_name}] 수업일지\n\n`
+      finalMessage += `📅 ${new Date(formData.lesson_date || '').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} ${formData.lesson_time}\n\n`
+
+      if (formData.content) {
+        finalMessage += `📚 학습 내용\n${formData.content}\n\n`
+      }
+
+      if (formData.parent_feedback) {
+        finalMessage += `👨‍🏫 선생님 피드백\n${formData.parent_feedback}\n\n`
+      }
+
+      if (formData.director_feedback) {
+        finalMessage += `👔 원장님 한마디\n${formData.director_feedback}\n\n`
+      }
+
+      if (formData.homework_assigned) {
+        finalMessage += `📝 과제\n${formData.homework_assigned}\n\n`
+      }
+
+      if (formData.next_lesson_plan) {
+        finalMessage += `📌 다음 수업 예고\n${formData.next_lesson_plan}\n`
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        final_message: finalMessage,
+      }))
+
+      setIsGeneratingFinalMessage(false)
+
+      toast({
+        title: 'AI 알림톡 생성 완료',
+        description: '최종 알림톡 내용이 생성되었습니다.',
+      })
+    }, 1500)
+  }
+
   const handleSaveLesson = () => {
     if (!formData.class_name || !formData.content || !formData.student_attitudes) {
       toast({
@@ -249,7 +502,6 @@ export default function LessonsPage() {
           : lesson
       )
       setLessons(updatedLessons)
-      setTodayLessonsList(updatedLessons.filter((l) => l.lesson_date === today))
 
       toast({
         title: '수업일지 수정 완료',
@@ -269,7 +521,6 @@ export default function LessonsPage() {
 
       const updatedLessons = [newLesson, ...lessons]
       setLessons(updatedLessons)
-      setTodayLessonsList(updatedLessons.filter((l) => l.lesson_date === today))
 
       toast({
         title: '수업일지 작성 완료',
@@ -295,33 +546,67 @@ export default function LessonsPage() {
     {
       accessorKey: 'lesson_time',
       header: '시간',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <Clock className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">{row.getValue('lesson_time')}</span>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const lesson = row.original
+        return (
+          <button
+            onClick={() => handleEditLesson(lesson)}
+            className="flex items-center gap-2 hover:text-primary transition-colors text-left w-full"
+          >
+            <Clock className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <div className="font-medium">{row.getValue('lesson_time')}</div>
+              <div className="text-xs text-muted-foreground">{lesson.teacher_name} 선생님</div>
+            </div>
+          </button>
+        )
+      },
     },
     {
       accessorKey: 'class_name',
       header: '반 이름',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-muted-foreground" />
-          <span>{row.getValue('class_name')}</span>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const lesson = row.original
+        return (
+          <button
+            onClick={() => handleEditLesson(lesson)}
+            className="flex items-center gap-2 hover:text-primary transition-colors text-left w-full"
+          >
+            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <span>{row.getValue('class_name')}</span>
+          </button>
+        )
+      },
     },
     {
       accessorKey: 'subject',
       header: '과목',
+      cell: ({ row }) => {
+        const lesson = row.original
+        return (
+          <button
+            onClick={() => handleEditLesson(lesson)}
+            className="hover:text-primary transition-colors text-left w-full"
+          >
+            {row.getValue('subject')}
+          </button>
+        )
+      },
     },
     {
       accessorKey: 'content',
       header: '학습 내용',
       cell: ({ row }) => {
         const content = row.getValue('content') as string
-        return <span className="max-w-md truncate block">{content}</span>
+        const lesson = row.original
+        return (
+          <button
+            onClick={() => handleEditLesson(lesson)}
+            className="max-w-md truncate block hover:text-primary transition-colors text-left w-full"
+          >
+            {content}
+          </button>
+        )
       },
     },
     {
@@ -330,7 +615,31 @@ export default function LessonsPage() {
       cell: ({ row }) => {
         const level = row.getValue('comprehension_level') as keyof typeof comprehensionMap
         const { label, variant } = comprehensionMap[level]
-        return <Badge variant={variant}>{label}</Badge>
+        const lesson = row.original
+        return (
+          <button onClick={() => handleEditLesson(lesson)} className="w-full text-left">
+            <Badge variant={variant}>{label}</Badge>
+          </button>
+        )
+      },
+    },
+    {
+      id: 'notification_sent',
+      header: '알림톡',
+      cell: ({ row }) => {
+        const lesson = row.original
+        // @ts-ignore - notification_sent는 타입에 없지만 런타임에서 처리
+        const isSent = lesson.notification_sent
+        const lesson_obj = row.original
+        return (
+          <button onClick={() => handleEditLesson(lesson_obj)} className="w-full text-center">
+            {isSent ? (
+              <Badge className="bg-blue-600 text-white hover:bg-blue-700">발송완료</Badge>
+            ) : (
+              <Badge variant="outline" className="text-gray-500">미발송</Badge>
+            )}
+          </button>
+        )
       },
     },
     {
@@ -419,7 +728,6 @@ export default function LessonsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <PagePermissions pageId="lessons" />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -506,10 +814,32 @@ export default function LessonsPage() {
         <TabsContent value="today" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>오늘의 수업 ({format(new Date(today), 'yyyy년 M월 d일', { locale: ko })})</CardTitle>
-              <CardDescription>
-                오늘 진행된 수업에 대한 수업일지를 작성하세요
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handlePreviousDay}
+                      className="h-8 w-8"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <CardTitle>오늘의 수업 ({format(new Date(selectedDate), 'yyyy년 M월 d일', { locale: ko })})</CardTitle>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={handleNextDay}
+                      className="h-8 w-8"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <CardDescription>
+                    선택한 날짜에 진행된 수업에 대한 수업일지를 작성하세요
+                  </CardDescription>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <DataTable columns={todayColumns} data={filteredTodayLessons} />
@@ -592,55 +922,262 @@ export default function LessonsPage() {
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-2 gap-4">
+            {!isEditing && (
               <div className="space-y-2">
-                <Label htmlFor="lesson_date">수업 날짜</Label>
-                <Input
-                  id="lesson_date"
-                  type="date"
-                  value={formData.lesson_date}
-                  onChange={(e) =>
-                    setFormData({ ...formData, lesson_date: e.target.value })
-                  }
-                />
+                <Label htmlFor="scheduled_class">오늘 수업 선택</Label>
+                <Select value={selectedSchedule} onValueChange={handleScheduleChange}>
+                  <SelectTrigger id="scheduled_class">
+                    <SelectValue placeholder="스케줄에서 수업을 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockScheduledClasses.map((schedule) => (
+                      <SelectItem key={schedule.id} value={schedule.id}>
+                        {schedule.lesson_time} - {schedule.class_name} ({schedule.class_type}) - {schedule.teacher_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedScheduleData && (
+                  <p className="text-xs text-muted-foreground">
+                    학생 {selectedScheduleData.students.length}명 · {selectedScheduleData.class_type} 수업
+                  </p>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="lesson_time">수업 시간</Label>
-                <Input
-                  id="lesson_time"
-                  type="time"
-                  value={formData.lesson_time}
-                  onChange={(e) =>
-                    setFormData({ ...formData, lesson_time: e.target.value })
-                  }
-                />
-              </div>
-            </div>
+            )}
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="class_name">반 이름</Label>
-                <Input
-                  id="class_name"
-                  value={formData.class_name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, class_name: e.target.value })
-                  }
-                  placeholder="예: 수학 특강반"
-                />
+            {isEditing && (
+              <div className="p-4 bg-muted/50 rounded-lg space-y-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">수업 날짜</p>
+                    <p className="font-medium">{new Date(formData.lesson_date || '').toLocaleDateString('ko-KR')}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">수업 시간</p>
+                    <p className="font-medium">{formData.lesson_time}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">반 이름</p>
+                    <p className="font-medium">{formData.class_name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">과목</p>
+                    <p className="font-medium">{formData.subject}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">담당 강사</p>
+                  <p className="font-medium">{formData.teacher_name}</p>
+                </div>
               </div>
+            )}
+
+            {!isEditing && (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="lesson_date">수업 날짜</Label>
+                    <Input
+                      id="lesson_date"
+                      type="date"
+                      value={formData.lesson_date}
+                      onChange={(e) =>
+                        setFormData({ ...formData, lesson_date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lesson_time">수업 시간</Label>
+                    <Input
+                      id="lesson_time"
+                      type="time"
+                      value={formData.lesson_time}
+                      onChange={(e) =>
+                        setFormData({ ...formData, lesson_time: e.target.value })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="class_name">반 이름</Label>
+                    <Input
+                      id="class_name"
+                      value={formData.class_name}
+                      onChange={(e) =>
+                        setFormData({ ...formData, class_name: e.target.value })
+                      }
+                      placeholder="예: 수학 특강반"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="subject">과목</Label>
+                    <Input
+                      id="subject"
+                      value={formData.subject}
+                      onChange={(e) =>
+                        setFormData({ ...formData, subject: e.target.value })
+                      }
+                      placeholder="예: 수학"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {studentAttendances.length > 0 && (
               <div className="space-y-2">
-                <Label htmlFor="subject">과목</Label>
-                <Input
-                  id="subject"
-                  value={formData.subject}
-                  onChange={(e) =>
-                    setFormData({ ...formData, subject: e.target.value })
-                  }
-                  placeholder="예: 수학"
-                />
+                <div className="flex items-center justify-between">
+                  <Label>학생 출결 체크</Label>
+                  <div className="flex items-center gap-3">
+                    {selectedScheduleData?.class_type === '1:다수' && (
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="all-present"
+                          checked={allPresent}
+                          onCheckedChange={handleAllPresentChange}
+                        />
+                        <label
+                          htmlFor="all-present"
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          전원 정시 등원
+                        </label>
+                      </div>
+                    )}
+                    {selectedScheduleData?.class_type === '1:다수' && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsAttendanceExpanded(!isAttendanceExpanded)}
+                      >
+                        {isAttendanceExpanded ? (
+                          <>
+                            <ChevronUp className="h-4 w-4 mr-1" />
+                            접기
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="h-4 w-4 mr-1" />
+                            펼치기
+                          </>
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 1:1 수업일 때 - 항상 표시 */}
+                {selectedScheduleData?.class_type === '1:1' && (
+                  <div className="border rounded-lg p-4 bg-muted/20">
+                    {studentAttendances.map((attendance) => (
+                      <div key={attendance.student_id} className="flex items-center justify-between gap-3">
+                        <span className="font-medium min-w-[80px]">{attendance.student_name}</span>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'present' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'present')}
+                            className={attendance.status === 'present' ? 'bg-green-600 hover:bg-green-700' : ''}
+                            disabled={isEditing}
+                          >
+                            정시
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'late' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'late')}
+                            className={attendance.status === 'late' ? 'bg-orange-600 hover:bg-orange-700' : ''}
+                            disabled={isEditing}
+                          >
+                            지각
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'absent' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'absent')}
+                            className={attendance.status === 'absent' ? 'bg-red-600 hover:bg-red-700' : ''}
+                            disabled={isEditing}
+                          >
+                            결석
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'excused' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'excused')}
+                            className={attendance.status === 'excused' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                            disabled={isEditing}
+                          >
+                            인정결석
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* 1:다수 수업일 때 - 접을 수 있음 */}
+                {selectedScheduleData?.class_type === '1:다수' && isAttendanceExpanded && (
+                  <div className="border rounded-lg p-4 space-y-3 bg-muted/20">
+                    {studentAttendances.map((attendance) => (
+                      <div key={attendance.student_id} className="flex items-center justify-between gap-3">
+                        <span className="font-medium min-w-[80px]">{attendance.student_name}</span>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'present' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'present')}
+                            className={attendance.status === 'present' ? 'bg-green-600 hover:bg-green-700' : ''}
+                            disabled={isEditing}
+                          >
+                            정시
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'late' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'late')}
+                            className={attendance.status === 'late' ? 'bg-orange-600 hover:bg-orange-700' : ''}
+                            disabled={isEditing}
+                          >
+                            지각
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'absent' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'absent')}
+                            className={attendance.status === 'absent' ? 'bg-red-600 hover:bg-red-700' : ''}
+                            disabled={isEditing}
+                          >
+                            결석
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant={attendance.status === 'excused' ? 'default' : 'outline'}
+                            onClick={() => handleAttendanceChange(attendance.student_id, 'excused')}
+                            className={attendance.status === 'excused' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                            disabled={isEditing}
+                          >
+                            인정결석
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="content">학습 내용 *</Label>
@@ -652,6 +1189,7 @@ export default function LessonsPage() {
                 }
                 placeholder="오늘 수업에서 다룬 내용을 상세히 입력하세요"
                 rows={4}
+                disabled={isEditing}
               />
             </div>
 
@@ -665,6 +1203,7 @@ export default function LessonsPage() {
                 }
                 placeholder="학생들의 수업 참여도, 태도, 집중력 등을 입력하세요"
                 rows={3}
+                disabled={isEditing}
               />
             </div>
 
@@ -675,6 +1214,7 @@ export default function LessonsPage() {
                 onValueChange={(value: 'high' | 'medium' | 'low') =>
                   setFormData({ ...formData, comprehension_level: value })
                 }
+                disabled={isEditing}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -688,17 +1228,46 @@ export default function LessonsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="homework_assigned">과제</Label>
+              <Label htmlFor="homework_assigned">과제 부여</Label>
               <Textarea
                 id="homework_assigned"
                 value={formData.homework_assigned}
                 onChange={(e) =>
                   setFormData({ ...formData, homework_assigned: e.target.value })
                 }
-                placeholder="학생들에게 부여한 과제를 입력하세요"
+                placeholder="과제를 부여하세요! (작성 완료 시 학생들에게 자동으로 전송됩니다)"
                 rows={2}
               />
             </div>
+
+            {isEditing && formData.homework_assigned && (
+              <div className="space-y-2">
+                <Label>과제를 제출했나요?</Label>
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant={formData.homework_submitted === true ? 'default' : 'outline'}
+                    className={formData.homework_submitted === true ? 'bg-green-600 hover:bg-green-700' : ''}
+                    onClick={() => setFormData({ ...formData, homework_submitted: true })}
+                  >
+                    Yes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={formData.homework_submitted === false ? 'default' : 'outline'}
+                    className={formData.homework_submitted === false ? 'bg-red-600 hover:bg-red-700' : ''}
+                    onClick={() => setFormData({ ...formData, homework_submitted: false })}
+                  >
+                    No
+                  </Button>
+                </div>
+                {formData.homework_submitted !== undefined && (
+                  <p className="text-xs text-muted-foreground">
+                    {formData.homework_submitted ? '✓ 과제가 제출되었습니다' : '✗ 과제가 미제출되었습니다'}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="next_lesson_plan">다음 수업 계획</Label>
@@ -710,23 +1279,29 @@ export default function LessonsPage() {
                 }
                 placeholder="다음 수업에서 다룰 내용을 입력하세요"
                 rows={2}
+                disabled={isEditing}
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="parent_feedback">부모 피드백</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleGenerateFeedback}
-                  disabled={isGeneratingFeedback || !formData.content}
-                >
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  {isGeneratingFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
-                </Button>
+                <Label htmlFor="parent_feedback">선생님 피드백</Label>
+                {!isEditing && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateFeedback}
+                    disabled={isGeneratingFeedback || !formData.content}
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isGeneratingFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
+                  </Button>
+                )}
               </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                선생님이 작성한 부모님에게 보내는 피드백
+              </p>
               <Textarea
                 id="parent_feedback"
                 value={formData.parent_feedback}
@@ -736,19 +1311,88 @@ export default function LessonsPage() {
                 placeholder="부모님께 보낼 피드백을 입력하거나 AI로 생성하세요"
                 rows={4}
               />
-              <p className="text-xs text-muted-foreground">
-                AI 버튼을 클릭하면 수업 내용을 바탕으로 부모님께 보낼 피드백 초안이 자동 생성됩니다
+              {!isEditing && (
+                <p className="text-xs text-muted-foreground">
+                  AI 버튼을 클릭하면 수업 내용을 바탕으로 부모님께 보낼 피드백 초안이 자동 생성됩니다
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="director_feedback">원장님 피드백</Label>
+                {userRole !== 'director' && userRole !== 'admin' && (
+                  <Badge variant="secondary" className="text-xs">원장님만 작성 가능</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                원장님이 작성한 부모님에게 보내는 추가 피드백
               </p>
+              <Textarea
+                id="director_feedback"
+                value={formData.director_feedback}
+                onChange={(e) =>
+                  setFormData({ ...formData, director_feedback: e.target.value })
+                }
+                placeholder={userRole === 'director' || userRole === 'admin' ? "원장님의 추가 피드백을 입력하세요" : "원장님만 작성할 수 있습니다"}
+                rows={4}
+                disabled={userRole !== 'director' && userRole !== 'admin'}
+              />
+            </div>
+
+            <div className="border-t pt-4 mt-6">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="final_message" className="text-base font-semibold">최종 부모님에게 가는 알림톡 내용</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGenerateFinalMessage}
+                    disabled={isGeneratingFinalMessage}
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isGeneratingFinalMessage ? 'AI 생성 중...' : 'AI 알림톡 생성'}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mb-2">
+                  위의 모든 내용을 종합하여 부모님께 전송될 최종 알림톡 메시지입니다
+                </p>
+                <Textarea
+                  id="final_message"
+                  value={formData.final_message}
+                  onChange={(e) =>
+                    setFormData({ ...formData, final_message: e.target.value })
+                  }
+                  placeholder="AI 알림톡 생성 버튼을 클릭하면 자동으로 알림톡 내용이 생성됩니다"
+                  rows={8}
+                  className="font-mono text-sm"
+                />
+                <p className="text-xs text-muted-foreground">
+                  생성된 내용을 수정한 후 '알림톡 보내기' 버튼을 클릭하여 전송할 수 있습니다
+                </p>
+              </div>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              취소
+              {isEditing ? '닫기' : '취소'}
             </Button>
-            <Button onClick={handleSaveLesson}>
-              {isEditing ? '수정' : '작성'} 완료
-            </Button>
+            {isEditing ? (
+              <>
+                <Button variant="secondary" onClick={handleUpdateFeedback}>
+                  피드백 저장
+                </Button>
+                <Button onClick={handleSendNotification}>
+                  알림톡 보내기
+                </Button>
+              </>
+            ) : (
+              <Button onClick={handleSaveLesson}>
+                작성 완료
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

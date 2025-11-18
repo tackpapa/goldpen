@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable } from '@/components/ui/data-table'
@@ -22,18 +21,18 @@ import type { Attendance } from '@/lib/types/database'
 import { format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
-// Mock data - 오늘 예정 학생
+// Mock data - 오늘 예정 학생 (teacher_id와 is_one_on_one 추가)
 const mockTodayStudents = [
-  { id: '1', student_id: 'st1', student_name: '김민준', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '14:00', status: 'present' as const },
-  { id: '2', student_id: 'st2', student_name: '이서연', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '15:00', status: 'present' as const },
-  { id: '3', student_id: 'st3', student_name: '박준호', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '14:00', status: 'late' as const },
-  { id: '4', student_id: 'st4', student_name: '최지우', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '16:00', status: 'absent' as const },
-  { id: '5', student_id: 'st5', student_name: '정하은', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '15:00', status: 'present' as const },
-  { id: '6', student_id: 'st6', student_name: '강민서', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '14:00', status: 'present' as const },
-  { id: '7', student_id: 'st7', student_name: '윤서준', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '16:00', status: 'present' as const },
-  { id: '8', student_id: 'st8', student_name: '장서연', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '15:00', status: 'excused' as const },
-  { id: '9', student_id: 'st9', student_name: '임도윤', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '14:00', status: 'present' as const },
-  { id: '10', student_id: 'st10', student_name: '한지우', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '16:00', status: 'late' as const },
+  { id: '1', student_id: 'st1', student_name: '김민준', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'present' as const },
+  { id: '2', student_id: 'st2', student_name: '이서연', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '1500~1700', teacher_id: 't2', teacher_name: '김영희', is_one_on_one: false, status: 'scheduled' as const },
+  { id: '3', student_id: 'st3', student_name: '박준호', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'late' as const },
+  { id: '4', student_id: 'st4', student_name: '최지우', class_id: null, class_name: null, scheduled_time: '1600~1800', teacher_id: 't3', teacher_name: '이민준', is_one_on_one: true, status: 'absent' as const },
+  { id: '5', student_id: 'st5', student_name: '정하은', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '1500~1700', teacher_id: 't2', teacher_name: '김영희', is_one_on_one: false, status: 'scheduled' as const },
+  { id: '6', student_id: 'st6', student_name: '강민서', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'present' as const },
+  { id: '7', student_id: 'st7', student_name: '윤서준', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '1600~1800', teacher_id: 't3', teacher_name: '이민준', is_one_on_one: false, status: 'scheduled' as const },
+  { id: '8', student_id: 'st8', student_name: '장서연', class_id: null, class_name: null, scheduled_time: '1500~1700', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: true, status: 'excused' as const },
+  { id: '9', student_id: 'st9', student_name: '임도윤', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'present' as const },
+  { id: '10', student_id: 'st10', student_name: '한지우', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '1600~1800', teacher_id: 't3', teacher_name: '이민준', is_one_on_one: false, status: 'late' as const },
 ]
 
 // Mock data - 최근 출결 기록
@@ -72,18 +71,34 @@ export default function AttendancePage() {
   const { toast } = useToast()
   const [todayAttendance, setTodayAttendance] = useState(mockTodayStudents)
   const [selectedClass, setSelectedClass] = useState<string>('all')
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null)
+
+  // Get user role from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const role = localStorage.getItem('userRole')
+      setUserRole(role)
+      // In real app, get teacher ID from auth context
+      // For demo, assume t1 is the logged-in teacher
+      if (role === 'teacher') {
+        setCurrentTeacherId('t1')
+      }
+    }
+  }, [])
 
   const statusMap = {
+    scheduled: { label: '수업예정', variant: 'outline' as const, icon: Calendar, color: 'text-gray-600' },
     present: { label: '출석', variant: 'default' as const, icon: CheckCircle, color: 'text-green-600' },
     late: { label: '지각', variant: 'secondary' as const, icon: Clock, color: 'text-orange-600' },
     absent: { label: '결석', variant: 'destructive' as const, icon: XCircle, color: 'text-red-600' },
     excused: { label: '인정결석', variant: 'outline' as const, icon: CheckCircle, color: 'text-blue-600' },
   }
 
-  const handleStatusChange = (studentId: string, newStatus: 'present' | 'absent' | 'late' | 'excused') => {
+  const handleStatusChange = (studentId: string, newStatus: 'scheduled' | 'present' | 'absent' | 'late' | 'excused') => {
     setTodayAttendance(
       todayAttendance.map((record) =>
-        record.student_id === studentId ? { ...record, status: newStatus } : record
+        record.student_id === studentId ? { ...record, status: newStatus } as typeof record : record
       )
     )
     toast({
@@ -107,8 +122,17 @@ export default function AttendancePage() {
       accessorKey: 'class_name',
       header: '반',
       cell: ({ row }) => {
-        const className = row.getValue('class_name') as string
-        return <Badge variant="secondary">{className}</Badge>
+        const student = row.original
+        const displayName = student.is_one_on_one ? '1:1' : student.class_name
+        return <Badge variant="secondary">{displayName}</Badge>
+      },
+    },
+    {
+      accessorKey: 'teacher_name',
+      header: '선생님',
+      cell: ({ row }) => {
+        const teacherName = row.getValue('teacher_name') as string
+        return <span className="text-sm">{teacherName}</span>
       },
     },
     {
@@ -152,6 +176,7 @@ export default function AttendancePage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="scheduled">수업예정</SelectItem>
               <SelectItem value="present">출석</SelectItem>
               <SelectItem value="late">지각</SelectItem>
               <SelectItem value="absent">결석</SelectItem>
@@ -163,27 +188,33 @@ export default function AttendancePage() {
     },
   ]
 
+  // Filter by teacher if user is a teacher (not admin)
+  const teacherFilteredAttendance =
+    userRole === 'teacher' && currentTeacherId
+      ? todayAttendance.filter((record) => record.teacher_id === currentTeacherId)
+      : todayAttendance
+
   const filteredTodayAttendance =
     selectedClass === 'all'
-      ? todayAttendance
-      : todayAttendance.filter((record) => record.class_id === selectedClass)
+      ? teacherFilteredAttendance
+      : teacherFilteredAttendance.filter((record) => record.class_id === selectedClass)
 
   const todayStats = {
-    total: todayAttendance.length,
-    present: todayAttendance.filter((r) => r.status === 'present').length,
-    late: todayAttendance.filter((r) => r.status === 'late').length,
-    absent: todayAttendance.filter((r) => r.status === 'absent').length,
-    excused: todayAttendance.filter((r) => r.status === 'excused').length,
+    total: teacherFilteredAttendance.length,
+    scheduled: teacherFilteredAttendance.filter((r) => r.status === 'scheduled').length,
+    present: teacherFilteredAttendance.filter((r) => r.status === 'present').length,
+    late: teacherFilteredAttendance.filter((r) => r.status === 'late').length,
+    absent: teacherFilteredAttendance.filter((r) => r.status === 'absent').length,
+    excused: teacherFilteredAttendance.filter((r) => r.status === 'excused').length,
     rate: Math.round(
-      (todayAttendance.filter((r) => r.status === 'present' || r.status === 'excused').length /
-        todayAttendance.length) *
+      (teacherFilteredAttendance.filter((r) => r.status === 'present' || r.status === 'excused').length /
+        teacherFilteredAttendance.length) *
         100
     ),
   }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <PagePermissions pageId="attendance" />
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">출결 관리</h1>
         <p className="text-sm md:text-base text-muted-foreground">학생 출결을 관리하세요</p>

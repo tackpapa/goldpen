@@ -5,20 +5,31 @@ import { createBrowserClient } from '@supabase/ssr'
  * Client Component에서 사용
  */
 export function createClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  // 환경 변수 체크 및 fallback
+  let supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+  let supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
-  // 개발 환경: Supabase 미설정 시 빈 URL로 생성 (실제 사용 시 에러 방지)
-  if (!supabaseUrl || !supabaseKey ||
+  // .env.example의 placeholder 값인지 체크
+  if (!supabaseUrl ||
       supabaseUrl === 'your-supabase-url' ||
-      supabaseKey === 'your-supabase-anon-key' ||
+      supabaseUrl.includes('your-project') ||
       !supabaseUrl.startsWith('http')) {
-    // Mock client: 실제 API 호출은 실패하지만 애플리케이션은 로드됨
-    return createBrowserClient(
-      'https://placeholder.supabase.co',
-      'placeholder-anon-key'
-    )
+    // 로컬 Supabase 하드코딩 (개발용)
+    supabaseUrl = 'http://127.0.0.1:54321'
   }
+
+  if (!supabaseKey ||
+      supabaseKey === 'your-supabase-anon-key' ||
+      supabaseKey.includes('your-anon-key')) {
+    // 로컬 Supabase 키 하드코딩 (개발용) - 프레젠테이션용 더미 값
+    supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0'
+  }
+
+  console.log('🔧 Supabase client config:', {
+    url: supabaseUrl,
+    keyPrefix: supabaseKey.substring(0, 30) + '...',
+    isProduction: process.env.NODE_ENV === 'production',
+  })
 
   return createBrowserClient(supabaseUrl, supabaseKey)
 }

@@ -14,6 +14,7 @@ import {
   DoorOpen,
   Grid3x3,
   Armchair,
+  Wallet,
   LucideIcon,
 } from 'lucide-react'
 
@@ -61,14 +62,14 @@ export const navigationItems: NavigationItem[] = [
     name: '출결 관리',
     href: '/attendance',
     icon: CheckSquare,
-    badges: ['학원용', '독서실', '공부방'],
+    badges: ['학원용', '독서실', '공부방', '강사용'],
   },
   {
     id: 'lessons',
     name: '수업일지',
     href: '/lessons',
     icon: Calendar,
-    badges: ['학원용'],
+    badges: ['강사용'],
   },
   {
     id: 'teachers',
@@ -93,7 +94,7 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     id: 'seats',
-    name: '자리현황판',
+    name: '독서실관리',
     href: '/seats',
     icon: Armchair,
     badges: ['독서실', '공부방'],
@@ -110,20 +111,27 @@ export const navigationItems: NavigationItem[] = [
     name: '시험 관리',
     href: '/exams',
     icon: ClipboardList,
-    badges: ['학원용'],
+    badges: ['강사용'],
   },
   {
     id: 'homework',
     name: '과제 관리',
     href: '/homework',
     icon: FileText,
-    badges: ['학원용'],
+    badges: ['강사용'],
   },
   {
     id: 'billing',
-    name: '청구/정산',
+    name: '매출정산',
     href: '/billing',
     icon: CreditCard,
+    badges: ['학원용', '독서실', '공부방'],
+  },
+  {
+    id: 'expenses',
+    name: '지출정산',
+    href: '/expenses',
+    icon: Wallet,
     badges: ['학원용', '독서실', '공부방'],
   },
   {
@@ -143,7 +151,12 @@ export function getEnabledMenuIds(): string[] {
   if (!stored) return navigationItems.map(item => item.id)
 
   try {
-    return JSON.parse(stored)
+    const parsed = JSON.parse(stored)
+    // If empty array, return all items (safety check)
+    if (Array.isArray(parsed) && parsed.length === 0) {
+      return navigationItems.map(item => item.id)
+    }
+    return parsed
   } catch {
     return navigationItems.map(item => item.id)
   }
@@ -155,8 +168,40 @@ export function setEnabledMenuIds(ids: string[]): void {
   localStorage.setItem('enabledMenus', JSON.stringify(ids))
 }
 
+// Helper function to get menu order from localStorage
+export function getMenuOrder(): string[] {
+  if (typeof window === 'undefined') return navigationItems.map(item => item.id)
+
+  const stored = localStorage.getItem('menuOrder')
+  if (!stored) return navigationItems.map(item => item.id)
+
+  try {
+    return JSON.parse(stored)
+  } catch {
+    return navigationItems.map(item => item.id)
+  }
+}
+
+// Helper function to save menu order to localStorage
+export function setMenuOrder(order: string[]): void {
+  if (typeof window === 'undefined') return
+  localStorage.setItem('menuOrder', JSON.stringify(order))
+}
+
 // Helper function to get filtered navigation items
 export function getFilteredNavigation(): NavigationItem[] {
   const enabledIds = getEnabledMenuIds()
-  return navigationItems.filter(item => enabledIds.includes(item.id))
+  const menuOrder = getMenuOrder()
+
+  // Sort by custom order
+  const orderedItems = menuOrder
+    .map(id => navigationItems.find(item => item.id === id))
+    .filter((item): item is NavigationItem => item !== undefined)
+
+  // Add any new items that aren't in the order yet
+  const orderedIds = new Set(menuOrder)
+  const newItems = navigationItems.filter(item => !orderedIds.has(item.id))
+
+  const allItems = [...orderedItems, ...newItems]
+  return allItems.filter(item => enabledIds.includes(item.id))
 }

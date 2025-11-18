@@ -17,6 +17,7 @@ export type PageId =
   | 'exams'
   | 'homework'
   | 'billing'
+  | 'expenses'
 
 // 페이지 정보
 export interface PageInfo {
@@ -59,7 +60,8 @@ export const ALL_PAGES: PageInfo[] = [
   { id: 'consultations', name: '상담 관리', path: '/consultations' },
   { id: 'exams', name: '시험 관리', path: '/exams' },
   { id: 'homework', name: '과제 관리', path: '/homework' },
-  { id: 'billing', name: '청구/정산', path: '/billing' },
+  { id: 'billing', name: '매출정산', path: '/billing' },
+  { id: 'expenses', name: '지출정산', path: '/expenses' },
 ]
 
 // 기본 페이지 권한 (모든 페이지를 staff와 teacher가 접속 가능하도록 설정)

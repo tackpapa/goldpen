@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, Calendar, TrendingUp, DollarSign, ArrowUp, ArrowDown, BookOpen, Clock, UserCheck, Armchair } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { PagePermissions } from '@/components/page-permissions'
 import {
   LineChart,
   Line,
@@ -143,7 +142,6 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <PagePermissions pageId="overview" />
       <div>
         <h1 className="text-2xl md:text-3xl font-bold">대시보드</h1>
         <p className="text-sm md:text-base text-muted-foreground">오늘의 운영 현황을 확인하세요</p>

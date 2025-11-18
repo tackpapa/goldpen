@@ -4,7 +4,6 @@
 import { useState } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable } from '@/components/ui/data-table'
@@ -29,7 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Calendar, Eye, MoreHorizontal, Phone, Mail, Plus, ListPlus, X } from 'lucide-react'
+import { Calendar, Eye, MoreHorizontal, Phone, Mail, Plus, ListPlus, X, Upload, Image as ImageIcon } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +62,10 @@ const mockConsultations: Consultation[] = [
     scheduled_date: '2025-06-20T14:00:00',
     status: 'scheduled',
     notes: '수학 기초가 부족함',
+    images: [
+      'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=400&h=300&fit=crop',
+      'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=400&h=300&fit=crop',
+    ],
   },
   {
     id: '2',
@@ -77,6 +80,9 @@ const mockConsultations: Consultation[] = [
     goals: '영어 회화 실력 향상',
     preferred_times: '주말 오전',
     status: 'new',
+    images: [
+      'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400&h=300&fit=crop',
+    ],
   },
   {
     id: '3',
@@ -91,6 +97,11 @@ const mockConsultations: Consultation[] = [
     scheduled_date: '2025-06-12T15:00:00',
     status: 'enrolled',
     result: '수학, 영어 수강 등록 완료. 주 3회 수업 (월/수/금 오후 4-6시)',
+    images: [
+      'https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?w=400&h=300&fit=crop',
+      'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=400&h=300&fit=crop',
+      'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=300&fit=crop',
+    ],
   },
   {
     id: '4',
@@ -128,6 +139,7 @@ export default function ConsultationsPage() {
     goals: '',
     preferred_times: '',
     notes: '',
+    images: [] as string[],
   })
 
   // Waitlist states
@@ -157,6 +169,17 @@ export default function ConsultationsPage() {
     {
       accessorKey: 'student_name',
       header: '학생 이름',
+      cell: ({ row }) => {
+        const consultation = row.original
+        return (
+          <button
+            onClick={() => handleViewDetail(consultation)}
+            className="text-primary hover:underline font-medium"
+          >
+            {consultation.student_name}
+          </button>
+        )
+      },
     },
     {
       accessorKey: 'student_grade',
@@ -381,6 +404,7 @@ export default function ConsultationsPage() {
       goals: newConsultation.goals || undefined,
       preferred_times: newConsultation.preferred_times || undefined,
       notes: newConsultation.notes || undefined,
+      images: newConsultation.images.length > 0 ? newConsultation.images : undefined,
       status: 'new',
     }
 
@@ -400,6 +424,7 @@ export default function ConsultationsPage() {
       goals: '',
       preferred_times: '',
       notes: '',
+      images: [],
     })
     setIsNewDialogOpen(false)
   }
@@ -502,7 +527,6 @@ export default function ConsultationsPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <PagePermissions pageId="consultations" />
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">상담 관리</h1>
@@ -681,6 +705,74 @@ export default function ConsultationsPage() {
                 rows={3}
               />
             </div>
+
+            {/* Image Upload */}
+            <div className="space-y-2">
+              <Label>이미지 첨부</Label>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="consultation-image-upload"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || [])
+                      files.forEach((file) => {
+                        const reader = new FileReader()
+                        reader.onloadend = () => {
+                          setNewConsultation((prev) => ({
+                            ...prev,
+                            images: [...prev.images, reader.result as string],
+                          }))
+                        }
+                        reader.readAsDataURL(file)
+                      })
+                      e.target.value = '' // Reset input
+                    }}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => document.getElementById('consultation-image-upload')?.click()}
+                  >
+                    <Upload className="mr-2 h-4 w-4" />
+                    이미지 추가
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {newConsultation.images.length}개 첨부됨
+                  </span>
+                </div>
+
+                {/* Image Preview */}
+                {newConsultation.images.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {newConsultation.images.map((img, idx) => (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={img}
+                          alt={`Preview ${idx + 1}`}
+                          className="h-24 w-full object-cover rounded-lg border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewConsultation((prev) => ({
+                              ...prev,
+                              images: prev.images.filter((_, i) => i !== idx),
+                            }))
+                          }}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <DialogFooter>
@@ -848,6 +940,39 @@ export default function ConsultationsPage() {
                   placeholder="상담 관련 메모를 입력하세요"
                 />
               </div>
+
+              {/* Attached Images */}
+              {selectedConsultation.images && selectedConsultation.images.length > 0 && (
+                <div className="space-y-2">
+                  <Label>첨부 이미지 ({selectedConsultation.images.length}개)</Label>
+                  <div className="grid grid-cols-3 gap-3">
+                    {selectedConsultation.images.map((img, idx) => (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={img}
+                          alt={`Attachment ${idx + 1}`}
+                          className="w-full h-32 object-cover rounded-lg border-2 border-gray-200 cursor-pointer hover:border-primary transition-colors"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            window.open(img, '_blank', 'noopener,noreferrer')
+                          }}
+                        />
+                        <div
+                          className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            window.open(img, '_blank', 'noopener,noreferrer')
+                          }}
+                        >
+                          <Eye className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Result (for enrolled) */}
               {selectedConsultation.status === 'enrolled' && (

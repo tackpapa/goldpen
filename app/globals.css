@@ -53,8 +53,22 @@
   * {
     @apply border-border;
   }
+  html,
   body {
     @apply bg-background text-foreground;
+    height: 100%;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* iOS Safari fixed bottom navigation fix */
+  body {
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+  }
+
+  html {
+    height: -webkit-fill-available;
   }
 }
 

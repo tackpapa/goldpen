@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
@@ -246,16 +245,18 @@ const dayOfWeekMap = {
 }
 
 const timeSlots = [
-  '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
+  '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+  '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'
 ]
 
-// Room color mapping
-const roomColors: Record<string, { bg: string; text: string; border: string }> = {
-  '201호': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  '202호': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
-  '203호': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
-  '실험실': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
-  '특강실': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
+// Teacher color mapping
+const teacherColors: Record<string, { bg: string; text: string; border: string }> = {
+  'teacher-1': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  'teacher-2': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+  'teacher-3': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+  'teacher-4': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  'teacher-5': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
 }
 
 export default function RoomsPage() {
@@ -330,8 +331,8 @@ export default function RoomsPage() {
     }
   }, [isDragging, dragStart, dragEnd])
 
-  const getRoomColor = (roomName: string) => {
-    return roomColors[roomName] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
+  const getTeacherColor = (teacherId: string) => {
+    return teacherColors[teacherId] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
   }
 
   const handleMouseDown = (
@@ -494,6 +495,24 @@ export default function RoomsPage() {
     return null
   }
 
+  // Check if cell should be hidden (merged into previous cell)
+  const isCellMerged = (roomId: string, dayOfWeek: keyof typeof dayOfWeekMap, time: string): boolean => {
+    const timeIndex = timeSlots.indexOf(time)
+
+    for (const schedule of schedules) {
+      if (schedule.room_id === roomId && schedule.day_of_week === dayOfWeek) {
+        const startIndex = timeSlots.indexOf(schedule.start_time)
+        const endIndex = timeSlots.indexOf(schedule.end_time)
+
+        // This cell is merged (not the starting cell)
+        if (timeIndex > startIndex && timeIndex < endIndex) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+
   // Calculate how many rows a schedule spans
   const getScheduleRowSpan = (schedule: RoomSchedule): number => {
     const startIndex = timeSlots.indexOf(schedule.start_time)
@@ -515,7 +534,6 @@ export default function RoomsPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
-      <PagePermissions pageId="rooms" />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -589,7 +607,7 @@ export default function RoomsPage() {
             {mockRooms.map((room) => (
               <TabsContent key={room.id} value={room.id}>
                 <div className="overflow-x-auto">
-                  <div className="grid grid-cols-8 gap-2 min-w-[900px]">
+                  <div className="grid grid-cols-[auto_repeat(7,1fr)] auto-rows-[50px] gap-2 min-w-[900px]">
                     {/* Header */}
                     <div className="font-medium text-sm text-muted-foreground p-2">시간</div>
                     {Object.keys(dayOfWeekMap).map((dayKey) => {
@@ -601,105 +619,113 @@ export default function RoomsPage() {
                       )
                     })}
 
-                    {/* Time slots */}
-                    {timeSlots.map((time) => (
-                      <>
+                    {/* Time slots and cells */}
+                    {timeSlots.flatMap((time, timeIdx) => {
+                      const cells = []
+
+                      // Time label cell
+                      cells.push(
                         <div key={`time-${time}`} className="text-sm text-muted-foreground p-2 flex items-center">
                           {time}
                         </div>
-                        {Object.keys(dayOfWeekMap).map((dayKey) => {
-                          const schedulesInCell = getSchedulesForCell(
-                            room.id,
-                            dayKey as keyof typeof dayOfWeekMap,
-                            time
-                          )
+                      )
 
-                          const timeIndex = timeSlots.indexOf(time)
-                          const isInDragRange = isCellInDragRange(room.id, dayKey, timeIndex)
-                          const occupyingSchedule = isCellOccupied(room.id, dayKey as keyof typeof dayOfWeekMap, time)
+                      // Day cells
+                      Object.keys(dayOfWeekMap).forEach((dayKey) => {
+                        const schedulesInCell = getSchedulesForCell(
+                          room.id,
+                          dayKey as keyof typeof dayOfWeekMap,
+                          time
+                        )
 
-                          // If this cell is occupied by a schedule from a previous time slot, render empty cell
-                          if (occupyingSchedule) {
-                            return (
-                              <div
-                                key={`${time}-${dayKey}`}
-                                className="min-h-[80px] border-0"
-                              />
-                            )
-                          }
+                        const timeIndex = timeSlots.indexOf(time)
+                        const isInDragRange = isCellInDragRange(room.id, dayKey, timeIndex)
+                        const isMerged = isCellMerged(room.id, dayKey as keyof typeof dayOfWeekMap, time)
 
-                          return (
-                            <div
-                              key={`${time}-${dayKey}`}
-                              onMouseDown={() =>
-                                handleMouseDown(
-                                  room.id,
-                                  room.name,
-                                  dayKey as keyof typeof dayOfWeekMap,
-                                  time
-                                )
-                              }
-                              onMouseEnter={() =>
-                                handleMouseEnter(
-                                  room.id,
-                                  dayKey as keyof typeof dayOfWeekMap,
-                                  time
-                                )
-                              }
-                              onMouseUp={handleMouseUp}
-                              onClick={() =>
-                                handleCellClick(
-                                  room.id,
-                                  room.name,
-                                  dayKey as keyof typeof dayOfWeekMap,
-                                  time
-                                )
-                              }
-                              style={
-                                schedulesInCell.length > 0 && schedulesInCell[0]
-                                  ? {
-                                      height: `calc(${getScheduleRowSpan(schedulesInCell[0])} * 80px + ${getScheduleRowSpan(schedulesInCell[0]) - 1} * 8px)`,
-                                    }
-                                  : undefined
-                              }
-                              className={cn(
-                                "min-h-[80px] border rounded-lg p-1 hover:bg-muted/50 transition-colors cursor-pointer select-none",
-                                isInDragRange && "bg-blue-100 border-blue-400 border-2"
-                              )}
-                            >
-                              {schedulesInCell.length > 0 ? (
-                                <div className="space-y-1 pointer-events-none h-full">
-                                  {schedulesInCell.map((schedule) => (
+                        // Skip rendering if this cell is merged into a previous cell
+                        if (isMerged) {
+                          return
+                        }
+
+                        const schedule = schedulesInCell[0]
+                        const rowSpan = schedule ? getScheduleRowSpan(schedule) : 1
+
+                        cells.push(
+                          <div
+                            key={`${time}-${dayKey}`}
+                            onMouseDown={() =>
+                              handleMouseDown(
+                                room.id,
+                                room.name,
+                                dayKey as keyof typeof dayOfWeekMap,
+                                time
+                              )
+                            }
+                            onMouseEnter={() =>
+                              handleMouseEnter(
+                                room.id,
+                                dayKey as keyof typeof dayOfWeekMap,
+                                time
+                              )
+                            }
+                            onMouseUp={handleMouseUp}
+                            onClick={() =>
+                              handleCellClick(
+                                room.id,
+                                room.name,
+                                dayKey as keyof typeof dayOfWeekMap,
+                                time
+                              )
+                            }
+                            style={
+                              rowSpan > 1
+                                ? {
+                                    gridRow: `span ${rowSpan}`,
+                                  }
+                                : undefined
+                            }
+                            className={cn(
+                              "border rounded-lg p-1 hover:bg-muted/50 transition-colors cursor-pointer select-none overflow-hidden",
+                              isInDragRange && "bg-blue-100 border-blue-400 border-2"
+                            )}
+                          >
+                            {schedulesInCell.length > 0 ? (
+                              <div className="pointer-events-none h-full">
+                                {schedulesInCell.map((schedule) => {
+                                  const teacherColor = getTeacherColor(schedule.teacher_id || '')
+                                  return (
                                     <div
                                       key={schedule.id}
                                       className={cn(
-                                        "text-xs p-2 rounded border-l-4 h-full flex flex-col justify-center",
-                                        getRoomColor(room.name).bg,
-                                        getRoomColor(room.name).border
+                                        "text-[10px] px-1.5 py-1 rounded border-l-2 h-full flex flex-col justify-center gap-0.5",
+                                        teacherColor.bg,
+                                        teacherColor.border
                                       )}
                                     >
-                                      <div className={cn("font-medium", getRoomColor(room.name).text)}>
+                                      <div className={cn("font-medium leading-tight", teacherColor.text)}>
                                         {schedule.teacher_name}
                                       </div>
-                                      <div className="text-muted-foreground text-[10px] mt-0.5">
+                                      <div className="text-muted-foreground text-[9px] leading-tight">
                                         {schedule.student_grade}학년 {schedule.student_name}
                                       </div>
-                                      <div className="text-muted-foreground text-[10px]">
+                                      <div className="text-muted-foreground text-[9px] leading-tight">
                                         {schedule.start_time}-{schedule.end_time}
                                       </div>
                                     </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="h-full flex items-center justify-center text-muted-foreground text-xs pointer-events-none">
-                                  {isInDragRange ? '드래그 중...' : '클릭 또는 드래그하여 등록'}
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </>
-                    ))}
+                                  )
+                                })}
+                              </div>
+                            ) : (
+                              <div className="h-full flex items-center justify-center text-muted-foreground text-[10px] pointer-events-none">
+                                {isInDragRange ? '드래그 중...' : '클릭하여 등록'}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+
+                      return cells
+                    })}
                   </div>
                 </div>
               </TabsContent>

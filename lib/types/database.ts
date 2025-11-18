@@ -3,6 +3,18 @@
  * 자동 생성된 타입 정의
  */
 
+// ============================================
+// STUDENT CORE (가볍게 유지)
+// ============================================
+export interface StudentFile {
+  id: string
+  name: string
+  type: string // MIME type
+  size: number // bytes
+  url: string // Base64 or file URL
+  uploaded_at: string
+}
+
 export interface Student {
   id: string
   created_at: string
@@ -20,7 +32,138 @@ export interface Student {
   status: 'active' | 'inactive' | 'graduated'
   enrollment_date: string // 입교 날짜
   notes?: string
+  files?: StudentFile[] // 학생 자료 파일
 }
+
+// ============================================
+// SERVICE ENROLLMENT (서비스 소속)
+// ============================================
+export interface ServiceEnrollment {
+  id: string
+  created_at: string
+  student_id: string
+  service_type: 'academy' | 'study_room' | 'study_center'
+  status: 'active' | 'inactive' | 'paused'
+  enrolled_at: string
+  notes?: string
+}
+
+export type ServiceEnrollmentInsert = Omit<ServiceEnrollment, 'id' | 'created_at'>
+
+// ============================================
+// ATTENDANCE SCHEDULE (출근 스케줄)
+// ============================================
+export interface AttendanceSchedule {
+  id: string
+  created_at: string
+  updated_at: string
+  student_id: string
+  day_of_week: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+  start_time: string // "09:00"
+  end_time: string   // "18:00"
+  notes?: string
+}
+
+export type AttendanceScheduleInsert = Omit<AttendanceSchedule, 'id' | 'created_at' | 'updated_at'>
+
+// ============================================
+// CLASS CREDITS (수업 크레딧)
+// ============================================
+export interface ClassCredit {
+  id: string
+  created_at: string
+  student_id: string
+  total_hours: number      // 총 충전 시간
+  used_hours: number       // 사용한 시간
+  remaining_hours: number  // 남은 시간
+  expiry_date?: string     // 만료일 (optional)
+  status: 'active' | 'expired' | 'depleted'
+}
+
+// 크레딧 트랜잭션 (충전/사용 내역)
+export interface CreditTransaction {
+  id: string
+  created_at: string
+  student_id: string
+  credit_id: string
+  type: 'charge' | 'use' | 'refund' | 'expire'
+  amount: number           // 변동 시간 (+ or -)
+  balance_after: number    // 거래 후 잔액
+  related_payment_id?: string
+  related_class_id?: string  // 수업 사용 시
+  notes?: string
+}
+
+export type ClassCreditInsert = Omit<ClassCredit, 'id' | 'created_at'>
+export type CreditTransactionInsert = Omit<CreditTransaction, 'id' | 'created_at'>
+
+// ============================================
+// STUDY ROOM PASS (독서실 이용권)
+// ============================================
+export interface StudyRoomPass {
+  id: string
+  created_at: string
+  student_id: string
+  pass_type: 'hours' | 'days'  // 시간권 or 일수권
+  total_amount: number         // 총 시간/일수
+  remaining_amount: number     // 남은 시간/일수
+  start_date: string
+  expiry_date: string
+  status: 'active' | 'expired' | 'paused' | 'depleted'
+  notes?: string
+}
+
+// 독서실 이용 내역
+export interface StudyRoomUsage {
+  id: string
+  created_at: string
+  student_id: string
+  pass_id: string
+  check_in: string   // ISO datetime
+  check_out?: string // ISO datetime
+  duration_hours?: number  // 계산된 이용 시간
+  notes?: string
+}
+
+export type StudyRoomPassInsert = Omit<StudyRoomPass, 'id' | 'created_at'>
+export type StudyRoomUsageInsert = Omit<StudyRoomUsage, 'id' | 'created_at'>
+
+// ============================================
+// PAYMENT RECORDS (결제 내역)
+// ============================================
+export interface PaymentRecord {
+  id: string
+  created_at: string
+  org_id: string
+  student_id: string
+  student_name: string
+
+  // 결제 정보
+  amount: number
+  payment_date: string
+  payment_method: 'card' | 'cash' | 'transfer'
+
+  // 수입 항목 (Revenue Category 연동)
+  revenue_category_id: string
+  revenue_category_name: string
+
+  // 부여 항목 (optional)
+  granted_credits?: {
+    hours: number
+    credit_id: string  // 생성된 ClassCredit ID
+  }
+  granted_pass?: {
+    type: 'hours' | 'days'
+    amount: number
+    pass_id: string  // 생성된 StudyRoomPass ID
+  }
+
+  status: 'completed' | 'refunded' | 'pending'
+  refunded_at?: string
+  notes?: string
+}
+
+export type PaymentRecordInsert = Omit<PaymentRecord, 'id' | 'created_at'>
 
 export interface Class {
   id: string
@@ -127,6 +270,7 @@ export interface Consultation {
   notes?: string
   result?: string
   enrolled_date?: string // 입교 날짜 (상태가 enrolled일 때)
+  images?: string[] // 업로드된 이미지 URL 배열 (Base64 or file URL)
 }
 
 export type ConsultationInsert = Omit<Consultation, 'id' | 'created_at' | 'updated_at'>
@@ -219,6 +363,7 @@ export type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'updated_at'>
 export interface Organization {
   id: string
   name: string
+  owner_name?: string // 원장 이름
   address: string
   phone: string
   email: string
@@ -349,3 +494,276 @@ export interface RoomSchedule {
 
 export type RoomInsert = Omit<Room, 'id' | 'created_at'>
 export type RoomScheduleInsert = Omit<RoomSchedule, 'id' | 'created_at'>
+
+// Revenue Settlement (매출정산)
+export interface RevenueSettlement {
+  id: string
+  created_at: string
+  org_id: string
+  period_start: string // 정산 기간 시작
+  period_end: string // 정산 기간 종료
+  total_revenue: number // 총 수익 (수강료)
+  total_expenses: number // 총 지출 (급여 등)
+  teacher_salaries: {
+    teacher_id: string
+    teacher_name: string
+    amount: number
+    hours_worked?: number // 시간강사 근무 시간
+  }[]
+  other_expenses: {
+    description: string
+    amount: number
+    category: 'rent' | 'utilities' | 'supplies' | 'marketing' | 'other'
+  }[]
+  net_profit: number // 순이익
+  notes?: string
+}
+
+export type RevenueSettlementInsert = Omit<RevenueSettlement, 'id' | 'created_at'>
+
+// Monthly Revenue Summary (월별 매출 요약)
+export interface MonthlyRevenueSummary {
+  month: string // YYYY-MM
+  revenue: number // 수강료 수익
+  expenses: number // 지출
+  net_profit: number // 순이익
+  student_count: number // 등록 학생 수
+  revenue_per_student: number // 학생당 평균 수익
+}
+
+// Revenue Category (수입 항목)
+export interface RevenueCategory {
+  id: string
+  name: string // 항목명 (예: 수강료, 자릿세, 룸이용료, 교재판매)
+  description?: string // 설명
+  is_active: boolean // 활성화 여부
+  order: number // 정렬 순서
+  created_at: string
+}
+
+export type RevenueCategoryInsert = Omit<RevenueCategory, 'id' | 'created_at'>
+
+// Default Revenue Categories (기본 수입 항목)
+export const DEFAULT_REVENUE_CATEGORIES: Omit<RevenueCategory, 'id' | 'created_at'>[] = [
+  { name: '수강료', description: '학생 수강료 수입', is_active: true, order: 1 },
+  { name: '자릿세', description: '독서실 좌석 이용료', is_active: true, order: 2 },
+  { name: '룸이용료', description: '스터디룸 대여료', is_active: true, order: 3 },
+  { name: '교재판매', description: '교재 및 교구 판매 수입', is_active: true, order: 4 },
+]
+
+// Expense Category (지출 항목)
+export interface ExpenseCategory {
+  id: string
+  name: string // 항목명 (예: 강사 급여, 임대료, 관리비, 교재/교구, 마케팅, 기타)
+  description?: string // 설명
+  is_active: boolean // 활성화 여부
+  order: number // 정렬 순서
+  color: string // 차트 색상 (hex)
+  created_at: string
+}
+
+export type ExpenseCategoryInsert = Omit<ExpenseCategory, 'id' | 'created_at'>
+
+// Default Expense Categories (기본 지출 항목)
+export const DEFAULT_EXPENSE_CATEGORIES: Omit<ExpenseCategory, 'id' | 'created_at'>[] = [
+  { name: '강사 급여', description: '정규직 및 시간강사 급여', is_active: true, order: 1, color: '#3b82f6' },
+  { name: '임대료', description: '건물/시설 임대료', is_active: true, order: 2, color: '#8b5cf6' },
+  { name: '관리비', description: '전기/수도/인터넷 등', is_active: true, order: 3, color: '#ec4899' },
+  { name: '교재/교구', description: '교재 및 교구 구입비', is_active: true, order: 4, color: '#f59e0b' },
+  { name: '마케팅', description: '광고/홍보 비용', is_active: true, order: 5, color: '#10b981' },
+  { name: '기타', description: '기타 운영 비용', is_active: true, order: 6, color: '#6b7280' },
+]
+
+// Expense Record (지출 기록)
+export interface ExpenseRecord {
+  id: string
+  created_at: string
+  org_id: string
+  category_id: string
+  category_name: string
+  amount: number
+  expense_date: string
+  is_recurring: boolean // 반복성 지출 여부
+  recurring_type?: 'weekly' | 'monthly' // 주마다 / 월마다
+  notes?: string
+}
+
+export type ExpenseRecordInsert = Omit<ExpenseRecord, 'id' | 'created_at'>
+
+// Monthly Expense Summary (월별 지출 요약)
+export interface MonthlyExpenseSummary {
+  month: string // YYYY-MM
+  total_expenses: number // 총 지출
+  category_expenses: {
+    category_id: string
+    category_name: string
+    amount: number
+    percentage: number
+  }[]
+  previous_month_total?: number // 전월 총 지출
+  change_percentage?: number // 전월 대비 변화율
+}
+
+// ============================================
+// LIVE SCREEN (독서실 라이브 스크린)
+// ============================================
+
+// 일일 플래너 (학생의 오늘 공부 계획)
+export interface DailyPlanner {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string // YYYY-MM-DD
+  study_plans: {
+    id: string
+    subject: string
+    description: string
+    completed: boolean
+  }[]
+  notes?: string
+}
+
+export type DailyPlannerInsert = Omit<DailyPlanner, 'id' | 'created_at'>
+
+// 외출 기록
+export interface OutingRecord {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string
+  outing_time: string // ISO datetime
+  return_time?: string // ISO datetime
+  reason: string
+  status: 'out' | 'returned'
+}
+
+export type OutingRecordInsert = Omit<OutingRecord, 'id' | 'created_at'>
+
+// 수면 기록 (하루 2회 제한)
+export interface SleepRecord {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string
+  sleep_time: string // ISO datetime
+  wake_time?: string // ISO datetime
+  duration_minutes?: number
+  status: 'sleeping' | 'awake'
+}
+
+export type SleepRecordInsert = Omit<SleepRecord, 'id' | 'created_at'>
+
+// 학생 일일 공부 시간 (타이머 기록)
+export interface StudyTimeRecord {
+  id: string
+  created_at: string
+  student_id: string
+  student_name: string
+  seat_number: number
+  org_id: string
+  date: string // YYYY-MM-DD
+  study_duration_minutes: number // 총 공부 시간 (분)
+  timer_sessions: {
+    id: string
+    start_time: string
+    end_time: string
+    duration_minutes: number
+  }[]
+}
+
+export type StudyTimeRecordInsert = Omit<StudyTimeRecord, 'id' | 'created_at'>
+
+// 공부시간 랭킹
+export interface StudyTimeRanking {
+  student_id: string
+  student_name: string
+  surname: string // 성만 공개 (예: 김**)
+  total_minutes: number
+  rank: number
+  period_type: 'daily' | 'weekly' | 'monthly'
+  period: string // YYYY-MM-DD for daily, YYYY-WW for weekly, YYYY-MM for monthly
+}
+
+// Live Screen 상태 (학생당 하루 사용 제한)
+export interface LiveScreenState {
+  student_id: string
+  seat_number: number
+  date: string
+  sleep_count: number // 오늘 수면 사용 횟수 (최대 2)
+  is_out: boolean // 현재 외출 중인지
+  current_outing_id?: string
+  current_sleep_id?: string
+  timer_running: boolean
+  timer_start_time?: string
+}
+
+// 과목 정의 (Subject)
+export interface Subject {
+  id: string
+  created_at: string
+  student_id: string
+  name: string // 과목명 (예: 국어, 영어, 수학)
+  color: string // 버튼 색상 (hex, 예: #FF6B35)
+  order: number // 정렬 순서
+}
+
+export type SubjectInsert = Omit<Subject, 'id' | 'created_at'>
+
+// 과목별 공부 세션 (Study Session by Subject)
+export interface StudySession {
+  id: string
+  created_at: string
+  student_id: string
+  subject_id: string
+  subject_name: string
+  date: string // YYYY-MM-DD
+  start_time: string // ISO datetime
+  end_time?: string // ISO datetime
+  duration_seconds: number
+  status: 'active' | 'completed'
+}
+
+export type StudySessionInsert = Omit<StudySession, 'id' | 'created_at'>
+
+// 과목별 통계 (일별)
+export interface SubjectStatistics {
+  subject_id: string
+  subject_name: string
+  subject_color: string
+  total_seconds: number
+  session_count: number
+  date: string // YYYY-MM-DD
+}
+
+// 호출 기록 (Call Records)
+export interface CallRecord {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  date: string // YYYY-MM-DD
+  call_time: string // ISO datetime
+  acknowledged_time?: string // ISO datetime
+  message: string
+  status: 'calling' | 'acknowledged'
+}
+
+export type CallRecordInsert = Omit<CallRecord, 'id' | 'created_at'>
+
+// 매니저 호출 기록 (Manager Calls)
+export interface ManagerCall {
+  id: string
+  created_at: string
+  student_id: string
+  seat_number: number
+  student_name: string
+  date: string // YYYY-MM-DD
+  call_time: string // ISO datetime
+  acknowledged_time?: string // ISO datetime
+  status: 'calling' | 'acknowledged'
+}
+
+export type ManagerCallInsert = Omit<ManagerCall, 'id' | 'created_at'>

@@ -1,21 +1,31 @@
 {
   "mcpServers": {
-    "supabase": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-supabase"
-      ],
-      "env": {
-        "SUPABASE_URL": "https://your-project.supabase.co",
-        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key"
-      }
-    },
     "browser": {
       "command": "npx",
       "args": [
         "-y",
         "@modelcontextprotocol/server-puppeteer"
+      ]
+    },
+    "serena": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@serenaai/mcp-server-serena"
+      ]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@context7/mcp-server"
       ]
     },
     "github": {
@@ -25,7 +35,18 @@
         "@modelcontextprotocol/server-github"
       ],
       "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token"
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "your-github-token-here"
+      }
+    },
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-supabase"
+      ],
+      "env": {
+        "SUPABASE_URL": "your-supabase-url",
+        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key"
       }
     }
   }

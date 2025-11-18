@@ -18,25 +18,84 @@
 
 ---
 
+## 🚨 필수 준수 사항: Cloudflare 스택 사용
+
+### ⚡ Edge Runtime 필수 사용 규칙
+
+**🔴 절대 원칙**: 모든 API 라우트와 서버 로직은 **Edge Runtime**을 사용해야 합니다.
+
+```typescript
+// ✅ 올바른 예시 - 모든 API 라우트에 필수
+export const runtime = 'edge'
+
+export async function GET(request: Request) {
+  // Edge Runtime에서 실행
+}
+```
+
+```typescript
+// ❌ 잘못된 예시 - Node.js Runtime 사용 금지
+// export const runtime = 'nodejs'  // 절대 사용 금지!
+```
+
+### 🎯 Cloudflare 스택 전용 개발 지침
+
+1. **모든 API는 Cloudflare Workers로 배포**
+   - Next.js API Routes 대신 **Hono + Workers** 사용
+   - `workers/api/` 디렉토리에 API 구현
+   - Edge Runtime 필수 (`export const runtime = 'edge'`)
+
+2. **Cloudflare Pages로 프론트엔드 배포**
+   - `@cloudflare/next-on-pages` 빌드 도구 사용
+   - `npm run pages:build` → `wrangler pages deploy`
+   - Image Optimization 비활성화 유지 (`unoptimized: true`)
+
+3. **Node.js 전용 API 사용 금지**
+   - `fs`, `path`, `crypto` (Node.js 내장 모듈) → Cloudflare 호환 대안 사용
+   - 예: `crypto` → Web Crypto API 사용
+
+4. **환경 변수는 Cloudflare Pages/Workers 설정 사용**
+   ```bash
+   # Cloudflare Pages 환경 변수 설정
+   wrangler pages secret put SECRET_NAME
+
+   # wrangler.toml에 공개 변수만
+   [vars]
+   NEXT_PUBLIC_APP_URL = "https://classflow.pages.dev"
+   ```
+
+5. **데이터베이스 연결**
+   - Supabase (Edge 호환) ✅
+   - Cloudflare D1 (Workers 전용) ✅
+   - Cloudflare KV (키-값 저장소) ✅
+   - PostgreSQL 직접 연결 (Node.js 필요) ❌
+
+---
+
 ## 🏗️ 기술 스택
 
 ### Frontend
 ```yaml
-Framework: Next.js 15 (App Router)
+Framework: Next.js 14.2 (App Router)
 Language: TypeScript 5.x
 Styling: Tailwind CSS 4.x
 UI Components: shadcn/ui
 State Management: React Context + Zustand (필요시)
 Forms: React Hook Form + Zod
+Deployment: Cloudflare Pages (필수)
+Build Tool: @cloudflare/next-on-pages (필수)
 ```
 
-### Backend/BFF
+### Backend/API
 ```yaml
-Platform: Cloudflare Workers
+Platform: Cloudflare Workers (필수)
 Framework: Hono (경량 웹 프레임워크)
+Runtime: Edge Runtime (필수)
 API Style: REST + tRPC (타입 안전성)
 Cron Jobs: Cloudflare Scheduled Workers
 Queue: Cloudflare Queues (비동기 작업)
+KV Store: Cloudflare KV (세션/캐시)
+Database: Cloudflare D1 or Supabase (Edge 호환)
 ```
 
 ### Database & Auth

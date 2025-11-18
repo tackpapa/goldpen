@@ -48,39 +48,41 @@ export function PagePermissions({ pageId }: PagePermissionsProps) {
   }
 
   return (
-    <div className="fixed top-16 right-4 mt-[15px] z-50 inline-flex items-center gap-3 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg shadow-lg">
-      <div className="flex items-center gap-1.5">
-        <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
-        <span className="text-xs font-semibold text-blue-900">접근 권한 설정</span>
-      </div>
-      <div className="flex items-center gap-3">
+    <div className="flex justify-end mb-4">
+      <div className="inline-flex items-center gap-3 px-3 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
         <div className="flex items-center gap-1.5">
-          <Checkbox
-            id={`staff-${pageId}`}
-            checked={staffAccess}
-            onCheckedChange={handleStaffChange}
-            className="h-3.5 w-3.5"
-          />
-          <Label
-            htmlFor={`staff-${pageId}`}
-            className="text-xs font-medium cursor-pointer whitespace-nowrap"
-          >
-            직원 접속 가능
-          </Label>
+          <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
+          <span className="text-xs font-semibold text-blue-900">접근 권한 설정</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <Checkbox
-            id={`teacher-${pageId}`}
-            checked={teacherAccess}
-            onCheckedChange={handleTeacherChange}
-            className="h-3.5 w-3.5"
-          />
-          <Label
-            htmlFor={`teacher-${pageId}`}
-            className="text-xs font-medium cursor-pointer whitespace-nowrap"
-          >
-            강사 접속 가능
-          </Label>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id={`staff-${pageId}`}
+              checked={staffAccess}
+              onCheckedChange={handleStaffChange}
+              className="h-3.5 w-3.5"
+            />
+            <Label
+              htmlFor={`staff-${pageId}`}
+              className="text-xs font-medium cursor-pointer whitespace-nowrap"
+            >
+              직원 접속 가능
+            </Label>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Checkbox
+              id={`teacher-${pageId}`}
+              checked={teacherAccess}
+              onCheckedChange={handleTeacherChange}
+              className="h-3.5 w-3.5"
+            />
+            <Label
+              htmlFor={`teacher-${pageId}`}
+              className="text-xs font-medium cursor-pointer whitespace-nowrap"
+            >
+              강사 접속 가능
+            </Label>
+          </div>
         </div>
       </div>
     </div>

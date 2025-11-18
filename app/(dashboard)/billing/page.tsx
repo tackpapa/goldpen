@@ -1,25 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DataTable } from '@/components/ui/data-table'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -28,515 +14,747 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Eye, MoreHorizontal, DollarSign, AlertCircle } from 'lucide-react'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import type { Invoice } from '@/lib/types/database'
-import { format } from 'date-fns'
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  Users,
+  Wallet,
+  ArrowUpRight,
+  ArrowDownRight,
+  Calendar,
+  Download,
+  FileText,
+} from 'lucide-react'
 import {
   BarChart,
   Bar,
   LineChart,
   Line,
+  PieChart,
+  Pie,
+  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  Legend,
+  Area,
+  AreaChart,
 } from 'recharts'
+import type { MonthlyRevenueSummary } from '@/lib/types/database'
+import { format } from 'date-fns'
+import { cn } from '@/lib/utils'
 
-// Mock data
-const mockInvoices: Invoice[] = [
+// Mock data - 수입 내역
+interface RevenueTransaction {
+  id: string
+  date: string
+  category: string // 수강료, 자릿세, 룸이용료, 교재판매
+  amount: number
+  student_name: string
+  description: string
+  payment_method: '현금' | '카드' | '계좌이체'
+}
+
+const mockRevenueTransactions: RevenueTransaction[] = [
+  // 수강료
+  { id: 'r1', date: '2025-06-01', category: '수강료', amount: 500000, student_name: '김민준', description: '수학 특강반 6월 수강료', payment_method: '계좌이체' },
+  { id: 'r2', date: '2025-06-01', category: '수강료', amount: 450000, student_name: '이서연', description: '영어 회화반 6월 수강료', payment_method: '카드' },
+  { id: 'r3', date: '2025-06-02', category: '수강료', amount: 500000, student_name: '박준호', description: '수학 특강반 6월 수강료', payment_method: '현금' },
+  { id: 'r4', date: '2025-06-03', category: '수강료', amount: 400000, student_name: '최지우', description: '국어 독해반 6월 수강료', payment_method: '계좌이체' },
+  { id: 'r5', date: '2025-06-03', category: '수강료', amount: 450000, student_name: '정하은', description: '영어 회화반 6월 수강료', payment_method: '카드' },
+  { id: 'r6', date: '2025-06-05', category: '수강료', amount: 500000, student_name: '강민서', description: '수학 특강반 6월 수강료', payment_method: '계좌이체' },
+  { id: 'r7', date: '2025-06-05', category: '수강료', amount: 400000, student_name: '윤서준', description: '국어 독해반 6월 수강료', payment_method: '현금' },
+  { id: 'r8', date: '2025-06-07', category: '수강료', amount: 450000, student_name: '장서연', description: '영어 회화반 6월 수강료', payment_method: '카드' },
+  { id: 'r9', date: '2025-06-08', category: '수강료', amount: 500000, student_name: '임도윤', description: '수학 특강반 6월 수강료', payment_method: '계좌이체' },
+  { id: 'r10', date: '2025-06-10', category: '수강료', amount: 400000, student_name: '한지우', description: '국어 독해반 6월 수강료', payment_method: '카드' },
+
+  // 자릿세 (독서실)
+  { id: 'r11', date: '2025-06-01', category: '자릿세', amount: 150000, student_name: '송민재', description: '독서실 1번 좌석 6월 이용료', payment_method: '계좌이체' },
+  { id: 'r12', date: '2025-06-01', category: '자릿세', amount: 150000, student_name: '김서윤', description: '독서실 5번 좌석 6월 이용료', payment_method: '현금' },
+  { id: 'r13', date: '2025-06-02', category: '자릿세', amount: 150000, student_name: '이준혁', description: '독서실 10번 좌석 6월 이용료', payment_method: '카드' },
+  { id: 'r14', date: '2025-06-03', category: '자릿세', amount: 150000, student_name: '박지은', description: '독서실 15번 좌석 6월 이용료', payment_method: '계좌이체' },
+  { id: 'r15', date: '2025-06-05', category: '자릿세', amount: 200000, student_name: '최수민', description: '독서실 VIP 좌석 6월 이용료', payment_method: '카드' },
+  { id: 'r16', date: '2025-06-07', category: '자릿세', amount: 150000, student_name: '정예준', description: '독서실 20번 좌석 6월 이용료', payment_method: '현금' },
+  { id: 'r17', date: '2025-06-10', category: '자릿세', amount: 150000, student_name: '강하린', description: '독서실 25번 좌석 6월 이용료', payment_method: '계좌이체' },
+
+  // 룸이용료
+  { id: 'r18', date: '2025-06-05', category: '룸이용료', amount: 300000, student_name: '김영수', description: '스터디룸 A 6월 대여료', payment_method: '계좌이체' },
+  { id: 'r19', date: '2025-06-06', category: '룸이용료', amount: 250000, student_name: '이철민', description: '스터디룸 B 6월 대여료', payment_method: '카드' },
+  { id: 'r20', date: '2025-06-08', category: '룸이용료', amount: 300000, student_name: '박소현', description: '스터디룸 A 주말 대여료', payment_method: '현금' },
+  { id: 'r21', date: '2025-06-12', category: '룸이용료', amount: 250000, student_name: '최민지', description: '스터디룸 B 주말 대여료', payment_method: '카드' },
+
+  // 교재판매
+  { id: 'r22', date: '2025-06-02', category: '교재판매', amount: 45000, student_name: '김민준', description: '수학 문제집 (상), (하) 2권', payment_method: '현금' },
+  { id: 'r23', date: '2025-06-03', category: '교재판매', amount: 35000, student_name: '이서연', description: '영어 워크북', payment_method: '카드' },
+  { id: 'r24', date: '2025-06-05', category: '교재판매', amount: 50000, student_name: '박준호', description: '수학 심화 문제집 세트', payment_method: '계좌이체' },
+  { id: 'r25', date: '2025-06-07', category: '교재판매', amount: 30000, student_name: '최지우', description: '국어 독해 교재', payment_method: '현금' },
+  { id: 'r26', date: '2025-06-10', category: '교재판매', amount: 40000, student_name: '정하은', description: '영어 단어장 + 워크북', payment_method: '카드' },
+  { id: 'r27', date: '2025-06-12', category: '교재판매', amount: 55000, student_name: '강민서', description: '과학 탐구 실험 교재 세트', payment_method: '계좌이체' },
+  { id: 'r28', date: '2025-06-15', category: '교재판매', amount: 38000, student_name: '윤서준', description: '국어 문학 작품집', payment_method: '현금' },
+]
+
+// Mock data - 월별 매출 요약
+const mockMonthlySummary: MonthlyRevenueSummary[] = [
   {
-    id: '1',
-    created_at: '2025-06-01',
-    updated_at: '2025-06-01',
-    org_id: 'org-1',
-    student_id: 'student-1',
-    student_name: '김민준',
-    invoice_number: 'INV-2025-001',
-    items: [
-      { description: '수학 수강료 (6월)', amount: 300000 },
-      { description: '영어 수강료 (6월)', amount: 250000 },
-    ],
-    total_amount: 550000,
-    due_date: '2025-06-10',
-    payment_status: 'paid',
-    paid_at: '2025-06-08',
-    payment_method: 'card',
+    month: '2025-01',
+    revenue: 18500000,
+    expenses: 12300000,
+    net_profit: 6200000,
+    student_count: 98,
+    revenue_per_student: 188776,
   },
   {
-    id: '2',
-    created_at: '2025-06-01',
-    updated_at: '2025-06-01',
-    org_id: 'org-1',
-    student_id: 'student-2',
-    student_name: '이서연',
-    invoice_number: 'INV-2025-002',
-    items: [
-      { description: '국어 수강료 (6월)', amount: 280000 },
-    ],
-    total_amount: 280000,
-    due_date: '2025-06-15',
-    payment_status: 'pending',
+    month: '2025-02',
+    revenue: 20300000,
+    expenses: 13100000,
+    net_profit: 7200000,
+    student_count: 105,
+    revenue_per_student: 193333,
   },
   {
-    id: '3',
-    created_at: '2025-05-01',
-    updated_at: '2025-05-01',
-    org_id: 'org-1',
-    student_id: 'student-3',
-    student_name: '박준호',
-    invoice_number: 'INV-2025-003',
-    items: [
-      { description: '수학 수강료 (5월)', amount: 300000 },
-    ],
-    total_amount: 300000,
-    due_date: '2025-05-25',
-    payment_status: 'overdue',
+    month: '2025-03',
+    revenue: 22100000,
+    expenses: 14200000,
+    net_profit: 7900000,
+    student_count: 112,
+    revenue_per_student: 197321,
+  },
+  {
+    month: '2025-04',
+    revenue: 21800000,
+    expenses: 13900000,
+    net_profit: 7900000,
+    student_count: 108,
+    revenue_per_student: 201852,
+  },
+  {
+    month: '2025-05',
+    revenue: 23500000,
+    expenses: 15100000,
+    net_profit: 8400000,
+    student_count: 118,
+    revenue_per_student: 199153,
+  },
+  {
+    month: '2025-06',
+    revenue: 24500000,
+    expenses: 15800000,
+    net_profit: 8700000,
+    student_count: 124,
+    revenue_per_student: 197581,
   },
 ]
 
-const monthlyRevenueData = [
-  { month: '1월', revenue: 12500000 },
-  { month: '2월', revenue: 14200000 },
-  { month: '3월', revenue: 15800000 },
-  { month: '4월', revenue: 16500000 },
-  { month: '5월', revenue: 17200000 },
-  { month: '6월', revenue: 18300000 },
+// 지출 카테고리별 데이터
+const expensesCategoryData = [
+  { name: '강사 급여', value: 8500000, color: '#3b82f6' },
+  { name: '임대료', value: 3000000, color: '#8b5cf6' },
+  { name: '관리비', value: 1200000, color: '#ec4899' },
+  { name: '교재/교구', value: 1500000, color: '#f59e0b' },
+  { name: '마케팅', value: 1200000, color: '#10b981' },
+  { name: '기타', value: 400000, color: '#6b7280' },
 ]
+
+// 강사별 급여 데이터
+const teacherSalaryData = [
+  { name: '김선생', type: '정규직', salary: 3500000, hours: 160 },
+  { name: '박선생', type: '정규직', salary: 3200000, hours: 160 },
+  { name: '이선생', type: '시간강사', salary: 800000, hours: 40 },
+  { name: '최선생', type: '시간강사', salary: 600000, hours: 30 },
+  { name: '정선생', type: '시간강사', salary: 400000, hours: 20 },
+]
+
+// 월별 수익률 데이터
+const profitMarginData = mockMonthlySummary.map(item => ({
+  month: item.month.split('-')[1] + '월',
+  수익률: Math.round((item.net_profit / item.revenue) * 100),
+  수익: item.revenue,
+  지출: item.expenses,
+}))
 
 export default function BillingPage() {
   usePageAccess('billing')
 
   const { toast } = useToast()
-  const [invoices, setInvoices] = useState<Invoice[]>(mockInvoices)
-  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
-  const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState('2025-06')
+  const [selectedCategory, setSelectedCategory] = useState<string>('전체')
 
-  const statusMap = {
-    pending: { label: '미납', variant: 'secondary' as const },
-    paid: { label: '완납', variant: 'default' as const },
-    overdue: { label: '연체', variant: 'destructive' as const },
-    cancelled: { label: '취소', variant: 'outline' as const },
-  }
+  // 선택된 월의 데이터
+  const currentMonthData = mockMonthlySummary.find(item => item.month === selectedMonth) || mockMonthlySummary[mockMonthlySummary.length - 1]
+  const previousMonthData = mockMonthlySummary[mockMonthlySummary.findIndex(item => item.month === selectedMonth) - 1]
 
-  const columns: ColumnDef<Invoice>[] = [
-    {
-      accessorKey: 'invoice_number',
-      header: '청구서 번호',
-    },
-    {
-      accessorKey: 'student_name',
-      header: '학생 이름',
-    },
-    {
-      accessorKey: 'total_amount',
-      header: '금액',
-      cell: ({ row }) => {
-        const amount = row.getValue('total_amount') as number
-        return `₩${amount.toLocaleString()}`
-      },
-    },
-    {
-      accessorKey: 'due_date',
-      header: '납부 기한',
-      cell: ({ row }) => {
-        const date = row.getValue('due_date') as string
-        return format(new Date(date), 'yyyy-MM-dd')
-      },
-    },
-    {
-      accessorKey: 'payment_status',
-      header: '상태',
-      cell: ({ row }) => {
-        const status = row.getValue('payment_status') as Invoice['payment_status']
-        const statusInfo = statusMap[status]
-        return <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-      },
-    },
-    {
-      accessorKey: 'paid_at',
-      header: '결제일',
-      cell: ({ row }) => {
-        const date = row.getValue('paid_at') as string
-        return date ? format(new Date(date), 'yyyy-MM-dd') : '-'
-      },
-    },
-    {
-      id: 'actions',
-      cell: ({ row }) => {
-        const invoice = row.original
-        return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleViewDetail(invoice)}>
-                <Eye className="mr-2 h-4 w-4" />
-                상세 보기
-              </DropdownMenuItem>
-              {invoice.payment_status === 'pending' && (
-                <DropdownMenuItem onClick={() => handleMarkAsPaid(invoice.id)}>
-                  결제 완료 처리
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )
-      },
-    },
-  ]
+  // 전월 대비 변화율 계산
+  const revenueChange = previousMonthData
+    ? Math.round(((currentMonthData.revenue - previousMonthData.revenue) / previousMonthData.revenue) * 100)
+    : 0
+  const profitChange = previousMonthData
+    ? Math.round(((currentMonthData.net_profit - previousMonthData.net_profit) / previousMonthData.net_profit) * 100)
+    : 0
+  const profitMargin = Math.round((currentMonthData.net_profit / currentMonthData.revenue) * 100)
 
-  const handleViewDetail = (invoice: Invoice) => {
-    setSelectedInvoice(invoice)
-    setIsDetailDialogOpen(true)
-  }
+  const totalTeacherSalary = teacherSalaryData.reduce((sum, t) => sum + t.salary, 0)
+  const totalExpenses = expensesCategoryData.reduce((sum, e) => sum + e.value, 0)
 
-  const handleMarkAsPaid = (id: string) => {
-    setInvoices(
-      invoices.map((inv) =>
-        inv.id === id
-          ? {
-              ...inv,
-              payment_status: 'paid' as const,
-              paid_at: new Date().toISOString(),
-              payment_method: 'cash' as const,
-            }
-          : inv
-      )
-    )
+  const handleExportReport = () => {
     toast({
-      title: '결제 완료',
-      description: '청구서가 결제 완료 처리되었습니다.',
+      title: '리포트 내보내기',
+      description: 'Excel 파일로 내보내기 기능은 구현 예정입니다.',
     })
   }
-
-  const handleCreateInvoice = () => {
-    // TODO: Implement invoice creation
-    toast({
-      title: '청구서 생성',
-      description: '청구서 생성 기능은 구현 예정입니다.',
-    })
-    setIsCreateDialogOpen(false)
-  }
-
-  const pendingInvoices = invoices.filter((inv) => inv.payment_status === 'pending')
-  const overdueInvoices = invoices.filter((inv) => inv.payment_status === 'overdue')
-  const paidInvoices = invoices.filter((inv) => inv.payment_status === 'paid')
-
-  const totalRevenue = invoices
-    .filter((inv) => inv.payment_status === 'paid')
-    .reduce((sum, inv) => sum + inv.total_amount, 0)
-
-  const pendingAmount = invoices
-    .filter((inv) => inv.payment_status === 'pending')
-    .reduce((sum, inv) => sum + inv.total_amount, 0)
-
-  const overdueAmount = invoices
-    .filter((inv) => inv.payment_status === 'overdue')
-    .reduce((sum, inv) => sum + inv.total_amount, 0)
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <PagePermissions pageId="billing" />
+      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">청구/정산</h1>
-          <p className="text-sm md:text-base text-muted-foreground">수강료 청구 및 정산을 관리하세요</p>
+          <h1 className="text-2xl md:text-3xl font-bold">매출정산</h1>
+          <p className="text-sm md:text-base text-muted-foreground">
+            수익과 지출을 분석하고 재무 현황을 확인하세요
+          </p>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)} className="w-full sm:w-auto">
-          <Plus className="mr-2 h-4 w-4" />
-          청구서 생성
-        </Button>
+        <div className="flex gap-2">
+          <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {mockMonthlySummary.map((item) => (
+                <SelectItem key={item.month} value={item.month}>
+                  {item.month.split('-')[0]}년 {item.month.split('-')[1]}월
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" onClick={handleExportReport}>
+            <Download className="mr-2 h-4 w-4" />
+            리포트
+          </Button>
+        </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      {/* Key Metrics Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">총 수익</CardTitle>
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₩{totalRevenue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">이번 달</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">미납</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">₩{pendingAmount.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">{pendingInvoices.length}건</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">연체</CardTitle>
-            <AlertCircle className="h-4 w-4 text-destructive" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-destructive">
-              ₩{overdueAmount.toLocaleString()}
+            <div className="text-2xl font-bold">₩{currentMonthData.revenue.toLocaleString()}</div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              {revenueChange >= 0 ? (
+                <ArrowUpRight className="h-3 w-3 text-green-500" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3 text-red-500" />
+              )}
+              <span className={revenueChange >= 0 ? 'text-green-500' : 'text-red-500'}>
+                {revenueChange > 0 && '+'}{revenueChange}%
+              </span>
+              <span>전월 대비</span>
             </div>
-            <p className="text-xs text-muted-foreground">{overdueInvoices.length}건</p>
           </CardContent>
         </Card>
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">완납률</CardTitle>
+            <CardTitle className="text-sm font-medium">총 지출</CardTitle>
+            <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">
-              {invoices.length > 0
-                ? Math.round((paidInvoices.length / invoices.length) * 100)
-                : 0}
-              %
+            <div className="text-2xl font-bold">₩{currentMonthData.expenses.toLocaleString()}</div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span>강사 급여 ₩{totalTeacherSalary.toLocaleString()}</span>
             </div>
-            <p className="text-xs text-muted-foreground">{paidInvoices.length}건 완납</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">순이익</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-green-600">
+              ₩{currentMonthData.net_profit.toLocaleString()}
+            </div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              {profitChange >= 0 ? (
+                <ArrowUpRight className="h-3 w-3 text-green-500" />
+              ) : (
+                <ArrowDownRight className="h-3 w-3 text-red-500" />
+              )}
+              <span className={profitChange >= 0 ? 'text-green-500' : 'text-red-500'}>
+                {profitChange > 0 && '+'}{profitChange}%
+              </span>
+              <span>전월 대비</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">수익률</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{profitMargin}%</div>
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Users className="h-3 w-3" />
+              <span>{currentMonthData.student_count}명 등록</span>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="invoices">
+      {/* Charts Section */}
+      <Tabs defaultValue="income" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="invoices">
-            청구서 ({invoices.length})
-          </TabsTrigger>
-          <TabsTrigger value="payments">결제 내역 ({paidInvoices.length})</TabsTrigger>
-          <TabsTrigger value="stats">통계</TabsTrigger>
+          <TabsTrigger value="income">수입내역</TabsTrigger>
+          <TabsTrigger value="revenue">수익 분석</TabsTrigger>
+          <TabsTrigger value="expenses">지출 분석</TabsTrigger>
+          <TabsTrigger value="teachers">강사 급여</TabsTrigger>
+          <TabsTrigger value="trends">추이 분석</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="invoices" className="space-y-4">
+        {/* 수입내역 탭 */}
+        <TabsContent value="income" className="space-y-4">
           <Card>
-            <CardContent className="pt-6">
-              <DataTable
-                columns={columns}
-                data={invoices}
-                searchKey="student_name"
-                searchPlaceholder="학생 이름으로 검색..."
-              />
+            <CardHeader>
+              <CardTitle>수입 내역</CardTitle>
+              <CardDescription>선택된 월의 상세 수입 거래 내역</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Category filter */}
+                <div className="flex gap-2 flex-wrap">
+                  {['전체', '수강료', '자릿세', '룸이용료', '교재판매'].map((category) => (
+                    <Badge
+                      key={category}
+                      variant={selectedCategory === category ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedCategory(category)}
+                    >
+                      {category}
+                    </Badge>
+                  ))}
+                </div>
+
+                {/* Transaction list */}
+                <div className="rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left font-medium">날짜</th>
+                        <th className="p-3 text-left font-medium">카테고리</th>
+                        <th className="p-3 text-left font-medium">학생명</th>
+                        <th className="p-3 text-left font-medium">상세내역</th>
+                        <th className="p-3 text-right font-medium">금액</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mockRevenueTransactions
+                        .filter(t => t.date.startsWith(selectedMonth))
+                        .filter(t => selectedCategory === '전체' || t.category === selectedCategory)
+                        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .map((transaction) => {
+                          const categoryColors: Record<string, string> = {
+                            '수강료': 'bg-blue-100 text-blue-700',
+                            '자릿세': 'bg-purple-100 text-purple-700',
+                            '룸이용료': 'bg-green-100 text-green-700',
+                            '교재판매': 'bg-orange-100 text-orange-700',
+                          }
+                          return (
+                            <tr key={transaction.id} className="border-b last:border-0 hover:bg-muted/50">
+                              <td className="p-3 text-muted-foreground">
+                                {format(new Date(transaction.date), 'MM/dd')}
+                              </td>
+                              <td className="p-3">
+                                <Badge
+                                  variant="secondary"
+                                  className={cn('font-medium', categoryColors[transaction.category])}
+                                >
+                                  {transaction.category}
+                                </Badge>
+                              </td>
+                              <td className="p-3 font-medium">{transaction.student_name}</td>
+                              <td className="p-3 text-muted-foreground">{transaction.description}</td>
+                              <td className="p-3 text-right font-bold">
+                                ₩{transaction.amount.toLocaleString()}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 bg-muted/30">
+                        <td colSpan={4} className="p-3 text-right font-bold">총 수입</td>
+                        <td className="p-3 text-right font-bold text-lg">
+                          ₩{mockRevenueTransactions
+                            .filter(t => t.date.startsWith(selectedMonth))
+                            .filter(t => selectedCategory === '전체' || t.category === selectedCategory)
+                            .reduce((sum, t) => sum + t.amount, 0)
+                            .toLocaleString()}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                {/* Category summary */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                  {['수강료', '자릿세', '룸이용료', '교재판매'].map((category) => {
+                    const categoryTotal = mockRevenueTransactions
+                      .filter(t => t.date.startsWith(selectedMonth) && t.category === category)
+                      .reduce((sum, t) => sum + t.amount, 0)
+                    const categoryCount = mockRevenueTransactions
+                      .filter(t => t.date.startsWith(selectedMonth) && t.category === category)
+                      .length
+
+                    const categoryIcons: Record<string, string> = {
+                      '수강료': '📚',
+                      '자릿세': '🪑',
+                      '룸이용료': '🚪',
+                      '교재판매': '📖',
+                    }
+
+                    return (
+                      <Card key={category}>
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{categoryIcons[category]}</span>
+                            <CardTitle className="text-sm">{category}</CardTitle>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="text-xl font-bold">₩{categoryTotal.toLocaleString()}</div>
+                          <p className="text-xs text-muted-foreground mt-1">{categoryCount}건</p>
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="payments" className="space-y-4">
-          <Card>
-            <CardContent className="pt-6">
-              <DataTable
-                columns={columns}
-                data={paidInvoices}
-                searchKey="student_name"
-                searchPlaceholder="학생 이름으로 검색..."
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="stats" className="space-y-4">
+        {/* 수익 분석 탭 */}
+        <TabsContent value="revenue" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>월별 수익</CardTitle>
-                <CardDescription>최근 6개월 수익 추이</CardDescription>
+                <CardTitle>월별 수익 추이</CardTitle>
+                <CardDescription>최근 6개월 수익 변화</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={monthlyRevenueData}>
+                  <AreaChart data={mockMonthlySummary}>
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
+                    <XAxis
+                      dataKey="month"
+                      tickFormatter={(value) => value.split('-')[1] + '월'}
+                    />
                     <YAxis tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`} />
-                    <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
-                    <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
-                  </BarChart>
+                    <Tooltip
+                      formatter={(value: number) => `₩${value.toLocaleString()}`}
+                      labelFormatter={(label) => `${label.split('-')[0]}년 ${label.split('-')[1]}월`}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="revenue"
+                      stroke="hsl(var(--primary))"
+                      fill="hsl(var(--primary))"
+                      fillOpacity={0.2}
+                      name="수익"
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>수납 현황</CardTitle>
-                <CardDescription>청구서 상태별 분포</CardDescription>
+                <CardTitle>학생당 평균 수익</CardTitle>
+                <CardDescription>등록 학생 수 대비 수익</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="default">완납</Badge>
-                      <span className="text-sm">{paidInvoices.length}건</span>
-                    </div>
-                    <span className="font-medium">
-                      ₩{totalRevenue.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary">미납</Badge>
-                      <span className="text-sm">{pendingInvoices.length}건</span>
-                    </div>
-                    <span className="font-medium">
-                      ₩{pendingAmount.toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant="destructive">연체</Badge>
-                      <span className="text-sm">{overdueInvoices.length}건</span>
-                    </div>
-                    <span className="font-medium text-destructive">
-                      ₩{overdueAmount.toLocaleString()}
-                    </span>
-                  </div>
-                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={mockMonthlySummary}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="month"
+                      tickFormatter={(value) => value.split('-')[1] + '월'}
+                    />
+                    <YAxis tickFormatter={(value) => `₩${(value / 1000).toFixed(0)}K`} />
+                    <Tooltip
+                      formatter={(value: number) => `₩${value.toLocaleString()}`}
+                      labelFormatter={(label) => `${label.split('-')[0]}년 ${label.split('-')[1]}월`}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="revenue_per_student"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2}
+                      dot={{ fill: 'hsl(var(--primary))', r: 4 }}
+                      name="학생당 수익"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>수익 상세</CardTitle>
+              <CardDescription>선택된 월의 수익 내역</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between py-2 border-b">
+                  <span className="font-medium">총 수강료 수익</span>
+                  <span className="text-lg font-bold">₩{currentMonthData.revenue.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted-foreground">등록 학생 수</span>
+                  <span>{currentMonthData.student_count}명</span>
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <span className="text-sm text-muted-foreground">학생당 평균 수익</span>
+                  <span>₩{currentMonthData.revenue_per_student.toLocaleString()}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 지출 분석 탭 */}
+        <TabsContent value="expenses" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle>카테고리별 지출</CardTitle>
+                <CardDescription>지출 항목 분포</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={expensesCategoryData}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {expensesCategoryData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>월별 지출 추이</CardTitle>
+                <CardDescription>최근 6개월 지출 변화</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={mockMonthlySummary}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="month"
+                      tickFormatter={(value) => value.split('-')[1] + '월'}
+                    />
+                    <YAxis tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`} />
+                    <Tooltip
+                      formatter={(value: number) => `₩${value.toLocaleString()}`}
+                      labelFormatter={(label) => `${label.split('-')[0]}년 ${label.split('-')[1]}월`}
+                    />
+                    <Bar
+                      dataKey="expenses"
+                      fill="#ef4444"
+                      radius={[8, 8, 0, 0]}
+                      name="지출"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>지출 상세</CardTitle>
+              <CardDescription>카테고리별 지출 내역</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {expensesCategoryData.map((expense, index) => (
+                  <div key={index} className="flex items-center justify-between py-2 border-b last:border-0">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: expense.color }}
+                      />
+                      <span className="font-medium">{expense.name}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold">₩{expense.value.toLocaleString()}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {Math.round((expense.value / totalExpenses) * 100)}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between py-2 pt-4 border-t-2">
+                  <span className="font-bold">총 지출</span>
+                  <span className="text-lg font-bold">₩{totalExpenses.toLocaleString()}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 강사 급여 탭 */}
+        <TabsContent value="teachers" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>강사별 급여 내역</CardTitle>
+              <CardDescription>선택된 월의 강사 급여 정산</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="grid gap-4">
+                  {teacherSalaryData.map((teacher, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold">{teacher.name}</span>
+                          <Badge variant={teacher.type === '정규직' ? 'default' : 'secondary'}>
+                            {teacher.type}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {teacher.type === '시간강사' ? (
+                            <span>근무시간: {teacher.hours}시간 • 시급: ₩{Math.round(teacher.salary / teacher.hours).toLocaleString()}</span>
+                          ) : (
+                            <span>월급제 • {teacher.hours}시간</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-xl font-bold">₩{teacher.salary.toLocaleString()}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {Math.round((teacher.salary / totalTeacherSalary) * 100)}%
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
+                  <div>
+                    <div className="font-bold">총 급여 지출</div>
+                    <div className="text-sm text-muted-foreground">
+                      정규직 {teacherSalaryData.filter(t => t.type === '정규직').length}명 •
+                      시간강사 {teacherSalaryData.filter(t => t.type === '시간강사').length}명
+                    </div>
+                  </div>
+                  <div className="text-2xl font-bold">₩{totalTeacherSalary.toLocaleString()}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 추이 분석 탭 */}
+        <TabsContent value="trends" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>수익 vs 지출 추이</CardTitle>
+              <CardDescription>최근 6개월 수익과 지출 비교</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={350}>
+                <LineChart data={mockMonthlySummary}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="month"
+                    tickFormatter={(value) => value.split('-')[1] + '월'}
+                  />
+                  <YAxis tickFormatter={(value) => `${(value / 1000000).toFixed(1)}M`} />
+                  <Tooltip
+                    formatter={(value: number) => `₩${value.toLocaleString()}`}
+                    labelFormatter={(label) => `${label.split('-')[0]}년 ${label.split('-')[1]}월`}
+                  />
+                  <Legend />
+                  <Line
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={{ fill: '#3b82f6', r: 4 }}
+                    name="수익"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="expenses"
+                    stroke="#ef4444"
+                    strokeWidth={2}
+                    dot={{ fill: '#ef4444', r: 4 }}
+                    name="지출"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="net_profit"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    dot={{ fill: '#10b981', r: 4 }}
+                    name="순이익"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>수익률 추이</CardTitle>
+              <CardDescription>순이익 / 총수익 비율</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={profitMarginData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis tickFormatter={(value) => `${value}%`} />
+                  <Tooltip
+                    formatter={(value: number, name: string) => {
+                      if (name === '수익률') return `${value}%`
+                      return `₩${value.toLocaleString()}`
+                    }}
+                  />
+                  <Legend />
+                  <Bar dataKey="수익률" fill="#10b981" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
-
-      {/* Detail Dialog */}
-      <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>청구서 상세</DialogTitle>
-            <DialogDescription>청구서 정보를 확인하세요</DialogDescription>
-          </DialogHeader>
-
-          {selectedInvoice && (
-            <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>청구서 번호</Label>
-                  <Input value={selectedInvoice.invoice_number} disabled />
-                </div>
-                <div className="space-y-2">
-                  <Label>학생 이름</Label>
-                  <Input value={selectedInvoice.student_name} disabled />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>청구 항목</Label>
-                <div className="rounded-md border">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="p-2 text-left">항목</th>
-                        <th className="p-2 text-right">금액</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedInvoice.items.map((item, i) => (
-                        <tr key={i} className="border-b">
-                          <td className="p-2">{item.description}</td>
-                          <td className="p-2 text-right">₩{item.amount.toLocaleString()}</td>
-                        </tr>
-                      ))}
-                      <tr className="font-bold">
-                        <td className="p-2">합계</td>
-                        <td className="p-2 text-right">
-                          ₩{selectedInvoice.total_amount.toLocaleString()}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>납부 기한</Label>
-                  <Input
-                    value={format(new Date(selectedInvoice.due_date), 'yyyy-MM-dd')}
-                    disabled
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>상태</Label>
-                  <Input value={statusMap[selectedInvoice.payment_status].label} disabled />
-                </div>
-              </div>
-
-              {selectedInvoice.paid_at && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label>결제일</Label>
-                    <Input
-                      value={format(new Date(selectedInvoice.paid_at), 'yyyy-MM-dd')}
-                      disabled
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>결제 방법</Label>
-                    <Input
-                      value={
-                        selectedInvoice.payment_method === 'card'
-                          ? '카드'
-                          : selectedInvoice.payment_method === 'cash'
-                          ? '현금'
-                          : '계좌이체'
-                      }
-                      disabled
-                    />
-                  </div>
-                </div>
-              )}
-
-              {selectedInvoice.notes && (
-                <div className="space-y-2">
-                  <Label>메모</Label>
-                  <Textarea value={selectedInvoice.notes} disabled rows={3} />
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDetailDialogOpen(false)}>
-              닫기
-            </Button>
-            {selectedInvoice?.payment_status === 'pending' && (
-              <Button onClick={() => {
-                handleMarkAsPaid(selectedInvoice.id)
-                setIsDetailDialogOpen(false)
-              }}>
-                결제 완료 처리
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Create Dialog */}
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>청구서 생성</DialogTitle>
-            <DialogDescription>새 청구서를 생성합니다</DialogDescription>
-          </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-muted-foreground">
-              청구서 생성 기능은 구현 예정입니다.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)}>
-              취소
-            </Button>
-            <Button onClick={handleCreateInvoice}>생성</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

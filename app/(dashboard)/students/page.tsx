@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
-import { PagePermissions } from '@/components/page-permissions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
@@ -38,6 +37,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { StudentDetailModal } from '@/components/students/StudentDetailModal'
 
 // Grade options
 const gradeOptions = [
@@ -69,6 +69,24 @@ const mockStudents: Student[] = [
     status: 'active',
     enrollment_date: '2025-01-01',
     notes: '성실한 학생',
+    files: [
+      {
+        id: 'file-1',
+        name: '성적표_2025_1학기.pdf',
+        type: 'application/pdf',
+        size: 245678,
+        url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+        uploaded_at: '2025-01-15T10:30:00',
+      },
+      {
+        id: 'file-2',
+        name: '학생증_사진.jpg',
+        type: 'image/jpeg',
+        size: 156789,
+        url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop',
+        uploaded_at: '2025-01-20T14:20:00',
+      },
+    ],
   },
   {
     id: '2',
@@ -97,6 +115,10 @@ export default function StudentsPage() {
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
+  // Student detail modal state
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+
   const {
     register,
     handleSubmit,
@@ -115,6 +137,20 @@ export default function StudentsPage() {
     {
       accessorKey: 'name',
       header: '이름',
+      cell: ({ row }) => {
+        const student = row.original
+        return (
+          <button
+            className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
+            onClick={() => {
+              setSelectedStudent(student)
+              setIsDetailModalOpen(true)
+            }}
+          >
+            {student.name}
+          </button>
+        )
+      },
     },
     {
       accessorKey: 'grade',
@@ -273,7 +309,6 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <PagePermissions pageId="students" />
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">학생 관리</h1>
@@ -473,6 +508,20 @@ export default function StudentsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Student Detail Modal */}
+      <StudentDetailModal
+        student={selectedStudent}
+        open={isDetailModalOpen}
+        onOpenChange={setIsDetailModalOpen}
+        onUpdate={(updatedStudent) => {
+          setStudents(students.map(s => s.id === updatedStudent.id ? updatedStudent : s))
+          toast({
+            title: '학생 정보 업데이트',
+            description: `${updatedStudent.name} 학생의 정보가 업데이트되었습니다.`,
+          })
+        }}
+      />
     </div>
   )
 }

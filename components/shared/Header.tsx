@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -22,6 +22,34 @@ export function Header() {
   const { toast } = useToast()
   const supabase = createClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string>('사용자')
+
+  // Get user role and name from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const role = localStorage.getItem('userRole')
+      const name = localStorage.getItem('userName') || '사용자'
+      setUserRole(role)
+      setUserName(name)
+    }
+  }, [])
+
+  // Get greeting based on role
+  const getGreeting = () => {
+    if (!userRole) return `${userName}님 안녕하세요!`
+
+    switch (userRole) {
+      case 'admin':
+        return `원장님 안녕하세요!`
+      case 'teacher':
+        return `${userName} 강사님 안녕하세요!`
+      case 'staff':
+        return `${userName} 매니저님 안녕하세요!`
+      default:
+        return `${userName}님 안녕하세요!`
+    }
+  }
 
   const handleLogout = async () => {
     try {
@@ -61,6 +89,11 @@ export function Header() {
               <span className="text-base md:text-lg font-bold text-primary-foreground">C</span>
             </div>
             <h1 className="text-lg md:text-xl font-bold hidden sm:block">ClassFlow OS</h1>
+          </div>
+
+          {/* 역할별 인사말 */}
+          <div className="hidden md:block text-sm font-medium text-muted-foreground">
+            {getGreeting()}
           </div>
         </div>
 
