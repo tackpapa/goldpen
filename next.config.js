@@ -21,6 +21,11 @@ const nextConfig = {
   experimental: {
     typedRoutes: true, // 타입 안전한 라우팅
   },
+
+  // Cloudflare Pages 최적화
+  images: {
+    unoptimized: true, // Cloudflare Images 또는 Loader 사용
+  },
 }
 
 module.exports = nextConfig
