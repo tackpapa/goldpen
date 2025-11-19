@@ -84,6 +84,8 @@ export default function LiveScreenPage({ params }: PageProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const [managerCallModalOpen, setManagerCallModalOpen] = useState(false)
+  const [fullscreenPromptOpen, setFullscreenPromptOpen] = useState(false)
+  const [isIOSDevice, setIsIOSDevice] = useState(false)
 
   // Mock ranking data
   const [rankings] = useState<{
@@ -170,8 +172,31 @@ export default function LiveScreenPage({ params }: PageProps) {
     }
   }, [])
 
-  // Auto-enter fullscreen every 5 seconds if not in fullscreen
+  // Detect iOS device and mobile/tablet on mount (client-side only)
   useEffect(() => {
+    const checkIsIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+    setIsIOSDevice(checkIsIOS)
+
+    // iOS/iPad면 모달 표시
+    if (checkIsIOS) {
+      setFullscreenPromptOpen(true)
+    }
+  }, [])
+
+  // Check if device is mobile or tablet (not PC)
+  const isMobileOrTablet = () => {
+    if (typeof window === 'undefined') return false
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(navigator.userAgent)
+  }
+
+  // Auto-enter fullscreen every 5 seconds if not in fullscreen (Mobile/Tablet only, excluding iOS)
+  useEffect(() => {
+    // iOS/iPad는 모달로 처리하므로 자동 진입 건너뜀
+    if (isIOSDevice) return
+
+    // PC는 자동 풀스크린 진입 안 함
+    if (!isMobileOrTablet()) return
+
     const checkAndEnterFullscreen = async () => {
       // Check if already in fullscreen (support both standard and webkit)
       const isInFullscreen = !!(
@@ -184,16 +209,12 @@ export default function LiveScreenPage({ params }: PageProps) {
         try {
           const element = containerRef.current as any
 
-          // Try webkit prefixed version first (for iPad)
-          if (element.webkitRequestFullscreen) {
-            await element.webkitRequestFullscreen()
-          }
-          // Then try standard version
-          else if (element.requestFullscreen) {
+          // Try standard version (Android)
+          if (typeof element.requestFullscreen === 'function') {
             await element.requestFullscreen()
           }
         } catch (error) {
-          console.log('Auto-fullscreen failed:', error)
+          // Silently fail
         }
       }
     }
@@ -205,7 +226,13 @@ export default function LiveScreenPage({ params }: PageProps) {
     const interval = setInterval(checkAndEnterFullscreen, 5000)
 
     return () => clearInterval(interval)
-  }, [])
+  }, [isIOSDevice])
+
+  // Handle fullscreen prompt (iOS/iPad only)
+  const handleEnterFullscreenFromPrompt = async () => {
+    setFullscreenPromptOpen(false)
+    await handleEnterFullscreen()
+  }
 
   const handleEnterFullscreen = async () => {
     try {
@@ -219,11 +246,11 @@ export default function LiveScreenPage({ params }: PageProps) {
         const element = containerRef.current as any
 
         // Try webkit prefixed version first (for iPad)
-        if (element.webkitRequestFullscreen) {
+        if (typeof element.webkitRequestFullscreen === 'function') {
           await element.webkitRequestFullscreen()
         }
         // Then try standard version
-        else if (element.requestFullscreen) {
+        else if (typeof element.requestFullscreen === 'function') {
           await element.requestFullscreen()
         }
         setIsFullscreen(true)
@@ -606,7 +633,7 @@ export default function LiveScreenPage({ params }: PageProps) {
       <div className="max-w-7xl mx-auto w-full px-3 md:px-4 flex-1 flex flex-col min-h-0 mb-[88px]">
         {activeView === 'timer' && (
           <div className="h-full flex flex-col overflow-hidden">
-            <SubjectTimer studentId={studentId} />
+            <SubjectTimer studentId={studentId} containerRef={containerRef} />
           </div>
         )}
 
@@ -828,6 +855,27 @@ export default function LiveScreenPage({ params }: PageProps) {
         seatNumber={parseInt(seatNumber)}
         onOutingStart={handleOutingStart}
       />
+
+      {/* Fullscreen Prompt Modal */}
+      <Dialog open={fullscreenPromptOpen} onOpenChange={setFullscreenPromptOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="text-center pb-4">
+            <DialogTitle className="text-2xl">풀스크린 모드</DialogTitle>
+            <DialogDescription className="text-base pt-2">
+              최적의 학습 환경을 위해 풀스크린 모드를 켜주세요
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center pt-4">
+            <Button
+              size="lg"
+              onClick={handleEnterFullscreenFromPrompt}
+              className="w-full h-16 text-lg font-semibold"
+            >
+              풀스크린 켜기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Manager Call Confirmation Modal */}
       <Dialog open={managerCallModalOpen} onOpenChange={setManagerCallModalOpen}>

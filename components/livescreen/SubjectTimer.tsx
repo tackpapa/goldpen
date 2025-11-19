@@ -11,6 +11,7 @@ import type { Subject, StudySession, SubjectStatistics } from '@/lib/types/datab
 
 interface SubjectTimerProps {
   studentId: string
+  containerRef?: React.RefObject<HTMLDivElement>
 }
 
 const DEFAULT_COLORS = [
@@ -24,7 +25,7 @@ const DEFAULT_COLORS = [
   '#FF5722', // 딥오렌지
 ]
 
-export function SubjectTimer({ studentId }: SubjectTimerProps) {
+export function SubjectTimer({ studentId, containerRef }: SubjectTimerProps) {
   // State
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
@@ -146,7 +147,7 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
     return `${minutes}:${String(seconds % 60).padStart(2, '0')}`
   }
 
-  const handleAddSubject = () => {
+  const handleAddSubject = async () => {
     if (!newSubjectName.trim()) return
 
     const newSubject: Subject = {
@@ -163,29 +164,23 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
     setSelectedColor(DEFAULT_COLORS[0])
     setIsAddModalOpen(false)
 
-    // 풀스크린 모드였다면 다시 진입
-    if (wasFullscreen) {
-      setTimeout(() => {
-        const container = document.querySelector('[data-fullscreen-container]') as any
-        if (container) {
-          const isCurrentlyInFullscreen = !!(
-            document.fullscreenElement ||
-            (document as any).webkitFullscreenElement ||
-            (document as any).webkitCurrentFullScreenElement
-          )
+    // 풀스크린 모드였다면 다시 진입 (사용자 제스처 컨텍스트 유지)
+    if (wasFullscreen && containerRef?.current) {
+      const container = containerRef.current as any
 
-          if (!isCurrentlyInFullscreen) {
-            // Try webkit version first (iPad)
-            if (container.webkitRequestFullscreen) {
-              container.webkitRequestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
-            }
-            // Then try standard
-            else if (container.requestFullscreen) {
-              container.requestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
-            }
-          }
+      // 즉시 실행 (setTimeout 사용 안 함 - 사용자 제스처 컨텍스트 유지)
+      try {
+        // Try webkit version first (iPad)
+        if (typeof container.webkitRequestFullscreen === 'function') {
+          await container.webkitRequestFullscreen()
         }
-      }, 100)
+        // Then try standard
+        else if (typeof container.requestFullscreen === 'function') {
+          await container.requestFullscreen()
+        }
+      } catch (error) {
+        // Silently fail
+      }
     }
   }
 
@@ -199,34 +194,28 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
     setIsAddModalOpen(true)
   }
 
-  const handleCloseAddModal = () => {
+  const handleCloseAddModal = async () => {
     setIsAddModalOpen(false)
     setNewSubjectName('')
     setSelectedColor(DEFAULT_COLORS[0])
 
-    // 풀스크린 모드였다면 다시 진입
-    if (wasFullscreen) {
-      setTimeout(() => {
-        const container = document.querySelector('[data-fullscreen-container]') as any
-        if (container) {
-          const isCurrentlyInFullscreen = !!(
-            document.fullscreenElement ||
-            (document as any).webkitFullscreenElement ||
-            (document as any).webkitCurrentFullScreenElement
-          )
+    // 풀스크린 모드였다면 다시 진입 (사용자 제스처 컨텍스트 유지)
+    if (wasFullscreen && containerRef?.current) {
+      const container = containerRef.current as any
 
-          if (!isCurrentlyInFullscreen) {
-            // Try webkit version first (iPad)
-            if (container.webkitRequestFullscreen) {
-              container.webkitRequestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
-            }
-            // Then try standard
-            else if (container.requestFullscreen) {
-              container.requestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
-            }
-          }
+      // 즉시 실행 (setTimeout 사용 안 함 - 사용자 제스처 컨텍스트 유지)
+      try {
+        // Try webkit version first (iPad)
+        if (typeof container.webkitRequestFullscreen === 'function') {
+          await container.webkitRequestFullscreen()
         }
-      }, 100)
+        // Then try standard
+        else if (typeof container.requestFullscreen === 'function') {
+          await container.requestFullscreen()
+        }
+      } catch (error) {
+        // Silently fail
+      }
     }
   }
 
@@ -508,7 +497,32 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
         {/* Add Subject Button */}
         <Card
           className="border-2 border-dashed border-gray-300 bg-gray-50/50 hover:border-gray-400 hover:bg-gray-100/50 transition-all cursor-pointer flex-shrink-0 w-72 h-72 snap-center"
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={async () => {
+            // 풀스크린 상태 저장
+            const isInFullscreen = !!(
+              document.fullscreenElement ||
+              (document as any).webkitFullscreenElement ||
+              (document as any).webkitCurrentFullScreenElement
+            )
+            setWasFullscreen(isInFullscreen)
+
+            // 풀스크린이면 즉시 풀스크린 진입 (사용자 제스처 컨텍스트 유지)
+            if (isInFullscreen && containerRef?.current) {
+              const container = containerRef.current as any
+              try {
+                if (typeof container.webkitRequestFullscreen === 'function') {
+                  await container.webkitRequestFullscreen()
+                } else if (typeof container.requestFullscreen === 'function') {
+                  await container.requestFullscreen()
+                }
+              } catch (error) {
+                // Silently fail
+              }
+            }
+
+            // 모달 열기
+            setIsAddModalOpen(true)
+          }}
         >
           <CardContent className="p-6 h-full flex flex-col items-center justify-center">
             <div className="text-center">

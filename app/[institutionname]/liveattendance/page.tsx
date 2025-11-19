@@ -4,6 +4,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Cloud, CloudRain, Sun, Unlock, Maximize2 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 // Mock organization data (in real app, fetch from Supabase)
 const mockOrganization = {
@@ -27,6 +34,8 @@ export default function LiveAttendancePage() {
   const [welcomeMessage, setWelcomeMessage] = useState('')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const [fullscreenPromptOpen, setFullscreenPromptOpen] = useState(false)
+  const [isIOSDevice, setIsIOSDevice] = useState(false)
 
   // Track attendance status: { studentId: 'checked_in' | 'checked_out' }
   const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'checked_in' | 'checked_out'>>({})
@@ -39,40 +48,126 @@ export default function LiveAttendancePage() {
     return () => clearInterval(timer)
   }, [])
 
-  // Fullscreen functionality
+  // Detect iOS device and mobile/tablet on mount (client-side only)
   useEffect(() => {
-    // Listen for fullscreen changes
+    const checkIsIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
+    setIsIOSDevice(checkIsIOS)
+
+    // iOS/iPad면 모달 표시
+    if (checkIsIOS) {
+      setFullscreenPromptOpen(true)
+    }
+  }, [])
+
+  // Check if device is mobile or tablet (not PC)
+  const isMobileOrTablet = () => {
+    if (typeof window === 'undefined') return false
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(navigator.userAgent)
+  }
+
+  // Auto-enter fullscreen every 5 seconds if not in fullscreen (Mobile/Tablet only, excluding iOS)
+  useEffect(() => {
+    // iOS/iPad는 모달로 처리하므로 자동 진입 건너뜀
+    if (isIOSDevice) return
+
+    // PC는 자동 풀스크린 진입 안 함
+    if (!isMobileOrTablet()) return
+
+    const checkAndEnterFullscreen = async () => {
+      const isInFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      )
+
+      if (!isInFullscreen && containerRef.current) {
+        try {
+          const element = containerRef.current as any
+          if (typeof element.requestFullscreen === 'function') {
+            await element.requestFullscreen()
+          }
+        } catch (error) {
+          // Silently fail
+        }
+      }
+    }
+
+    checkAndEnterFullscreen()
+    const interval = setInterval(checkAndEnterFullscreen, 5000)
+
+    return () => clearInterval(interval)
+  }, [isIOSDevice])
+
+  // Fullscreen state tracking (webkit 지원)
+  useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      const isInFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      )
+      setIsFullscreen(isInFullscreen)
     }
 
     document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
 
     return () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
     }
   }, [])
 
   const handleEnterFullscreen = async () => {
     try {
-      if (containerRef.current && !document.fullscreenElement) {
-        await containerRef.current.requestFullscreen()
-        setIsFullscreen(true)
+      if (containerRef.current) {
+        const element = containerRef.current as any
+        const isCurrentlyInFullscreen = !!(
+          document.fullscreenElement ||
+          (document as any).webkitFullscreenElement ||
+          (document as any).webkitCurrentFullScreenElement
+        )
+
+        if (!isCurrentlyInFullscreen) {
+          // Try webkit version first (iPad)
+          if (typeof element.webkitRequestFullscreen === 'function') {
+            await element.webkitRequestFullscreen()
+          }
+          // Then try standard
+          else if (typeof element.requestFullscreen === 'function') {
+            await element.requestFullscreen()
+          }
+        }
       }
     } catch (error) {
-      console.error('Failed to enter fullscreen:', error)
+      // Silently fail
     }
   }
 
   const handleUnlock = async () => {
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen()
-        setIsFullscreen(false)
+      const isCurrentlyInFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      )
+
+      if (isCurrentlyInFullscreen) {
+        if (typeof (document as any).webkitExitFullscreen === 'function') {
+          await (document as any).webkitExitFullscreen()
+        } else if (typeof document.exitFullscreen === 'function') {
+          await document.exitFullscreen()
+        }
       }
     } catch (error) {
-      console.error('Failed to exit fullscreen:', error)
+      // Silently fail
     }
+  }
+
+  // Handle fullscreen prompt (iOS/iPad only)
+  const handleEnterFullscreenFromPrompt = async () => {
+    setFullscreenPromptOpen(false)
+    await handleEnterFullscreen()
   }
 
   // Fetch weather data
@@ -272,6 +367,27 @@ export default function LiveAttendancePage() {
 
   return (
     <div ref={containerRef} className="h-screen flex bg-white overflow-hidden">
+      {/* Fullscreen Prompt Modal */}
+      <Dialog open={fullscreenPromptOpen} onOpenChange={setFullscreenPromptOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader className="text-center pb-4">
+            <DialogTitle className="text-2xl">풀스크린 모드</DialogTitle>
+            <DialogDescription className="text-base pt-2">
+              최적의 학습 환경을 위해 풀스크린 모드를 켜주세요
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center pt-4">
+            <Button
+              size="lg"
+              onClick={handleEnterFullscreenFromPrompt}
+              className="w-full h-16 text-lg font-semibold"
+            >
+              풀스크린 켜기
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Left Panel - Blue Background */}
       <div className="w-1/2 flex flex-col items-center justify-center p-16 bg-gradient-to-br from-blue-500 to-blue-600 text-white relative overflow-hidden">
         {/* Decorative circles */}
