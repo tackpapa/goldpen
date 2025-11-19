@@ -278,7 +278,7 @@ export default function SchedulePage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">시간표</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">강사 시간표</h1>
           <p className="text-sm md:text-base text-muted-foreground">
             주간 시간표와 월간 일정을 확인합니다
           </p>

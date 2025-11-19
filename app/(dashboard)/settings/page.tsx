@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare } from 'lucide-react'
+import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare, CreditCard, Wallet as WalletIcon, Check, Zap, Crown } from 'lucide-react'
 import { navigationItems, getEnabledMenuIds, setEnabledMenuIds } from '@/lib/config/navigation'
 import {
   Dialog,
@@ -136,9 +136,69 @@ const mockRooms: Room[] = [
   },
 ]
 
+// Service Usage Data Types
+interface KakaoTalkUsage {
+  id: string
+  date: string
+  type: string
+  studentName: string
+  message: string
+  cost: number
+  status: 'success' | 'failed'
+}
+
+interface ServiceUsage {
+  id: string
+  date: string
+  type: string
+  description: string
+  cost: number
+}
+
+// Mock KakaoTalk Usage Data
+const mockKakaoTalkUsages: KakaoTalkUsage[] = [
+  // 출결 알림 (학원/공부방)
+  { id: 'kt1', date: '2025-01-19 09:15', type: '지각 안내', studentName: '김민준', message: '학생이 등록한 스케줄에 맞게 등원하지 않았습니다', cost: 15, status: 'success' },
+  { id: 'kt2', date: '2025-01-19 09:30', type: '등원 알림', studentName: '이서연', message: '학생이 등원했습니다', cost: 15, status: 'success' },
+  { id: 'kt3', date: '2025-01-19 10:00', type: '등원 알림', studentName: '박준호', message: '학생이 등원했습니다', cost: 15, status: 'success' },
+  { id: 'kt4', date: '2025-01-19 17:30', type: '하원 알림', studentName: '최지우', message: '학생이 하원했습니다', cost: 15, status: 'success' },
+  { id: 'kt5', date: '2025-01-19 18:00', type: '하원 알림', studentName: '정하은', message: '학생이 하원했습니다', cost: 15, status: 'success' },
+
+  // 출결 알림 (독서실)
+  { id: 'kt6', date: '2025-01-18 09:05', type: '지각 안내 (독서실)', studentName: '강민서', message: '학생이 등록한 스케줄에 맞게 입실하지 않았습니다', cost: 15, status: 'success' },
+  { id: 'kt7', date: '2025-01-18 09:30', type: '입실 알림', studentName: '윤서준', message: '학생이 독서실에 입실했습니다', cost: 15, status: 'success' },
+  { id: 'kt8', date: '2025-01-18 12:00', type: '외출 알림', studentName: '장서연', message: '학생이 외출했습니다', cost: 15, status: 'success' },
+  { id: 'kt9', date: '2025-01-18 13:00', type: '복귀 알림', studentName: '장서연', message: '학생이 외출 후 복귀했습니다', cost: 15, status: 'success' },
+  { id: 'kt10', date: '2025-01-18 18:00', type: '퇴실 알림', studentName: '임도윤', message: '학생이 독서실에서 퇴실했습니다', cost: 15, status: 'success' },
+
+  // 학습 알림 (독서실)
+  { id: 'kt11', date: '2025-01-17 22:00', type: '당일 학습 진행 결과', studentName: '한지우', message: '오늘의 플래너 완료: 수학 문제집 50p, 영어 단어 30개', cost: 20, status: 'success' },
+  { id: 'kt12', date: '2025-01-17 22:00', type: '당일 학습 진행 결과', studentName: '송민재', message: '오늘의 플래너 완료: 국어 독해 20p, 과학 요약 정리', cost: 20, status: 'success' },
+  { id: 'kt13', date: '2025-01-16 22:00', type: '당일 학습 진행 결과', studentName: '김서윤', message: '오늘의 플래너 완료: 수학 심화 30p, 영어 독해 15p', cost: 20, status: 'success' },
+
+  // 수업일지 알림 (학원/공부방)
+  { id: 'kt14', date: '2025-01-17 19:00', type: '수업일지 전송', studentName: '이준혁', message: '[수학] 오늘 배운 내용: 이차방정식 풀이법, 숙제: 문제집 45-50p', cost: 20, status: 'success' },
+  { id: 'kt15', date: '2025-01-17 19:30', type: '수업일지 전송', studentName: '박지은', message: '[영어] 오늘 배운 내용: 현재완료 문법, 숙제: 워크북 23-25p', cost: 20, status: 'success' },
+  { id: 'kt16', date: '2025-01-16 19:00', type: '수업일지 전송', studentName: '최수민', message: '[국어] 오늘 배운 내용: 논설문 쓰기, 숙제: 논설문 초안 작성', cost: 20, status: 'success' },
+
+  // 시험 관리 알림 (학원/공부방)
+  { id: 'kt17', date: '2025-01-16 18:00', type: '시험 결과 전송', studentName: '정예준', message: '[중간고사] 수학: 95점, 영어: 88점, 국어: 92점', cost: 20, status: 'success' },
+  { id: 'kt18', date: '2025-01-15 18:00', type: '시험 결과 전송', studentName: '강하린', message: '[중간고사] 수학: 87점, 영어: 91점, 과학: 89점', cost: 20, status: 'success' },
+
+  // 과제 관리 알림 (학원/공부방)
+  { id: 'kt19', date: '2025-01-15 17:00', type: '과제 전송', studentName: '김영수', message: '[수학] 새 과제: 함수 그래프 그리기, 제출 마감: 1월 20일', cost: 20, status: 'success' },
+  { id: 'kt20', date: '2025-01-14 17:00', type: '과제 전송', studentName: '이철민', message: '[영어] 새 과제: 에세이 작성 (500자), 제출 마감: 1월 18일', cost: 20, status: 'success' },
+]
+
+// Mock Service Usage Data
+const mockServiceUsages: ServiceUsage[] = [
+  { id: 'su1', date: '2025-01-01', type: '서버비', description: 'ClassFlow 서버 이용료 (월간)', cost: 50000 },
+]
+
 export default function SettingsPage() {
   const { toast } = useToast()
   const [organization, setOrganization] = useState<Organization>(mockOrganization)
+  const [institutionName, setInstitutionName] = useState<string>('')
   const [branches, setBranches] = useState<Branch[]>(mockBranches)
   const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
@@ -177,6 +237,9 @@ export default function SettingsPage() {
   // Page permissions state
   const [pagePermissions, setPagePermissions] = useState<Record<string, { staff: boolean; teacher: boolean }>>({})
 
+  // Service plan view state
+  const [showPricingPlans, setShowPricingPlans] = useState(false)
+
   // Revenue categories state
   const [revenueCategories, setRevenueCategories] = useState<RevenueCategory[]>([])
   const [isRevenueCategoryDialogOpen, setIsRevenueCategoryDialogOpen] = useState(false)
@@ -198,6 +261,9 @@ export default function SettingsPage() {
 
   // Load accounts and menu settings on mount
   useEffect(() => {
+    // Set institution name (hardcoded for now)
+    setInstitutionName('classflow')
+
     const loadedAccounts = accountManager.getAccounts()
     setAccounts(loadedAccounts)
 
@@ -997,6 +1063,7 @@ export default function SettingsPage() {
           <TabsTrigger value="automation">자동화</TabsTrigger>
           <TabsTrigger value="notifications">알림</TabsTrigger>
           <TabsTrigger value="kakaotalk">알림톡 설정</TabsTrigger>
+          <TabsTrigger value="billing">서비스 이용내역</TabsTrigger>
         </TabsList>
 
         {/* Organization Info Tab */}
@@ -1063,6 +1130,20 @@ export default function SettingsPage() {
                     </p>
                   </div>
                 </div>
+              </div>
+
+              {/* Institution ID (Read-only) */}
+              <div className="space-y-2">
+                <Label htmlFor="institution-id">기관 아이디</Label>
+                <Input
+                  id="institution-id"
+                  value={institutionName}
+                  disabled
+                  className="bg-muted cursor-not-allowed"
+                />
+                <p className="text-xs text-muted-foreground">
+                  이 아이디는 URL에 사용되며 변경할 수 없습니다
+                </p>
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -2268,6 +2349,353 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Service Billing Tab */}
+        <TabsContent value="billing" className="space-y-4">
+          {/* Summary Cards */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">1월 현재 이용료</CardTitle>
+                <CreditCard className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">₩{(mockKakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0) + mockServiceUsages.reduce((sum, item) => sum + item.cost, 0)).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  알림톡: ₩{mockKakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()} / 서비스: ₩{mockServiceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">잔여 충전금</CardTitle>
+                <WalletIcon className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">₩850,000</div>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-xs text-muted-foreground">
+                    충전일: 2025-01-01
+                  </p>
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs"
+                    onClick={() => {
+                      toast({
+                        title: '충전 기능',
+                        description: '결제 시스템 연동 예정입니다.',
+                      })
+                    }}
+                  >
+                    충전하기
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card
+              className="cursor-pointer hover:border-primary transition-colors"
+              onClick={() => setShowPricingPlans(!showPricingPlans)}
+            >
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">서비스 플랜</CardTitle>
+                <Zap className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">스탠다드</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  학생 20~50명 · ₩30,000/월
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full mt-2 text-xs text-muted-foreground"
+                >
+                  {showPricingPlans ? '접기' : '플랜 상세보기'}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Pricing Plans - Conditional Rendering */}
+          {showPricingPlans && (
+            <div className="grid gap-6 md:grid-cols-3">
+            {/* Free Plan */}
+            <Card className="relative">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="h-10 w-10 rounded-lg bg-gray-100 flex items-center justify-center">
+                    <Check className="h-5 w-5 text-gray-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">무료</CardTitle>
+                    <CardDescription>시작하기 좋은 플랜</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <div className="text-3xl font-bold">₩0</div>
+                  <p className="text-sm text-muted-foreground">/ 월</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>학생 20명까지</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>기본 기능 제공</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>알림톡 별도 과금</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <X className="h-4 w-4" />
+                    <span>고급 분석 기능</span>
+                  </div>
+                </div>
+                <Button variant="outline" className="w-full" disabled>
+                  현재 플랜
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Standard Plan */}
+            <Card className="relative border-2 border-primary shadow-lg">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge className="bg-primary">추천</Badge>
+              </div>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
+                    <Zap className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">스탠다드</CardTitle>
+                    <CardDescription>성장하는 학원에 최적</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <div className="text-3xl font-bold">₩30,000</div>
+                  <p className="text-sm text-muted-foreground">/ 월</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>학생 20~50명</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>모든 기본 기능</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>알림톡 별도 과금</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>고급 분석 기능</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>우선 고객 지원</span>
+                  </div>
+                </div>
+                <Button className="w-full">
+                  업그레이드
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Pro Plan */}
+            <Card className="relative">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="h-10 w-10 rounded-lg bg-purple-100 flex items-center justify-center">
+                    <Crown className="h-5 w-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg">프로</CardTitle>
+                    <CardDescription>대규모 학원용</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <div className="text-3xl font-bold">₩60,000</div>
+                  <p className="text-sm text-muted-foreground">/ 월</p>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>학생 50명 이상</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>모든 프리미엄 기능</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>알림톡 별도 과금</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>고급 분석 + AI 인사이트</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>전담 고객 지원</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Check className="h-4 w-4 text-green-600" />
+                    <span>맞춤 기능 개발</span>
+                  </div>
+                </div>
+                <Button className="w-full">
+                  업그레이드
+                </Button>
+              </CardContent>
+            </Card>
+            </div>
+          )}
+
+          {/* Usage Details */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>이용 내역</CardTitle>
+                  <CardDescription>알림톡 및 서비스 이용 내역을 확인하세요</CardDescription>
+                </div>
+                <div className="flex gap-2">
+                  <Select defaultValue="2025">
+                    <SelectTrigger className="w-[100px]">
+                      <SelectValue placeholder="년도" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2025">2025년</SelectItem>
+                      <SelectItem value="2024">2024년</SelectItem>
+                      <SelectItem value="2023">2023년</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select defaultValue="01">
+                    <SelectTrigger className="w-[90px]">
+                      <SelectValue placeholder="월" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="01">1월</SelectItem>
+                      <SelectItem value="02">2월</SelectItem>
+                      <SelectItem value="03">3월</SelectItem>
+                      <SelectItem value="04">4월</SelectItem>
+                      <SelectItem value="05">5월</SelectItem>
+                      <SelectItem value="06">6월</SelectItem>
+                      <SelectItem value="07">7월</SelectItem>
+                      <SelectItem value="08">8월</SelectItem>
+                      <SelectItem value="09">9월</SelectItem>
+                      <SelectItem value="10">10월</SelectItem>
+                      <SelectItem value="11">11월</SelectItem>
+                      <SelectItem value="12">12월</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="kakaotalk-usage">
+                <TabsList>
+                  <TabsTrigger value="kakaotalk-usage">알림톡 이용내역</TabsTrigger>
+                  <TabsTrigger value="service-usage">서비스 이용내역</TabsTrigger>
+                </TabsList>
+
+                {/* KakaoTalk Usage History */}
+                <TabsContent value="kakaotalk-usage" className="space-y-4">
+                  <div className="rounded-md border">
+                    <div className="overflow-auto max-h-[600px]">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr className="border-b">
+                            <th className="h-10 px-4 text-left align-middle font-medium">발송일시</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">타입</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">학생명</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">메시지</th>
+                            <th className="h-10 px-4 text-right align-middle font-medium">비용</th>
+                            <th className="h-10 px-4 text-center align-middle font-medium">상태</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mockKakaoTalkUsages.map((usage) => (
+                            <tr key={usage.id} className="border-b hover:bg-muted/50">
+                              <td className="p-4 align-middle">{usage.date}</td>
+                              <td className="p-4 align-middle">
+                                <Badge variant="outline">{usage.type}</Badge>
+                              </td>
+                              <td className="p-4 align-middle">{usage.studentName}</td>
+                              <td className="p-4 align-middle text-muted-foreground max-w-md truncate">
+                                {usage.message}
+                              </td>
+                              <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
+                              <td className="p-4 align-middle text-center">
+                                <Badge variant={usage.status === 'success' ? 'default' : 'destructive'}>
+                                  {usage.status === 'success' ? '성공' : '실패'}
+                                </Badge>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      총 {mockKakaoTalkUsages.length}건 · 합계: ₩{mockKakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                    </p>
+                  </div>
+                </TabsContent>
+
+                {/* Service Usage History */}
+                <TabsContent value="service-usage" className="space-y-4">
+                  <div className="rounded-md border">
+                    <div className="overflow-auto max-h-[600px]">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr className="border-b">
+                            <th className="h-10 px-4 text-left align-middle font-medium">발생일</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">타입</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">설명</th>
+                            <th className="h-10 px-4 text-right align-middle font-medium">비용</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mockServiceUsages.map((usage) => (
+                            <tr key={usage.id} className="border-b hover:bg-muted/50">
+                              <td className="p-4 align-middle">{usage.date}</td>
+                              <td className="p-4 align-middle">
+                                <Badge variant="secondary">{usage.type}</Badge>
+                              </td>
+                              <td className="p-4 align-middle">{usage.description}</td>
+                              <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      총 {mockServiceUsages.length}건 · 합계: ₩{mockServiceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                    </p>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </TabsContent>

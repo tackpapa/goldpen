@@ -219,7 +219,7 @@ export default function AttendancePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">출결 관리</h1>
-          <p className="text-sm md:text-base text-muted-foreground">학생 출결을 관리하세요</p>
+          <p className="text-sm md:text-base text-muted-foreground">학생 출결을 관리하세요 · 출결 데이터는 <span className="font-medium text-blue-600">학생용 출결 페이지</span>의 등원/하원 기록을 기반으로 자동 반영됩니다</p>
         </div>
         <Link
           href="/classflow/liveattendance"

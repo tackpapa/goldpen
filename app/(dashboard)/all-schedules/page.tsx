@@ -778,40 +778,36 @@ export default function AllSchedulesPage() {
                     return (
                       <div
                         key={`${time}-${dayKey}`}
-                        className="min-h-[100px] max-h-[280px] border rounded-lg p-1 bg-muted/20 overflow-y-auto"
+                        className={cn(
+                          "border rounded-lg p-1 bg-muted/20",
+                          schedulesInSlot.length === 0 && "min-h-[60px]",
+                          schedulesInSlot.length > 3 && "max-h-[280px] overflow-y-auto"
+                        )}
                       >
                         {schedulesInSlot.length === 0 ? (
                           <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
                             -
                           </div>
                         ) : schedulesInSlot.length > 3 ? (
-                          <>
-                            <div className="sticky top-0 bg-muted/40 backdrop-blur-sm px-1 py-0.5 mb-1 rounded text-[10px] font-medium text-center border-b">
-                              {schedulesInSlot.length}개 수업
-                            </div>
-                            <div className="space-y-1">
-                              {schedulesInSlot.map((schedule) => (
-                                <div
-                                  key={schedule.id}
-                                  className={cn(
-                                    "text-xs p-1.5 rounded border-l-3",
-                                    getRoomColor(schedule.room_name).bg,
-                                    getRoomColor(schedule.room_name).border
-                                  )}
-                                >
-                                  <div className={cn("font-bold text-[11px]", getRoomColor(schedule.room_name).text)}>
-                                    {schedule.room_name}
-                                  </div>
-                                  <div className="text-muted-foreground text-[10px] mt-0.5">
-                                    {schedule.teacher_name}
-                                  </div>
-                                  <div className="text-muted-foreground text-[10px]">
-                                    {schedule.student_grade}학년 {schedule.student_name}
-                                  </div>
+                          <div className="space-y-1">
+                            {schedulesInSlot.map((schedule) => (
+                              <div
+                                key={schedule.id}
+                                className={cn(
+                                  "text-xs p-1.5 rounded border-l-3",
+                                  getRoomColor(schedule.room_name).bg,
+                                  getRoomColor(schedule.room_name).border
+                                )}
+                              >
+                                <div className={cn("font-bold text-[11px]", getRoomColor(schedule.room_name).text)}>
+                                  {schedule.room_name} {schedule.teacher_name}
                                 </div>
-                              ))}
-                            </div>
-                          </>
+                                <div className="text-muted-foreground text-[10px]">
+                                  {schedule.student_grade}학년 {schedule.student_name} {schedule.start_time}-{schedule.end_time}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         ) : (
                           <div className="space-y-1">
                             {schedulesInSlot.map((schedule) => (
@@ -824,16 +820,10 @@ export default function AllSchedulesPage() {
                                 )}
                               >
                                 <div className={cn("font-bold text-sm", getRoomColor(schedule.room_name).text)}>
-                                  {schedule.room_name}
+                                  {schedule.room_name} {schedule.teacher_name}
                                 </div>
                                 <div className="text-muted-foreground text-[11px] mt-1">
-                                  {schedule.teacher_name}
-                                </div>
-                                <div className="text-muted-foreground text-[11px]">
-                                  {schedule.student_grade}학년 {schedule.student_name}
-                                </div>
-                                <div className="text-muted-foreground text-[10px] mt-0.5">
-                                  {schedule.start_time}-{schedule.end_time}
+                                  {schedule.student_grade}학년 {schedule.student_name} {schedule.start_time}-{schedule.end_time}
                                 </div>
                               </div>
                             ))}

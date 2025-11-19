@@ -235,6 +235,31 @@ export default function BillingPage() {
         </div>
       </div>
 
+      {/* Category Filters */}
+      <div className="flex gap-2 flex-wrap">
+        <Button
+          variant={selectedCategory === '전체' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedCategory('전체')}
+        >
+          전체
+        </Button>
+        <Button
+          variant={selectedCategory === '강사 급여' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedCategory('강사 급여')}
+        >
+          강사 급여
+        </Button>
+        <Button
+          variant={selectedCategory === '일반' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedCategory('일반')}
+        >
+          일반
+        </Button>
+      </div>
+
       {/* Key Metrics Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>

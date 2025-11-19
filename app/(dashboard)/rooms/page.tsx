@@ -537,7 +537,7 @@ export default function RoomsPage() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">스케줄관리</h1>
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">교실 스케쥴</h1>
           <p className="text-sm md:text-base text-muted-foreground">
             교실별 스케줄을 확인하고 관리합니다
           </p>

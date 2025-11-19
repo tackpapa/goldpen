@@ -80,17 +80,17 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     id: 'schedule',
-    name: '시간표',
+    name: '강사 시간표',
     href: '/schedule',
     icon: CalendarDays,
     badges: ['학원용'],
   },
   {
     id: 'rooms',
-    name: '스케줄관리',
+    name: '교실 스케쥴',
     href: '/rooms',
     icon: DoorOpen,
-    badges: ['독서실'],
+    badges: ['독서실', '공부방'],
   },
   {
     id: 'seats',
