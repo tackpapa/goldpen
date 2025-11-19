@@ -1,6 +1,8 @@
 "use client"
 
 import { useToast } from "@/hooks/use-toast"
+import { useEffect, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   Toast,
   ToastClose,
@@ -12,8 +14,31 @@ import {
 
 export function Toaster() {
   const { toasts } = useToast()
+  const [container, setContainer] = useState<HTMLElement | null>(null)
 
-  return (
+  useEffect(() => {
+    // 풀스크린 모드에서도 토스트가 보이도록 container 동적 업데이트 (webkit 지원)
+    const updateContainer = () => {
+      const fullscreenElement = (
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      ) as HTMLElement
+      setContainer(fullscreenElement || document.body)
+    }
+
+    updateContainer()
+    document.addEventListener('fullscreenchange', updateContainer)
+    document.addEventListener('webkitfullscreenchange', updateContainer)
+    return () => {
+      document.removeEventListener('fullscreenchange', updateContainer)
+      document.removeEventListener('webkitfullscreenchange', updateContainer)
+    }
+  }, [])
+
+  if (!container) return null
+
+  return createPortal(
     <ToastProvider>
       {toasts.map(function ({ id, title, description, action, ...props }) {
         return (
@@ -30,6 +55,7 @@ export function Toaster() {
         )
       })}
       <ToastViewport />
-    </ToastProvider>
+    </ToastProvider>,
+    container
   )
 }

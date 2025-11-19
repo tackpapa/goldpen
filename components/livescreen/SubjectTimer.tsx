@@ -37,6 +37,7 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
   const [newSubjectName, setNewSubjectName] = useState('')
   const [selectedColor, setSelectedColor] = useState(DEFAULT_COLORS[0])
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null)
+  const [wasFullscreen, setWasFullscreen] = useState(false)
 
   // Pomodoro state
   const [pomodoroMinutes, setPomodoroMinutes] = useState(25)
@@ -161,6 +162,72 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
     setNewSubjectName('')
     setSelectedColor(DEFAULT_COLORS[0])
     setIsAddModalOpen(false)
+
+    // 풀스크린 모드였다면 다시 진입
+    if (wasFullscreen) {
+      setTimeout(() => {
+        const container = document.querySelector('[data-fullscreen-container]') as any
+        if (container) {
+          const isCurrentlyInFullscreen = !!(
+            document.fullscreenElement ||
+            (document as any).webkitFullscreenElement ||
+            (document as any).webkitCurrentFullScreenElement
+          )
+
+          if (!isCurrentlyInFullscreen) {
+            // Try webkit version first (iPad)
+            if (container.webkitRequestFullscreen) {
+              container.webkitRequestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
+            }
+            // Then try standard
+            else if (container.requestFullscreen) {
+              container.requestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
+            }
+          }
+        }
+      }, 100)
+    }
+  }
+
+  const handleOpenAddModal = () => {
+    const isInFullscreen = !!(
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      (document as any).webkitCurrentFullScreenElement
+    )
+    setWasFullscreen(isInFullscreen)
+    setIsAddModalOpen(true)
+  }
+
+  const handleCloseAddModal = () => {
+    setIsAddModalOpen(false)
+    setNewSubjectName('')
+    setSelectedColor(DEFAULT_COLORS[0])
+
+    // 풀스크린 모드였다면 다시 진입
+    if (wasFullscreen) {
+      setTimeout(() => {
+        const container = document.querySelector('[data-fullscreen-container]') as any
+        if (container) {
+          const isCurrentlyInFullscreen = !!(
+            document.fullscreenElement ||
+            (document as any).webkitFullscreenElement ||
+            (document as any).webkitCurrentFullScreenElement
+          )
+
+          if (!isCurrentlyInFullscreen) {
+            // Try webkit version first (iPad)
+            if (container.webkitRequestFullscreen) {
+              container.webkitRequestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
+            }
+            // Then try standard
+            else if (container.requestFullscreen) {
+              container.requestFullscreen().catch((err: any) => console.log('Fullscreen re-entry failed:', err))
+            }
+          }
+        }
+      }, 100)
+    }
   }
 
   const handleDeleteSubject = (subjectId: string) => {
@@ -278,13 +345,13 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
 
   return (
     <div className="flex flex-col h-full w-full">
-      {/* Split Timer Display - Fixed at top */}
-      <div className="grid grid-cols-2 gap-3 mb-4 flex-shrink-0">
+      {/* Split Timer Display - Takes up most of the vertical space */}
+      <div className="grid grid-cols-2 gap-3 flex-1 min-h-[100px] mb-3">
         {/* Left: Total Study Time */}
-        <Card className="bg-gradient-to-br from-orange-400 via-pink-500 to-purple-600 border-0 overflow-hidden relative">
-          <CardContent className="p-4 md:p-6">
+        <Card className="bg-gradient-to-br from-orange-400 via-pink-500 to-purple-600 border-0 overflow-hidden relative h-full min-h-0">
+          <CardContent className="p-6 md:p-8 h-full flex flex-col justify-center">
             {/* Decorative wave pattern */}
-            <div className="absolute top-0 left-0 right-0 h-12 opacity-20">
+            <div className="absolute top-0 left-0 right-0 h-16 opacity-20">
               <svg className="w-full h-full" viewBox="0 0 400 60" preserveAspectRatio="none">
                 <path d="M0,30 Q100,10 200,30 T400,30 L400,0 L0,0 Z" fill="white" />
                 <path d="M0,40 Q100,20 200,40 T400,40 L400,0 L0,0 Z" fill="white" opacity="0.5" />
@@ -292,22 +359,22 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
             </div>
 
             <div className="relative text-center">
-              <p className="text-white/90 text-xs font-medium mb-1">Total Study Time</p>
-              <div className="flex items-baseline justify-center gap-1 mb-1">
-                <h1 className="text-white text-4xl md:text-5xl font-bold tracking-tight">
+              <p className="text-white/90 text-xs sm:text-sm md:text-base font-medium mb-2 sm:mb-3 md:mb-4">Total Study Time</p>
+              <div className="flex items-baseline justify-center gap-1 mb-2 sm:mb-3 md:mb-4">
+                <h1 className="text-white text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight">
                   {formatTime(totalSeconds)}
                 </h1>
               </div>
-              <p className="text-white/80 text-[10px]">순공타임 (실제 공부시간)</p>
+              <p className="text-white/80 text-xs sm:text-sm md:text-base">순공타임 (실제 공부시간)</p>
             </div>
           </CardContent>
         </Card>
 
         {/* Right: Pomodoro Timer */}
-        <Card className="bg-gradient-to-br from-blue-400 via-cyan-500 to-teal-600 border-0 overflow-hidden relative">
-          <CardContent className="p-4 md:p-6">
+        <Card className="bg-gradient-to-br from-blue-400 via-cyan-500 to-teal-600 border-0 overflow-hidden relative h-full min-h-0">
+          <CardContent className="p-6 md:p-8 h-full flex flex-col justify-center">
             {/* Decorative wave pattern */}
-            <div className="absolute top-0 left-0 right-0 h-12 opacity-20">
+            <div className="absolute top-0 left-0 right-0 h-16 opacity-20">
               <svg className="w-full h-full" viewBox="0 0 400 60" preserveAspectRatio="none">
                 <path d="M0,30 Q100,10 200,30 T400,30 L400,0 L0,0 Z" fill="white" />
                 <path d="M0,40 Q100,20 200,40 T400,40 L400,0 L0,0 Z" fill="white" opacity="0.5" />
@@ -316,27 +383,27 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
 
             <div className="relative">
               {/* Header */}
-              <div className="text-center mb-2">
-                <p className="text-white/90 text-xs font-medium">Pomodoro</p>
+              <div className="text-center mb-2 sm:mb-3 md:mb-4">
+                <p className="text-white/90 text-xs sm:text-sm md:text-base font-medium">Pomodoro</p>
               </div>
 
               {/* Timer Display */}
-              <div className="flex items-center justify-center gap-2 mb-3">
+              <div className="flex items-center justify-center gap-2 sm:gap-3 md:gap-4 mb-3 sm:mb-4 md:mb-6">
                 {!isPomodoroRunning && (
                   <button
                     onClick={() => handlePomodoroMinutesChange(Math.floor(pomodoroTotalSeconds / 60) - 5)}
-                    className="h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-white font-bold transition-all"
+                    className="h-8 w-8 sm:h-10 sm:w-10 md:h-12 md:w-12 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-white text-lg sm:text-xl md:text-2xl font-bold transition-all"
                   >
                     -
                   </button>
                 )}
-                <h1 className="text-white text-4xl md:text-5xl font-bold tracking-tight font-mono tabular-nums">
+                <h1 className="text-white text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-bold tracking-tight font-mono tabular-nums">
                   {String(pomodoroMinutes).padStart(2, '0')}:{String(pomodoroSeconds).padStart(2, '0')}
                 </h1>
                 {!isPomodoroRunning && (
                   <button
                     onClick={() => handlePomodoroMinutesChange(Math.floor(pomodoroTotalSeconds / 60) + 5)}
-                    className="h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-white font-bold transition-all"
+                    className="h-8 w-8 sm:h-10 sm:w-10 md:h-12 md:w-12 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-sm flex items-center justify-center text-white text-lg sm:text-xl md:text-2xl font-bold transition-all"
                   >
                     +
                   </button>
@@ -344,31 +411,28 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
               </div>
 
               {/* Control Buttons */}
-              <div className="flex gap-2 justify-center">
+              <div className="flex gap-1 sm:gap-2 justify-center">
                 {!isPomodoroRunning ? (
                   <Button
                     onClick={handlePomodoroStart}
-                    size="sm"
-                    className="bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/40 text-white h-9 px-6"
+                    className="bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/40 text-white h-8 sm:h-10 md:h-12 px-3 sm:px-4 md:px-6 text-xs sm:text-sm md:text-base"
                   >
-                    <Play className="h-4 w-4 mr-1" />
+                    <Play className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5 mr-1 sm:mr-1.5 md:mr-2" />
                     Start
                   </Button>
                 ) : (
                   <Button
                     onClick={handlePomodoroPause}
-                    size="sm"
-                    className="bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/40 text-white h-9 px-6"
+                    className="bg-white/20 hover:bg-white/30 backdrop-blur-sm border border-white/40 text-white h-8 sm:h-10 md:h-12 px-3 sm:px-4 md:px-6 text-xs sm:text-sm md:text-base"
                   >
-                    <Pause className="h-4 w-4 mr-1" />
+                    <Pause className="h-3 w-3 sm:h-4 sm:w-4 md:h-5 md:w-5 mr-1 sm:mr-1.5 md:mr-2" />
                     Pause
                   </Button>
                 )}
                 <Button
                   onClick={handlePomodoroReset}
-                  size="sm"
                   variant="ghost"
-                  className="text-white/80 hover:text-white hover:bg-white/10 h-9 px-4"
+                  className="text-white/80 hover:text-white hover:bg-white/10 h-8 sm:h-10 md:h-12 px-3 sm:px-4 md:px-6 text-xs sm:text-sm md:text-base"
                 >
                   Reset
                 </Button>
@@ -379,7 +443,7 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
       </div>
 
       {/* Subject List - Horizontal Scrollable Cards */}
-      <div className="flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory hide-scrollbar">
+      <div className="flex gap-4 overflow-x-auto pb-1 snap-x snap-mandatory hide-scrollbar flex-shrink-0">
         {subjects.map((subject) => {
           const stats = getSubjectStats(subject.id)
           const isActive = activeSession?.subject_id === subject.id
@@ -387,7 +451,7 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
           return (
             <Card
               key={subject.id}
-              className="border-0 shadow-lg flex-shrink-0 w-72 snap-center relative overflow-hidden"
+              className="border-0 shadow-lg flex-shrink-0 w-72 h-72 snap-center relative overflow-hidden"
               style={{
                 background: `linear-gradient(135deg, ${subject.color} 0%, ${subject.color}dd 100%)`,
               }}
@@ -402,17 +466,17 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
                 <Trash2 className="h-4 w-4 text-white" />
               </Button>
 
-              <CardContent className="p-6">
+              <CardContent className="p-6 h-full flex flex-col justify-between">
                 {/* Subject Name */}
-                <div className="mb-6">
+                <div className="mb-4">
                   <h3 className="text-3xl font-bold text-white truncate">
                     {subject.name}
                   </h3>
                 </div>
 
                 {/* Time Display */}
-                <div className="mb-6">
-                  <p className="text-white/80 text-xs mb-1">Total Time</p>
+                <div className="mb-6 flex-1 flex flex-col justify-center">
+                  <p className="text-white/80 text-sm mb-2">Total Time</p>
                   <p className="text-5xl font-bold text-white font-mono tabular-nums">
                     {formatDuration(stats.total_seconds)}
                   </p>
@@ -443,7 +507,7 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
 
         {/* Add Subject Button */}
         <Card
-          className="border-2 border-dashed border-gray-300 bg-gray-50/50 hover:border-gray-400 hover:bg-gray-100/50 transition-all cursor-pointer flex-shrink-0 w-72 snap-center"
+          className="border-2 border-dashed border-gray-300 bg-gray-50/50 hover:border-gray-400 hover:bg-gray-100/50 transition-all cursor-pointer flex-shrink-0 w-72 h-72 snap-center"
           onClick={() => setIsAddModalOpen(true)}
         >
           <CardContent className="p-6 h-full flex flex-col items-center justify-center">
@@ -458,19 +522,25 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
       </div>
 
       {/* Add Subject Modal */}
-      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>과목 추가</DialogTitle>
-            <DialogDescription>
+      <Dialog open={isAddModalOpen} onOpenChange={(open) => {
+        if (open) {
+          handleOpenAddModal()
+        } else {
+          handleCloseAddModal()
+        }
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader className="pb-2">
+            <DialogTitle className="text-2xl">과목 추가</DialogTitle>
+            <DialogDescription className="text-base pt-1">
               새로운 과목을 추가하세요
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-6 py-4">
             {/* Subject Name */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">과목명</label>
+            <div className="space-y-3">
+              <label className="text-base font-semibold">과목명</label>
               <Input
                 placeholder="예: 국어, 영어, 수학"
                 value={newSubjectName}
@@ -480,18 +550,19 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
                     handleAddSubject()
                   }
                 }}
+                className="h-12 text-base"
               />
             </div>
 
             {/* Color Selection */}
             <div className="space-y-3">
-              <label className="text-sm font-medium">색상 선택</label>
+              <label className="text-base font-semibold">색상 선택</label>
               <div className="grid grid-cols-8 gap-3">
                 {DEFAULT_COLORS.map((color) => (
                   <button
                     key={color}
                     type="button"
-                    className={`h-10 w-10 rounded-full transition-all ${
+                    className={`h-12 w-12 rounded-full transition-all ${
                       selectedColor === color
                         ? 'ring-4 ring-offset-2 ring-gray-400 scale-110'
                         : 'hover:scale-105'
@@ -504,23 +575,25 @@ export function SubjectTimer({ studentId }: SubjectTimerProps) {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              setIsAddModalOpen(false)
-              setNewSubjectName('')
-              setSelectedColor(DEFAULT_COLORS[0])
-            }}>
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={handleCloseAddModal}
+              className="w-[48%] h-16 text-lg font-semibold"
+            >
               취소
             </Button>
             <Button
+              size="lg"
               onClick={handleAddSubject}
               disabled={!newSubjectName.trim()}
               style={{ backgroundColor: selectedColor }}
-              className="text-white"
+              className="w-[48%] h-16 text-lg font-semibold text-white hover:opacity-90"
             >
-              추가
+              추가하기
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

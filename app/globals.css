@@ -99,6 +99,50 @@
   .mobile-grid {
     @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4 lg:gap-6;
   }
+
+  /* iOS Safari 클릭 이벤트 수정 */
+  .ios-clickable {
+    cursor: pointer;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  }
+}
+
+/* iOS Safari 모달/다이얼로그 터치 이벤트 수정 */
+@layer base {
+  /* 모든 버튼과 클릭 가능한 요소에 cursor pointer 추가 (iOS Safari 수정) */
+  button,
+  [role="button"],
+  [role="dialog"],
+  [data-radix-dialog-overlay],
+  [data-radix-dialog-content] {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Dialog overlay가 터치 이벤트를 받을 수 있도록 */
+  [data-radix-dialog-overlay] {
+    touch-action: auto;
+  }
+
+  /* Dialog content 내부 요소들이 클릭 가능하도록 */
+  [data-radix-dialog-content] * {
+    cursor: auto;
+  }
+
+  [data-radix-dialog-content] button {
+    cursor: pointer;
+  }
+
+  /* 풀스크린 모드에서도 다이얼로그가 보이도록 강제 */
+  [data-radix-dialog-overlay],
+  [data-radix-dialog-content] {
+    z-index: 9999 !important;
+  }
+
+  /* 풀스크린 요소 위에 포탈 요소가 렌더링되도록 */
+  [data-radix-portal] {
+    z-index: 9999;
+  }
 }
 
 /* 작은 화면에서 스크롤바 숨기기 (깔끔한 UI) */

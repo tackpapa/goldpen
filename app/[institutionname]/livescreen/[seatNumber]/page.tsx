@@ -144,20 +144,88 @@ export default function LiveScreenPage({ params }: PageProps) {
     }
   }, [studentId, seatNumber])
 
+  // Reset scroll position on mount
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+
   // Fullscreen functionality
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      const isFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      )
+      setIsFullscreen(isFullscreen)
     }
 
+    // Listen to both standard and webkit events
     document.addEventListener('fullscreenchange', handleFullscreenChange)
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+    }
+  }, [])
+
+  // Auto-enter fullscreen every 5 seconds if not in fullscreen
+  useEffect(() => {
+    const checkAndEnterFullscreen = async () => {
+      // Check if already in fullscreen (support both standard and webkit)
+      const isInFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      )
+
+      if (!isInFullscreen && containerRef.current) {
+        try {
+          const element = containerRef.current as any
+
+          // Try webkit prefixed version first (for iPad)
+          if (element.webkitRequestFullscreen) {
+            await element.webkitRequestFullscreen()
+          }
+          // Then try standard version
+          else if (element.requestFullscreen) {
+            await element.requestFullscreen()
+          }
+        } catch (error) {
+          console.log('Auto-fullscreen failed:', error)
+        }
+      }
+    }
+
+    // Check immediately on mount
+    checkAndEnterFullscreen()
+
+    // Then check every 5 seconds
+    const interval = setInterval(checkAndEnterFullscreen, 5000)
+
+    return () => clearInterval(interval)
   }, [])
 
   const handleEnterFullscreen = async () => {
     try {
-      if (containerRef.current && !document.fullscreenElement) {
-        await containerRef.current.requestFullscreen()
+      const isInFullscreen = !!(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).webkitCurrentFullScreenElement
+      )
+
+      if (containerRef.current && !isInFullscreen) {
+        const element = containerRef.current as any
+
+        // Try webkit prefixed version first (for iPad)
+        if (element.webkitRequestFullscreen) {
+          await element.webkitRequestFullscreen()
+        }
+        // Then try standard version
+        else if (element.requestFullscreen) {
+          await element.requestFullscreen()
+        }
         setIsFullscreen(true)
       }
     } catch (error) {
@@ -167,10 +235,14 @@ export default function LiveScreenPage({ params }: PageProps) {
 
   const handleExitFullscreen = async () => {
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen()
-        setIsFullscreen(false)
+      const doc = document as any
+
+      if (doc.exitFullscreen && document.fullscreenElement) {
+        await doc.exitFullscreen()
+      } else if (doc.webkitExitFullscreen && doc.webkitFullscreenElement) {
+        await doc.webkitExitFullscreen()
       }
+      setIsFullscreen(false)
     } catch (error) {
       console.error('Failed to exit fullscreen:', error)
     }
@@ -477,7 +549,7 @@ export default function LiveScreenPage({ params }: PageProps) {
         </div>
       )}
 
-      <div ref={containerRef} className="min-h-screen bg-gradient-to-br from-white to-gray-50 flex flex-col">
+      <div ref={containerRef} data-fullscreen-container className="h-screen bg-gradient-to-br from-white to-gray-50 flex flex-col overflow-hidden">
         {/* Compact Header */}
         <div className="max-w-7xl mx-auto w-full px-3 pt-2 pb-1 flex-shrink-0">
           <Card className="bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20">
@@ -531,9 +603,9 @@ export default function LiveScreenPage({ params }: PageProps) {
         </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto w-full px-3 md:px-4 flex-1 flex flex-col overflow-hidden pb-20">
+      <div className="max-w-7xl mx-auto w-full px-3 md:px-4 flex-1 flex flex-col min-h-0 mb-[88px]">
         {activeView === 'timer' && (
-          <div className="flex-1 flex flex-col min-h-0">
+          <div className="h-full flex flex-col overflow-hidden">
             <SubjectTimer studentId={studentId} />
           </div>
         )}
@@ -760,20 +832,29 @@ export default function LiveScreenPage({ params }: PageProps) {
       {/* Manager Call Confirmation Modal */}
       <Dialog open={managerCallModalOpen} onOpenChange={setManagerCallModalOpen}>
         <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>매니저 호출</DialogTitle>
-            <DialogDescription>
+          <DialogHeader className="text-center pb-4">
+            <DialogTitle className="text-2xl">매니저 호출</DialogTitle>
+            <DialogDescription className="text-base pt-2">
               매니저를 부르시겠습니까?
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setManagerCallModalOpen(false)}>
-              No
+          <div className="flex gap-3 pt-4">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={() => setManagerCallModalOpen(false)}
+              className="w-[48%] h-16 text-lg font-semibold"
+            >
+              취소
             </Button>
-            <Button onClick={handleCallManager}>
-              Yes
+            <Button
+              size="lg"
+              onClick={handleCallManager}
+              className="w-[48%] h-16 text-lg font-semibold"
+            >
+              호출하기
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
       </div>
