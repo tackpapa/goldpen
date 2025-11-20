@@ -1,4 +1,6 @@
 'use client'
+export const runtime = 'edge'
+
 
 
 // Consultations page with waitlist feature
