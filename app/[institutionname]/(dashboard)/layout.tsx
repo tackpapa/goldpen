@@ -1,3 +1,5 @@
+export const runtime = 'edge'
+
 import { Header } from '@/components/shared/Header'
 import { Sidebar } from '@/components/shared/Sidebar'
 
