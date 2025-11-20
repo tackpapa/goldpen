@@ -42,7 +42,7 @@ npm run pages:build
 
 **Build output directory**:
 ```
-.vercel/output/static
+out
 ```
 
 **Root directory (optional)**:
