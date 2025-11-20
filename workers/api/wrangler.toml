@@ -16,17 +16,27 @@ local_protocol = "http"
 # Environment Variables
 [vars]
 # Public variables (non-sensitive)
-# NEXT_PUBLIC_APP_URL will be set here
+NEXT_PUBLIC_APP_URL = "https://goldpen.kr"
+NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkeHh6eWdxampqcHR6bHZncnR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1ODk2NjQsImV4cCI6MjA3OTE2NTY2NH0.kcGWLo6b8NwI5o2JtvGtk6khlDtSzBYSvvDoSfjux44"
 
-# Secrets (set via CLI):
-# wrangler secret put NEXT_PUBLIC_SUPABASE_URL
-# wrangler secret put NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Secrets (set via CLI or Dashboard):
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY (optional, for admin operations)
 
 # Production Environment
 [env.production]
 name = "goldpen-api-production"
 workers_dev = false
+
+# Custom Domain
+[[env.production.routes]]
+pattern = "api.goldpen.kr/*"
+zone_name = "goldpen.kr"
+
+[env.production.vars]
+NEXT_PUBLIC_APP_URL = "https://goldpen.kr"
+NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkeHh6eWdxampqcHR6bHZncnR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1ODk2NjQsImV4cCI6MjA3OTE2NTY2NH0.kcGWLo6b8NwI5o2JtvGtk6khlDtSzBYSvvDoSfjux44"
 
 # Staging Environment
 [env.staging]
