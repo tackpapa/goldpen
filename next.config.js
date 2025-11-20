@@ -2,9 +2,6 @@
 const nextConfig = {
   reactStrictMode: true,
 
-  // Cloudflare Pages 배포 설정
-  output: 'export', // Static HTML export
-
   // TypeScript 엄격 모드 (프레젠테이션용 빌드 시 임시 비활성화)
   typescript: {
     ignoreBuildErrors: true,
