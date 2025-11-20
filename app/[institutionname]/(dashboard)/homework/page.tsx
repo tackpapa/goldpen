@@ -1,4 +1,6 @@
 'use client'
+export const runtime = 'edge'
+
 
 /**
  * 과제 관리 페이지 (Homework Management) - 강사용

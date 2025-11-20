@@ -1,4 +1,6 @@
 'use client'
+export const runtime = 'edge'
+
 
 /**
  * 수업일지 페이지 (Lessons/Class Journal) - 강사용

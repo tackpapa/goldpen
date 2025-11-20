@@ -1,4 +1,6 @@
 'use client'
+export const runtime = 'edge'
+
 
 /**
  * 시험 관리 페이지 (Exams Management) - 강사용
