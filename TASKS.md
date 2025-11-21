@@ -133,3 +133,98 @@ _현재 없음_
 ---
 
 **마지막 업데이트**: 2025-11-18 01:50 KST
+
+---
+
+## 📅 2025-11-21 - Mock 데이터 제거 및 BFF 마이그레이션
+
+### Session: 14개 대시보드 페이지 Mock → Supabase 마이그레이션
+
+**작업자**: Claude Code
+**상태**: 완료 ✅
+
+#### 완료된 작업 ✅
+
+1. **14개 대시보드 페이지 Mock 데이터 제거 및 API 연결**
+   - Students, Classes, Teachers, Consultations, Homework
+   - Attendance, Exams, Lessons, Rooms, Expenses
+   - Seats, Schedule, Overview, Settings
+   - BFF 패턴 적용 (페이지 → API Route → Supabase)
+
+2. **이번 세션 추가 수정**
+   - `seats/page.tsx`: mockAssignments → seatAssignments (빈 객체)
+   - `exams/page.tsx`: mockStudentsWithParents, mockStudents, mockScores 제거
+   - `billing/page.tsx`: mockRevenueTransactions → revenueTransactions (빈 배열)
+
+3. **빌드 검증**: ✅ pnpm build 성공
+
+#### 잔여 Mock 데이터 (별도 페이지, 미처리)
+- `all-schedules/page.tsx`: mockRooms, mockTeachers, mockStudents, mockSchedules
+- `all-schedules-v2/page.tsx`: mockRooms, mockTeachers, mockSchedules
+- `all-schedules-v3/page.tsx`: mockRooms, mockTeachers, mockSchedules
+
+---
+
+## 📅 2025-11-20 - 슈퍼 어드민 Frontend 구현
+
+### Session: Super Admin 시스템 구축
+
+**작업자**: Claude Code
+**상태**: 진행 중 🚧
+
+#### 완료된 작업 ✅
+
+1. **Database Schema 변경**
+   - Migration 파일: `supabase/migrations/20251120_superadmin_schema.sql`
+   - `user_role` enum에 `super_admin` 추가
+   - `organizations` 테이블 확장: status, subscription_plan, max_users, max_students
+   - `audit_logs` 테이블 생성 (감사 로그)
+   - RLS 정책 추가 (super_admin 전용 접근 권한)
+
+2. **슈퍼 어드민 레이아웃 구현**
+   - `/app/superadmin/layout.tsx` - 권한 체크
+   - `/components/superadmin/SuperAdminSidebar.tsx` - 전용 사이드바
+   - `/components/superadmin/SuperAdminHeader.tsx` - 전용 헤더
+
+3. **Organizations API 구현**
+   - `GET /api/superadmin/organizations` - 목록 (검색, 페이지네이션)
+   - `POST /api/superadmin/organizations` - 생성
+   - `GET /api/superadmin/organizations/[id]` - 상세
+   - `PATCH /api/superadmin/organizations/[id]` - 수정
+   - `DELETE /api/superadmin/organizations/[id]` - 삭제 (soft delete)
+
+4. **Statistics API 구현**
+   - `GET /api/superadmin/stats/overview` - 대시보드 통계
+
+5. **프론트엔드 페이지 구현**
+   - `/app/superadmin/dashboard/page.tsx` - 통계 대시보드
+   - `/app/superadmin/organizations/page.tsx` - 조직 목록 (DataTable)
+
+#### 현재 진행 중 🚧
+
+6. **로그인 문제 해결**
+   - 상태: 진행 중
+   - 문제: admin@goldpen.kr로 로그인 후 슈퍼 어드민 접근 불가
+   - 예상 원인: DB migration 미실행 또는 role 미설정
+
+#### 다음 단계 📋
+
+7. **Migration 실행**
+   - Supabase Dashboard에서 SQL 실행
+
+8. **Admin User Role 변경**
+   - `UPDATE users SET role = 'super_admin' WHERE id = 'f605cd18-179b-4c54-bf66-0289d47d3fbf'`
+
+9. **로컬 테스트**
+   - 로그인 테스트
+   - /superadmin/dashboard 접근 테스트
+   - Organizations CRUD 테스트
+
+10. **추가 기능 구현 (선택)**
+    - Users 관리 페이지
+    - Audit Logs 페이지
+    - Organizations 생성/수정 폼
+    - 차트 시각화 (recharts)
+
+---
+

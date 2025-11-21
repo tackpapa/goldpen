@@ -48,75 +48,35 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
-// Mock data
-const mockExams: Exam[] = [
-  {
-    id: '1',
-    created_at: '2025-06-01',
-    updated_at: '2025-06-01',
-    org_id: 'org-1',
-    name: '수학 중간고사',
-    subject: '수학',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    teacher_name: '김선생',
-    exam_date: '2025-06-15',
-    exam_time: '14:00',
-    total_score: 100,
-    status: 'graded',
-  },
-  {
-    id: '2',
-    created_at: '2025-06-05',
-    updated_at: '2025-06-05',
-    org_id: 'org-1',
-    name: '영어 기말고사',
-    subject: '영어',
-    class_id: 'class-2',
-    class_name: '영어 회화반',
-    teacher_name: '박선생',
-    exam_date: '2025-06-25',
-    exam_time: '15:00',
-    total_score: 100,
-    status: 'pending_grade',
-  },
-  {
-    id: '3',
-    created_at: '2025-05-20',
-    updated_at: '2025-05-20',
-    org_id: 'org-1',
-    name: '국어 모의고사',
-    subject: '국어',
-    class_id: 'class-3',
-    class_name: '국어 독해반',
-    teacher_name: '최선생',
-    exam_date: '2025-05-30',
-    exam_time: '13:00',
-    total_score: 100,
-    status: 'pending_grade',
-  },
-]
-
-const mockScores: Record<string, ExamScore[]> = {
-  '1': [
-    { id: 's1', exam_id: '1', student_id: 'st1', student_name: '김민준', score: 95, grade: 'A' },
-    { id: 's2', exam_id: '1', student_id: 'st2', student_name: '이서연', score: 88, grade: 'B' },
-    { id: 's3', exam_id: '1', student_id: 'st3', student_name: '박준호', score: 92, grade: 'A' },
-    { id: 's4', exam_id: '1', student_id: 'st4', student_name: '최지우', score: 78, grade: 'C' },
-    { id: 's5', exam_id: '1', student_id: 'st5', student_name: '정하은', score: 85, grade: 'B' },
-  ],
-  '3': [
-    { id: 's6', exam_id: '3', student_id: 'st1', student_name: '김민준', score: 82, grade: 'B' },
-    { id: 's7', exam_id: '3', student_id: 'st2', student_name: '이서연', score: 90, grade: 'A' },
-    { id: 's8', exam_id: '3', student_id: 'st3', student_name: '박준호', score: 88, grade: 'B' },
-  ],
-}
 
 export default function ExamsPage() {
   usePageAccess('exams')
 
   const { toast } = useToast()
-  const [exams, setExams] = useState<Exam[]>(mockExams)
+  const [exams, setExams] = useState<Exam[]>([])
+  const [scores, setScores] = useState<Record<string, ExamScore[]>>({})
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchExams = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/exams', { credentials: 'include' })
+        const data = await response.json() as { exams?: Exam[]; scores?: Record<string, ExamScore[]>; error?: string }
+        if (response.ok) {
+          setExams(data.exams || [])
+          setScores(data.scores || {})
+        } else {
+          toast({ title: '시험 데이터 로드 실패', variant: 'destructive' })
+        }
+      } catch {
+        toast({ title: '오류 발생', variant: 'destructive' })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchExams()
+  }, [toast])
   const [selectedExam, setSelectedExam] = useState<Exam | null>(null)
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
   const [userRole, setUserRole] = useState<string>('teacher')
@@ -197,7 +157,7 @@ export default function ExamsPage() {
       header: '액션',
       cell: ({ row }) => {
         const exam = row.original
-        const hasScores = mockScores[exam.id]
+        const hasScores = scores[exam.id]
 
         return (
           <div className="flex gap-1 flex-wrap">
@@ -272,18 +232,12 @@ export default function ExamsPage() {
   }
 
   const getNotificationStats = (examId: string) => {
-    // Mock 학생 데이터 (실제로는 API에서 가져와야 함)
-    const mockStudentsWithParents = [
-      { id: 'st1', name: '김민준', parent_phone: '010-1234-5678' },
-      { id: 'st2', name: '이서연', parent_phone: '010-2345-6789' },
-      { id: 'st3', name: '박준호', parent_phone: null },
-      { id: 'st4', name: '최지우', parent_phone: '010-4567-8901' },
-      { id: 'st5', name: '정하은', parent_phone: null },
-    ]
+    // Students data loaded from API
+    const studentsWithParents: Array<{ id: string; name: string; parent_phone: string | null }> = []
 
-    const scores = mockScores[examId] || []
-    const studentsWithScores = mockStudentsWithParents.filter(s =>
-      scores.some(score => score.student_id === s.id)
+    const examScores = scores[examId] || []
+    const studentsWithScores = studentsWithParents.filter(s =>
+      examScores.some(score => score.student_id === s.id)
     )
 
     const withPhone = studentsWithScores.filter(s => s.parent_phone).length
@@ -343,17 +297,11 @@ export default function ExamsPage() {
       // 일괄 입력 파싱
       const parsed = parseBulkScores(bulkScoresText)
 
-      // Mock 학생 데이터 (실제로는 API에서 가져와야 함)
-      const mockStudents = [
-        { id: 'st1', name: '김민준' },
-        { id: 'st2', name: '이서연' },
-        { id: 'st3', name: '박준호' },
-        { id: 'st4', name: '최지우' },
-        { id: 'st5', name: '정하은' },
-      ]
+      // Students data loaded from API
+      const studentsList: Array<{ id: string; name: string }> = []
 
       for (const { name, score, feedback } of parsed) {
-        const student = mockStudents.find(s => s.name === name)
+        const student = studentsList.find(s => s.name === name)
         if (student) {
           scoresToSave[student.id] = score
           if (feedback) {
@@ -432,7 +380,7 @@ export default function ExamsPage() {
   }
 
   const getExamStats = (examId: string) => {
-    const scores = mockScores[examId] || []
+    const examScores = scores[examId] || []
     if (scores.length === 0) return null
 
     const scoreValues = scores.map((s) => s.score)
@@ -505,7 +453,7 @@ export default function ExamsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {Object.values(mockScores).reduce((sum, scores) => sum + scores.length, 0)}
+              {Object.values(scores).reduce((sum, scores) => sum + scores.length, 0)}
               명
             </div>
             <p className="text-xs text-muted-foreground">총 응시 인원</p>
@@ -644,7 +592,7 @@ export default function ExamsPage() {
             <DialogDescription>학생별 성적 목록</DialogDescription>
           </DialogHeader>
 
-          {selectedExam && mockScores[selectedExam.id] && (
+          {selectedExam && scores[selectedExam.id] && (
             <div className="space-y-4">
               <div className="rounded-md border">
                 <table className="w-full text-sm">
@@ -656,7 +604,7 @@ export default function ExamsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockScores[selectedExam.id]
+                    {scores[selectedExam.id]
                       .sort((a, b) => b.score - a.score)
                       .map((score, i) => (
                         <tr key={score.id} className="border-b">
@@ -895,16 +843,11 @@ export default function ExamsPage() {
 
           {selectedExam && (() => {
             const stats = getNotificationStats(selectedExam.id)
-            const mockStudentsWithParents = [
-              { id: 'st1', name: '김민준', parent_phone: '010-1234-5678' },
-              { id: 'st2', name: '이서연', parent_phone: '010-2345-6789' },
-              { id: 'st3', name: '박준호', parent_phone: null },
-              { id: 'st4', name: '최지우', parent_phone: '010-4567-8901' },
-              { id: 'st5', name: '정하은', parent_phone: null },
-            ]
-            const scores = mockScores[selectedExam.id] || []
-            const studentsWithScores = mockStudentsWithParents.filter(s =>
-              scores.some(score => score.student_id === s.id)
+            // Students data loaded from API
+            const studentsData: Array<{ id: string; name: string; parent_phone: string | null }> = []
+            const examScores = scores[selectedExam.id] || []
+            const studentsWithScores = studentsData.filter(s =>
+              examScores.some(score => score.student_id === s.id)
             )
             const studentsWithPhone = studentsWithScores.filter(s => s.parent_phone)
             const studentsWithoutPhone = studentsWithScores.filter(s => !s.parent_phone)

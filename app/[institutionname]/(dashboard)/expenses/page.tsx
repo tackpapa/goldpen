@@ -59,164 +59,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { format } from 'date-fns'
 
-// Mock data - 최근 6개월 지출 데이터
-const mockMonthlyExpenses: MonthlyExpenseSummary[] = [
-  {
-    month: '2024-05',
-    total_expenses: 15800000,
-    category_expenses: [
-      { category_id: '1', category_name: '강사 급여', amount: 8500000, percentage: 53.8 },
-      { category_id: '2', category_name: '임대료', amount: 3500000, percentage: 22.2 },
-      { category_id: '3', category_name: '관리비', amount: 1800000, percentage: 11.4 },
-      { category_id: '4', category_name: '교재/교구', amount: 1200000, percentage: 7.6 },
-      { category_id: '5', category_name: '마케팅', amount: 800000, percentage: 5.1 },
-    ],
-    previous_month_total: 15200000,
-    change_percentage: 3.9,
-  },
-  {
-    month: '2024-06',
-    total_expenses: 16500000,
-    category_expenses: [
-      { category_id: '1', category_name: '강사 급여', amount: 9000000, percentage: 54.5 },
-      { category_id: '2', category_name: '임대료', amount: 3500000, percentage: 21.2 },
-      { category_id: '3', category_name: '관리비', amount: 1900000, percentage: 11.5 },
-      { category_id: '4', category_name: '교재/교구', amount: 1300000, percentage: 7.9 },
-      { category_id: '5', category_name: '마케팅', amount: 800000, percentage: 4.8 },
-    ],
-    previous_month_total: 15800000,
-    change_percentage: 4.4,
-  },
-  {
-    month: '2024-07',
-    total_expenses: 17200000,
-    category_expenses: [
-      { category_id: '1', category_name: '강사 급여', amount: 9500000, percentage: 55.2 },
-      { category_id: '2', category_name: '임대료', amount: 3500000, percentage: 20.3 },
-      { category_id: '3', category_name: '관리비', amount: 2000000, percentage: 11.6 },
-      { category_id: '4', category_name: '교재/교구', amount: 1400000, percentage: 8.1 },
-      { category_id: '5', category_name: '마케팅', amount: 800000, percentage: 4.7 },
-    ],
-    previous_month_total: 16500000,
-    change_percentage: 4.2,
-  },
-  {
-    month: '2024-08',
-    total_expenses: 18000000,
-    category_expenses: [
-      { category_id: '1', category_name: '강사 급여', amount: 10000000, percentage: 55.6 },
-      { category_id: '2', category_name: '임대료', amount: 3500000, percentage: 19.4 },
-      { category_id: '3', category_name: '관리비', amount: 2100000, percentage: 11.7 },
-      { category_id: '4', category_name: '교재/교구', amount: 1500000, percentage: 8.3 },
-      { category_id: '5', category_name: '마케팅', amount: 900000, percentage: 5.0 },
-    ],
-    previous_month_total: 17200000,
-    change_percentage: 4.7,
-  },
-  {
-    month: '2024-09',
-    total_expenses: 18500000,
-    category_expenses: [
-      { category_id: '1', category_name: '강사 급여', amount: 10300000, percentage: 55.7 },
-      { category_id: '2', category_name: '임대료', amount: 3500000, percentage: 18.9 },
-      { category_id: '3', category_name: '관리비', amount: 2200000, percentage: 11.9 },
-      { category_id: '4', category_name: '교재/교구', amount: 1500000, percentage: 8.1 },
-      { category_id: '5', category_name: '마케팅', amount: 1000000, percentage: 5.4 },
-    ],
-    previous_month_total: 18000000,
-    change_percentage: 2.8,
-  },
-  {
-    month: '2024-10',
-    total_expenses: 19200000,
-    category_expenses: [
-      { category_id: '1', category_name: '강사 급여', amount: 10800000, percentage: 56.3 },
-      { category_id: '2', category_name: '임대료', amount: 3500000, percentage: 18.2 },
-      { category_id: '3', category_name: '관리비', amount: 2300000, percentage: 12.0 },
-      { category_id: '4', category_name: '교재/교구', amount: 1600000, percentage: 8.3 },
-      { category_id: '5', category_name: '마케팅', amount: 1000000, percentage: 5.2 },
-    ],
-    previous_month_total: 18500000,
-    change_percentage: 3.8,
-  },
-]
-
-// Chart data transformations
-const trendData = mockMonthlyExpenses.map(item => ({
-  month: item.month.slice(5),
-  지출: item.total_expenses / 10000, // Convert to 만원
-  증감률: item.change_percentage,
-}))
-
-const categoryTrendData = mockMonthlyExpenses.map(item => {
-  const data: any = { month: item.month.slice(5) }
-  item.category_expenses.forEach(cat => {
-    data[cat.category_name] = cat.amount / 10000
-  })
-  return data
-})
-
-// 최신 월 데이터
-const latestMonth = mockMonthlyExpenses[mockMonthlyExpenses.length - 1]
-const previousMonth = mockMonthlyExpenses[mockMonthlyExpenses.length - 2]
-
-// Mock expense records - 지출 내역 더미 데이터
-const mockExpenseRecords: ExpenseRecord[] = [
-  // 10월 데이터
-  { id: '1', created_at: '2024-10-25T09:00:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 3200000, expense_date: '2024-10-25', is_recurring: true, recurring_type: 'monthly', notes: '김강사 10월 급여' },
-  { id: '2', created_at: '2024-10-25T09:05:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2800000, expense_date: '2024-10-25', is_recurring: true, recurring_type: 'monthly', notes: '이강사 10월 급여' },
-  { id: '3', created_at: '2024-10-25T09:10:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2500000, expense_date: '2024-10-25', is_recurring: true, recurring_type: 'monthly', notes: '박강사 10월 급여' },
-  { id: '4', created_at: '2024-10-25T09:15:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2300000, expense_date: '2024-10-25', is_recurring: true, recurring_type: 'monthly', notes: '최강사 10월 급여' },
-  { id: '5', created_at: '2024-10-01T10:00:00Z', org_id: 'org-1', category_id: '2', category_name: '임대료', amount: 3500000, expense_date: '2024-10-01', is_recurring: true, recurring_type: 'monthly', notes: '10월 임대료' },
-  { id: '6', created_at: '2024-10-05T11:00:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 850000, expense_date: '2024-10-05', is_recurring: true, recurring_type: 'monthly', notes: '전기료' },
-  { id: '7', created_at: '2024-10-05T11:10:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 450000, expense_date: '2024-10-05', is_recurring: true, recurring_type: 'monthly', notes: '수도료' },
-  { id: '8', created_at: '2024-10-05T11:20:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 280000, expense_date: '2024-10-05', is_recurring: true, recurring_type: 'monthly', notes: '인터넷/전화' },
-  { id: '9', created_at: '2024-10-05T11:30:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 720000, expense_date: '2024-10-05', is_recurring: true, recurring_type: 'monthly', notes: '관리비' },
-  { id: '10', created_at: '2024-10-08T14:00:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 850000, expense_date: '2024-10-08', is_recurring: false, notes: '수학 교재 구입 (50권)' },
-  { id: '11', created_at: '2024-10-12T15:30:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 420000, expense_date: '2024-10-12', is_recurring: false, notes: '영어 문제집 구입 (30권)' },
-  { id: '12', created_at: '2024-10-15T16:00:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 330000, expense_date: '2024-10-15', is_recurring: false, notes: '과학 실험 도구' },
-  { id: '13', created_at: '2024-10-03T13:00:00Z', org_id: 'org-1', category_id: '5', category_name: '마케팅', amount: 550000, expense_date: '2024-10-03', is_recurring: false, notes: '네이버 광고' },
-  { id: '14', created_at: '2024-10-10T14:00:00Z', org_id: 'org-1', category_id: '5', category_name: '마케팅', amount: 450000, expense_date: '2024-10-10', is_recurring: false, notes: '현수막 제작' },
-  { id: '15', created_at: '2024-10-18T10:00:00Z', org_id: 'org-1', category_id: '6', category_name: '기타', amount: 180000, expense_date: '2024-10-18', is_recurring: false, notes: '사무용품 구입' },
-
-  // 9월 데이터
-  { id: '16', created_at: '2024-09-25T09:00:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 3200000, expense_date: '2024-09-25', is_recurring: true, recurring_type: 'monthly', notes: '김강사 9월 급여' },
-  { id: '17', created_at: '2024-09-25T09:05:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2700000, expense_date: '2024-09-25', is_recurring: true, recurring_type: 'monthly', notes: '이강사 9월 급여' },
-  { id: '18', created_at: '2024-09-25T09:10:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2400000, expense_date: '2024-09-25', is_recurring: true, recurring_type: 'monthly', notes: '박강사 9월 급여' },
-  { id: '19', created_at: '2024-09-25T09:15:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2000000, expense_date: '2024-09-25', is_recurring: true, recurring_type: 'monthly', notes: '최강사 9월 급여' },
-  { id: '20', created_at: '2024-09-01T10:00:00Z', org_id: 'org-1', category_id: '2', category_name: '임대료', amount: 3500000, expense_date: '2024-09-01', is_recurring: true, recurring_type: 'monthly', notes: '9월 임대료' },
-  { id: '21', created_at: '2024-09-05T11:00:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 820000, expense_date: '2024-09-05', is_recurring: true, recurring_type: 'monthly', notes: '전기료' },
-  { id: '22', created_at: '2024-09-05T11:10:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 430000, expense_date: '2024-09-05', is_recurring: true, recurring_type: 'monthly', notes: '수도료' },
-  { id: '23', created_at: '2024-09-05T11:20:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 280000, expense_date: '2024-09-05', is_recurring: true, recurring_type: 'monthly', notes: '인터넷/전화' },
-  { id: '24', created_at: '2024-09-05T11:30:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 670000, expense_date: '2024-09-05', is_recurring: true, recurring_type: 'monthly', notes: '관리비' },
-  { id: '25', created_at: '2024-09-10T14:00:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 780000, expense_date: '2024-09-10', is_recurring: false, notes: '수학 교재 구입' },
-  { id: '26', created_at: '2024-09-15T15:00:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 720000, expense_date: '2024-09-15', is_recurring: false, notes: '영어 교재 구입' },
-  { id: '27', created_at: '2024-09-08T13:00:00Z', org_id: 'org-1', category_id: '5', category_name: '마케팅', amount: 600000, expense_date: '2024-09-08', is_recurring: false, notes: '페이스북 광고' },
-  { id: '28', created_at: '2024-09-20T14:00:00Z', org_id: 'org-1', category_id: '5', category_name: '마케팅', amount: 400000, expense_date: '2024-09-20', is_recurring: false, notes: '전단지 제작' },
-  { id: '29', created_at: '2024-09-22T10:00:00Z', org_id: 'org-1', category_id: '6', category_name: '기타', amount: 150000, expense_date: '2024-09-22', is_recurring: false, notes: '복사기 수리' },
-
-  // 8월 데이터
-  { id: '30', created_at: '2024-08-25T09:00:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 3100000, expense_date: '2024-08-25', is_recurring: true, recurring_type: 'monthly', notes: '김강사 8월 급여' },
-  { id: '31', created_at: '2024-08-25T09:05:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2800000, expense_date: '2024-08-25', is_recurring: true, recurring_type: 'monthly', notes: '이강사 8월 급여' },
-  { id: '32', created_at: '2024-08-25T09:10:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 2300000, expense_date: '2024-08-25', is_recurring: true, recurring_type: 'monthly', notes: '박강사 8월 급여' },
-  { id: '33', created_at: '2024-08-25T09:15:00Z', org_id: 'org-1', category_id: '1', category_name: '강사 급여', amount: 1800000, expense_date: '2024-08-25', is_recurring: true, recurring_type: 'monthly', notes: '최강사 8월 급여' },
-  { id: '34', created_at: '2024-08-01T10:00:00Z', org_id: 'org-1', category_id: '2', category_name: '임대료', amount: 3500000, expense_date: '2024-08-01', is_recurring: true, recurring_type: 'monthly', notes: '8월 임대료' },
-  { id: '35', created_at: '2024-08-05T11:00:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 900000, expense_date: '2024-08-05', is_recurring: true, recurring_type: 'monthly', notes: '전기료 (여름철 에어컨)' },
-  { id: '36', created_at: '2024-08-05T11:10:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 450000, expense_date: '2024-08-05', is_recurring: true, recurring_type: 'monthly', notes: '수도료' },
-  { id: '37', created_at: '2024-08-05T11:20:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 280000, expense_date: '2024-08-05', is_recurring: true, recurring_type: 'monthly', notes: '인터넷/전화' },
-  { id: '38', created_at: '2024-08-05T11:30:00Z', org_id: 'org-1', category_id: '3', category_name: '관리비', amount: 470000, expense_date: '2024-08-05', is_recurring: true, recurring_type: 'monthly', notes: '관리비' },
-  { id: '39', created_at: '2024-08-12T14:00:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 950000, expense_date: '2024-08-12', is_recurring: false, notes: '하반기 교재 대량 구입' },
-  { id: '40', created_at: '2024-08-18T15:00:00Z', org_id: 'org-1', category_id: '4', category_name: '교재/교구', amount: 550000, expense_date: '2024-08-18', is_recurring: false, notes: '문제집 및 참고서' },
-  { id: '41', created_at: '2024-08-07T13:00:00Z', org_id: 'org-1', category_id: '5', category_name: '마케팅', amount: 500000, expense_date: '2024-08-07', is_recurring: false, notes: '여름 방학 특강 광고' },
-  { id: '42', created_at: '2024-08-20T14:00:00Z', org_id: 'org-1', category_id: '5', category_name: '마케팅', amount: 400000, expense_date: '2024-08-20', is_recurring: false, notes: '현수막 및 배너' },
-  { id: '43', created_at: '2024-08-28T10:00:00Z', org_id: 'org-1', category_id: '6', category_name: '기타', amount: 320000, expense_date: '2024-08-28', is_recurring: false, notes: '에어컨 청소 및 점검' },
-]
 
 export default function ExpensesPage() {
   const { toast } = useToast()
   const [selectedPeriod, setSelectedPeriod] = useState('6months')
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
-  const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>(mockExpenseRecords)
+  const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([])
+  const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpenseSummary[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [expenseFilter, setExpenseFilter] = useState<'all' | 'monthly' | 'weekly' | 'one-time'>('all')
   const [selectedMonth, setSelectedMonth] = useState('2024-10')
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('전체')
@@ -237,7 +87,62 @@ export default function ExpensesPage() {
     // Load expense categories from localStorage
     const categories = expenseCategoryManager.getCategories()
     setExpenseCategories(categories)
-  }, [])
+
+    // Fetch expenses from API
+    const fetchExpenses = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/expenses', { credentials: 'include' })
+        const data = await response.json() as {
+          expenseRecords?: ExpenseRecord[]
+          monthlyExpenses?: MonthlyExpenseSummary[]
+          error?: string
+        }
+        if (response.ok) {
+          setExpenseRecords(data.expenseRecords || [])
+          setMonthlyExpenses(data.monthlyExpenses || [])
+        } else {
+          toast({ title: '지출 데이터 로드 실패', variant: 'destructive' })
+        }
+      } catch {
+        toast({ title: '오류 발생', variant: 'destructive' })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchExpenses()
+  }, [toast])
+
+  // Computed values from monthlyExpenses
+  const latestMonth = monthlyExpenses[monthlyExpenses.length - 1] || {
+    month: '',
+    total_expenses: 0,
+    category_expenses: [],
+    previous_month_total: 0,
+    change_percentage: 0
+  }
+  const previousMonth = monthlyExpenses[monthlyExpenses.length - 2] || {
+    month: '',
+    total_expenses: 0,
+    category_expenses: [],
+    previous_month_total: 0,
+    change_percentage: 0
+  }
+
+  // Chart data transformations
+  const trendData = monthlyExpenses.map(item => ({
+    month: item.month.slice(5),
+    지출: item.total_expenses / 10000,
+    증감률: item.change_percentage,
+  }))
+
+  const categoryTrendData = monthlyExpenses.map(item => {
+    const data: Record<string, string | number> = { month: item.month.slice(5) }
+    item.category_expenses.forEach(cat => {
+      data[cat.category_name] = cat.amount / 10000
+    })
+    return data
+  })
 
   // Get colors for each category
   const getCategoryColor = (categoryName: string) => {
@@ -416,10 +321,10 @@ export default function ExpensesPage() {
           <CardContent>
             <div className="text-2xl font-bold">
               ₩
-              {(
-                mockMonthlyExpenses.reduce((sum, m) => sum + m.total_expenses, 0) /
-                mockMonthlyExpenses.length
-              ).toLocaleString('ko-KR', { maximumFractionDigits: 0 })}
+              {monthlyExpenses.length > 0 ? (
+                monthlyExpenses.reduce((sum, m) => sum + m.total_expenses, 0) /
+                monthlyExpenses.length
+              ).toLocaleString('ko-KR', { maximumFractionDigits: 0 }) : '0'}
             </div>
             <p className="text-xs text-muted-foreground mt-1">최근 6개월 평균</p>
             <div className="flex items-center mt-2">
@@ -781,7 +686,7 @@ export default function ExpensesPage() {
           </Card>
 
           <div className="grid gap-4">
-            {mockMonthlyExpenses.reverse().map((month, index) => (
+            {[...monthlyExpenses].reverse().map((month, index) => (
               <Card key={month.month}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
@@ -841,7 +746,7 @@ export default function ExpensesPage() {
             <CardContent>
               <div className="space-y-6">
                 {latestMonth.category_expenses.map((cat, index) => {
-                  const history = mockMonthlyExpenses.map(m => {
+                  const history = monthlyExpenses.map(m => {
                     const categoryData = m.category_expenses.find(
                       c => c.category_name === cat.category_name
                     )

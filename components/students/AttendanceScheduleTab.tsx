@@ -6,11 +6,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { X, Plus } from 'lucide-react'
+import { X } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttendanceScheduleTabProps {
   student: Student
+  schedules?: any[]
+  loading?: boolean
+  onRefresh?: () => void
 }
 
 const DAYS = [
@@ -23,44 +26,48 @@ const DAYS = [
   { value: 'sunday', label: '일' },
 ] as const
 
-export function AttendanceScheduleTab({ student }: AttendanceScheduleTabProps) {
+export function AttendanceScheduleTab({
+  student,
+  schedules: initialSchedules = [],
+  loading = false,
+  onRefresh
+}: AttendanceScheduleTabProps) {
   const { toast } = useToast()
   const [schedules, setSchedules] = useState<AttendanceSchedule[]>([])
 
   useEffect(() => {
-    // Load schedules from localStorage
-    const stored = localStorage.getItem('attendance_schedules')
-    if (stored) {
-      try {
-        const all = JSON.parse(stored) as AttendanceSchedule[]
-        setSchedules(all.filter(s => s.student_id === student.id))
-      } catch (error) {
-        console.error('Failed to load attendance schedules:', error)
-      }
+    if (initialSchedules && initialSchedules.length > 0) {
+      setSchedules(initialSchedules)
     }
-  }, [student.id])
+  }, [initialSchedules])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    )
+  }
 
   const handleTimeChange = (
     day: typeof DAYS[number]['value'],
     field: 'start_time' | 'end_time',
     value: string
   ) => {
-    const stored = localStorage.getItem('attendance_schedules')
-    let allSchedules: AttendanceSchedule[] = stored ? JSON.parse(stored) : []
-
-    const existingIndex = allSchedules.findIndex(
-      s => s.student_id === student.id && s.day_of_week === day
+    // TODO: API 호출로 DB 업데이트
+    const existingIndex = schedules.findIndex(
+      s => s.day_of_week === day
     )
 
+    let newSchedules = [...schedules]
+
     if (existingIndex >= 0) {
-      // Update existing
-      allSchedules[existingIndex] = {
-        ...allSchedules[existingIndex],
+      newSchedules[existingIndex] = {
+        ...newSchedules[existingIndex],
         [field]: value,
         updated_at: new Date().toISOString(),
       }
     } else {
-      // Create new
       const newSchedule: AttendanceSchedule = {
         id: `schedule-${Date.now()}-${day}`,
         created_at: new Date().toISOString(),
@@ -70,24 +77,15 @@ export function AttendanceScheduleTab({ student }: AttendanceScheduleTabProps) {
         start_time: field === 'start_time' ? value : '',
         end_time: field === 'end_time' ? value : '',
       }
-      allSchedules.push(newSchedule)
+      newSchedules.push(newSchedule)
     }
 
-    localStorage.setItem('attendance_schedules', JSON.stringify(allSchedules))
-    setSchedules(allSchedules.filter(s => s.student_id === student.id))
+    setSchedules(newSchedules)
   }
 
   const handleRemoveSchedule = (day: typeof DAYS[number]['value']) => {
-    const stored = localStorage.getItem('attendance_schedules')
-    if (!stored) return
-
-    let allSchedules: AttendanceSchedule[] = JSON.parse(stored)
-    allSchedules = allSchedules.filter(
-      s => !(s.student_id === student.id && s.day_of_week === day)
-    )
-
-    localStorage.setItem('attendance_schedules', JSON.stringify(allSchedules))
-    setSchedules(allSchedules.filter(s => s.student_id === student.id))
+    // TODO: API 호출로 DB에서 삭제
+    setSchedules(schedules.filter(s => s.day_of_week !== day))
 
     toast({
       title: '삭제 완료',

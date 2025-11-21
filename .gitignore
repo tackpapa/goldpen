@@ -52,6 +52,9 @@ supabase/.temp
 .vercel/
 # wrangler.toml - 배포를 위해 주석 처리
 
+# Claude MCP config (contains secrets)
+.claude/mcp.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -73,9 +76,13 @@ supabase/.temp
 *.temp
 test-*.ts
 test-*.js
+test-*.mjs
 verify-*.ts
 verify-*.js
+verify-*.mjs
 temp-*.md
+*-migration.mjs
+reset-*.mjs
 
 # Logs
 logs

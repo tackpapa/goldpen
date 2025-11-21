@@ -1,0 +1,6 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="64" fill="#10B981"/>
+  <circle cx="64" cy="48" r="24" fill="white"/>
+  <path d="M24 104C24 83.5 41.5 67 64 67C86.5 67 104 83.5 104 104" fill="white"/>
+  <text x="64" y="68" text-anchor="middle" fill="#10B981" font-size="32" font-weight="bold" font-family="Arial">U</text>
+</svg>

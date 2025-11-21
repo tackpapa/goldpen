@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { Student, PaymentRecord, ClassCredit, StudyRoomPass } from '@/lib/types/database'
+import type { Student } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -16,14 +16,23 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { revenueCategoryManager } from '@/lib/utils/revenue-categories'
-import { CreditCard, Clock, Calendar as CalendarIcon } from 'lucide-react'
+import { CreditCard, Clock, Calendar as CalendarIcon, Loader2 } from 'lucide-react'
 
 interface PaymentTabProps {
   student: Student
   onPaymentComplete?: () => void
+  subscriptions?: any[]
+  activeSubscription?: any | null
+  loading?: boolean
 }
 
-export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
+export function PaymentTab({
+  student,
+  onPaymentComplete,
+  subscriptions = [],
+  activeSubscription = null,
+  loading = false
+}: PaymentTabProps) {
   const { toast } = useToast()
   const revenueCategories = revenueCategoryManager.getActiveCategories()
 
@@ -40,22 +49,21 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
   const [passAmount, setPassAmount] = useState('')
 
   const [notes, setNotes] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const calculateExpiryDate = (type: 'hours' | 'days', amount: number): string => {
     const now = new Date()
 
     if (type === 'days') {
-      // 일수 기반: 오늘 + N일
       now.setDate(now.getDate() + amount)
     } else {
-      // 시간 기반: 1년 유효기간
       now.setFullYear(now.getFullYear() + 1)
     }
 
     return now.toISOString().split('T')[0]
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validation
     if (!amount || Number(amount) <= 0) {
       toast({
@@ -78,97 +86,59 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
     const category = revenueCategoryManager.getCategoryById(categoryId)
     if (!category) return
 
-    let creditId: string | undefined
-    let passId: string | undefined
+    setSubmitting(true)
 
-    // 1. Create Class Credit if provided
-    if (classCredits && Number(classCredits) > 0) {
-      const newCredit: ClassCredit = {
-        id: `credit-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        student_id: student.id,
-        total_hours: Number(classCredits),
-        used_hours: 0,
-        remaining_hours: Number(classCredits),
-        expiry_date: calculateExpiryDate('hours', Number(classCredits)),
-        status: 'active',
+    try {
+      const response = await fetch('/api/payments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          org_id: student.org_id,
+          student_id: student.id,
+          student_name: student.name,
+          amount: Number(amount),
+          payment_method: paymentMethod,
+          revenue_category_id: categoryId,
+          revenue_category_name: category.name,
+          class_credits: classCredits && Number(classCredits) > 0
+            ? { hours: Number(classCredits) }
+            : null,
+          study_room_pass: passAmount && Number(passAmount) > 0
+            ? { type: passType, amount: Number(passAmount) }
+            : null,
+          notes,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || '결제 등록에 실패했습니다.')
       }
 
-      const storedCredits = localStorage.getItem('class_credits')
-      const allCredits: ClassCredit[] = storedCredits ? JSON.parse(storedCredits) : []
-      allCredits.push(newCredit)
-      localStorage.setItem('class_credits', JSON.stringify(allCredits))
-      creditId = newCredit.id
+      toast({
+        title: '결제 완료',
+        description: `${student.name} 학생의 결제가 완료되었습니다. (${Number(amount).toLocaleString()}원)`,
+      })
+
+      // Reset form
+      setAmount('')
+      setCategoryId('')
+      setClassCredits('')
+      setPassAmount('')
+      setNotes('')
+
+      onPaymentComplete?.()
+    } catch (error) {
+      console.error('Payment error:', error)
+      toast({
+        title: '결제 오류',
+        description: error instanceof Error ? error.message : '결제 등록에 실패했습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSubmitting(false)
     }
-
-    // 2. Create Study Room Pass if provided
-    if (passAmount && Number(passAmount) > 0) {
-      const now = new Date().toISOString().split('T')[0]
-      const expiryDate = calculateExpiryDate(passType, Number(passAmount))
-
-      const newPass: StudyRoomPass = {
-        id: `pass-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        student_id: student.id,
-        pass_type: passType,
-        total_amount: Number(passAmount),
-        remaining_amount: Number(passAmount),
-        start_date: now,
-        expiry_date: expiryDate,
-        status: 'active',
-      }
-
-      const storedPasses = localStorage.getItem('study_room_passes')
-      const allPasses: StudyRoomPass[] = storedPasses ? JSON.parse(storedPasses) : []
-      allPasses.push(newPass)
-      localStorage.setItem('study_room_passes', JSON.stringify(allPasses))
-      passId = newPass.id
-    }
-
-    // 3. Create Payment Record
-    const paymentRecord: PaymentRecord = {
-      id: `payment-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      org_id: student.org_id,
-      student_id: student.id,
-      student_name: student.name,
-      amount: Number(amount),
-      payment_date: new Date().toISOString().split('T')[0],
-      payment_method: paymentMethod,
-      revenue_category_id: categoryId,
-      revenue_category_name: category.name,
-      granted_credits: creditId ? {
-        hours: Number(classCredits),
-        credit_id: creditId,
-      } : undefined,
-      granted_pass: passId ? {
-        type: passType,
-        amount: Number(passAmount),
-        pass_id: passId,
-      } : undefined,
-      status: 'completed',
-      notes,
-    }
-
-    const storedPayments = localStorage.getItem('payment_records')
-    const allPayments: PaymentRecord[] = storedPayments ? JSON.parse(storedPayments) : []
-    allPayments.push(paymentRecord)
-    localStorage.setItem('payment_records', JSON.stringify(allPayments))
-
-    // Success toast
-    toast({
-      title: '결제 완료',
-      description: `${student.name} 학생의 결제가 완료되었습니다. (${Number(amount).toLocaleString()}원)`,
-    })
-
-    // Reset form
-    setAmount('')
-    setCategoryId('')
-    setClassCredits('')
-    setPassAmount('')
-    setNotes('')
-
-    onPaymentComplete?.()
   }
 
   return (
@@ -188,13 +158,14 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
               placeholder="100000"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
+              disabled={submitting}
             />
           </div>
 
           {/* 수입 항목 */}
           <div>
             <Label htmlFor="category">수입 항목 *</Label>
-            <Select value={categoryId} onValueChange={setCategoryId}>
+            <Select value={categoryId} onValueChange={setCategoryId} disabled={submitting}>
               <SelectTrigger id="category">
                 <SelectValue placeholder="수입 항목을 선택하세요" />
               </SelectTrigger>
@@ -216,7 +187,7 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
           {/* 결제 방식 */}
           <div>
             <Label htmlFor="payment-method">결제 방식</Label>
-            <Select value={paymentMethod} onValueChange={(v: 'card' | 'cash' | 'transfer') => setPaymentMethod(v)}>
+            <Select value={paymentMethod} onValueChange={(v: 'card' | 'cash' | 'transfer') => setPaymentMethod(v)} disabled={submitting}>
               <SelectTrigger id="payment-method">
                 <SelectValue />
               </SelectTrigger>
@@ -245,6 +216,7 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
               placeholder="예: 10 (10시간)"
               value={classCredits}
               onChange={(e) => setClassCredits(e.target.value)}
+              disabled={submitting}
             />
           </div>
 
@@ -262,8 +234,9 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
                 placeholder="숫자 입력"
                 value={passAmount}
                 onChange={(e) => setPassAmount(e.target.value)}
+                disabled={submitting}
               />
-              <Select value={passType} onValueChange={(v: 'hours' | 'days') => setPassType(v)}>
+              <Select value={passType} onValueChange={(v: 'hours' | 'days') => setPassType(v)} disabled={submitting}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -289,6 +262,7 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
+              disabled={submitting}
             />
           </div>
         </CardContent>
@@ -302,12 +276,16 @@ export function PaymentTab({ student, onPaymentComplete }: PaymentTabProps) {
           setClassCredits('')
           setPassAmount('')
           setNotes('')
-        }}>
+        }} disabled={submitting}>
           취소
         </Button>
-        <Button onClick={handleSubmit}>
-          <CreditCard className="mr-2 h-4 w-4" />
-          결제 완료
+        <Button onClick={handleSubmit} disabled={submitting}>
+          {submitting ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <CreditCard className="mr-2 h-4 w-4" />
+          )}
+          {submitting ? '처리 중...' : '결제 완료'}
         </Button>
       </div>
     </div>

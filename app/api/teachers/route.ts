@@ -6,7 +6,7 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// Teachers는 users 테이블에서 role='teacher'로 필터링
+// Teachers = users 테이블에서 role='teacher'인 사용자
 const createTeacherSchema = z.object({
   name: z.string().min(1, '이름은 필수입니다'),
   email: z.string().email('올바른 이메일을 입력해주세요'),
@@ -15,7 +15,7 @@ const createTeacherSchema = z.object({
 
 /**
  * GET /api/teachers
- * 교사 목록 조회 (인증된 사용자의 기관에 속한 교사만)
+ * 교사 목록 조회 (users 테이블에서 role='teacher')
  */
 export async function GET(request: Request) {
   try {
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     // 4. 교사 목록 조회 (users 테이블에서 role='teacher')
     let query = supabase
       .from('users')
-      .select('*')
+      .select('id, name, email, phone, created_at')
       .eq('org_id', userProfile.org_id)
       .eq('role', 'teacher')
       .order('created_at', { ascending: false })
@@ -87,8 +87,7 @@ export async function GET(request: Request) {
 /**
  * POST /api/teachers
  * 교사 생성 (users 테이블에 role='teacher'로 추가)
- *
- * NOTE: 실제 운영 환경에서는 Supabase Auth를 통한 회원가입이 필요할 수 있습니다.
+ * owner만 생성 가능 (설정 페이지에서)
  */
 export async function POST(request: Request) {
   try {
@@ -117,10 +116,10 @@ export async function POST(request: Request) {
       )
     }
 
-    // 3. 권한 확인 (owner, manager만 교사 추가 가능)
-    if (!['owner', 'manager'].includes(userProfile.role)) {
+    // 3. 권한 확인 (owner만 교사 추가 가능)
+    if (userProfile.role !== 'owner') {
       return Response.json(
-        { error: '교사를 추가할 권한이 없습니다' },
+        { error: '교사를 추가할 권한이 없습니다 (owner만 가능)' },
         { status: 403 }
       )
     }
@@ -129,7 +128,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const validated = createTeacherSchema.parse(body)
 
-    // 5. 이메일 중복 확인
+    // 5. 이메일 중복 확인 (users 테이블)
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
@@ -143,16 +142,16 @@ export async function POST(request: Request) {
       )
     }
 
-    // 6. 교사 생성 (users 테이블에 role='teacher'로 추가)
-    // NOTE: 실제 환경에서는 Auth signUp이 필요할 수 있음
+    // 6. 교사 생성 (users 테이블에 role='teacher')
     const { data: teacher, error: createError } = await supabase
       .from('users')
       .insert({
         ...validated,
         org_id: userProfile.org_id,
-        role: 'teacher'
+        role: 'teacher',
+        status: 'active'
       })
-      .select()
+      .select('id, name, email, phone, created_at')
       .single()
 
     if (createError) {

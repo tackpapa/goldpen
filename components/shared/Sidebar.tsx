@@ -129,6 +129,7 @@ export function Sidebar() {
   const [isResizing, setIsResizing] = useState(false)
   const [organizationName, setOrganizationName] = useState('GoldPen')
   const [organizationLogo, setOrganizationLogo] = useState('')
+  const [institutionName, setInstitutionName] = useState('') // hydration mismatch 방지
   const sidebarRef = useRef<HTMLDivElement>(null)
 
   const sensors = useSensors(
@@ -142,7 +143,7 @@ export function Sidebar() {
     })
   )
 
-  // Load sidebar width from localStorage
+  // Load sidebar width from localStorage and institution name
   useEffect(() => {
     if (typeof window === 'undefined') return
 
@@ -150,6 +151,9 @@ export function Sidebar() {
     if (storedWidth) {
       setSidebarWidth(parseInt(storedWidth, 10))
     }
+
+    // Set institution name on client only to prevent hydration mismatch
+    setInstitutionName(getInstitutionName())
   }, [])
 
   useEffect(() => {
@@ -245,7 +249,7 @@ export function Sidebar() {
     >
       {/* Logo and Organization Name */}
       <div className="px-4 py-6 border-b">
-        <Link href={`/${getInstitutionName()}/overview`} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+        <Link href={institutionName ? `/${institutionName}/overview` : '#'} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
           {organizationLogo ? (
             <img
               src={organizationLogo}

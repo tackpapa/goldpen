@@ -21,11 +21,14 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
 
   // Load initial state
   useEffect(() => {
+    if (!studentId) return // Skip if no studentId
     loadState()
   }, [studentId, seatNumber])
 
   // Subscribe to realtime changes
   useEffect(() => {
+    if (!studentId) return // Skip if no studentId
+
     // Subscribe to livescreen_state changes
     const stateChannel = supabase
       .channel(`livescreen-state-${studentId}-${seatNumber}`)
@@ -183,7 +186,11 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
   }
 
   async function startSleep() {
-    console.log('🛏️ [SLEEP] Starting sleep for seat', seatNumber)
+    console.log('🛏️ [SLEEP] Starting sleep for seat', seatNumber, 'studentId:', studentId)
+    if (!studentId) {
+      console.error('❌ [SLEEP] Cannot start sleep: studentId is empty')
+      throw new Error('studentId is required')
+    }
     try {
       // Insert sleep record
       const { data: sleepRecord, error: sleepError } = await supabase
@@ -251,7 +258,11 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
   }
 
   async function startOuting(reason: string) {
-    console.log('🚪 [OUTING] Starting outing for seat', seatNumber)
+    console.log('🚪 [OUTING] Starting outing for seat', seatNumber, 'studentId:', studentId)
+    if (!studentId) {
+      console.error('❌ [OUTING] Cannot start outing: studentId is empty')
+      throw new Error('studentId is required')
+    }
     try {
       // Insert outing record
       const { data: outingRecord, error: outingError } = await supabase

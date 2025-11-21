@@ -60,173 +60,8 @@ interface ScheduledClass {
   students: { id: string; name: string }[]
 }
 
-// Mock scheduled classes for today
-const mockScheduledClasses: ScheduledClass[] = [
-  {
-    id: 'schedule-1',
-    class_name: '수학 특강반',
-    lesson_time: '09:00',
-    teacher_name: '김선생',
-    class_type: '1:다수',
-    students: [
-      { id: '1', name: '김민준' },
-      { id: '2', name: '이서연' },
-      { id: '3', name: '박지우' },
-      { id: '4', name: '최서준' },
-      { id: '5', name: '정하은' },
-    ],
-  },
-  {
-    id: 'schedule-2',
-    class_name: '영어 회화반',
-    lesson_time: '11:00',
-    teacher_name: '박선생',
-    class_type: '1:다수',
-    students: [
-      { id: '6', name: '강민서' },
-      { id: '7', name: '윤서준' },
-      { id: '8', name: '조유진' },
-    ],
-  },
-  {
-    id: 'schedule-3',
-    class_name: '국어 1:1 개인과외',
-    lesson_time: '14:00',
-    teacher_name: '이선생',
-    class_type: '1:1',
-    students: [{ id: '9', name: '신예은' }],
-  },
-  {
-    id: 'schedule-4',
-    class_name: '과학 특강반',
-    lesson_time: '16:00',
-    teacher_name: '최선생',
-    class_type: '1:다수',
-    students: [
-      { id: '10', name: '한지호' },
-      { id: '11', name: '임서현' },
-      { id: '12', name: '송민재' },
-      { id: '13', name: '오지안' },
-    ],
-  },
-]
-
-// Mock data
-const mockLessons: LessonNote[] = [
-  {
-    id: '1',
-    created_at: '2025-06-18T09:00:00',
-    updated_at: '2025-06-18T11:00:00',
-    org_id: 'org-1',
-    lesson_date: '2025-06-18',
-    lesson_time: '09:00',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    subject: '수학',
-    content: '미적분 기본 정리 - 극한의 개념과 연속성 학습. 함수의 극한값 계산 연습문제 풀이.',
-    student_attitudes: '전반적으로 집중도가 높았으며, 질문도 활발하게 했습니다. 특히 김민준, 이서연 학생이 적극적이었습니다.',
-    comprehension_level: 'high',
-    homework_assigned: '교재 p.45-48 문제 풀이, 극한값 계산 연습문제 10개',
-    next_lesson_plan: '함수의 미분과 도함수 개념 도입',
-    parent_feedback: '오늘 수업에서 미적분의 기본 개념인 극한에 대해 학습했습니다. 학생들의 이해도가 높았으며, 특히 개념 이해를 위한 다양한 예제를 통해 실력이 향상되고 있습니다.',
-  },
-  {
-    id: '2',
-    created_at: '2025-06-18T13:00:00',
-    updated_at: '2025-06-18T15:00:00',
-    org_id: 'org-1',
-    lesson_date: '2025-06-18',
-    lesson_time: '13:00',
-    class_id: 'class-2',
-    class_name: '영어 회화반',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    subject: '영어',
-    content: 'Daily conversation - Ordering food at restaurant. Role-playing activities and pronunciation practice.',
-    student_attitudes: '대부분의 학생들이 적극적으로 참여했으나, 몇몇 학생들은 발음에 어려움을 겪었습니다.',
-    comprehension_level: 'medium',
-    homework_assigned: '오늘 배운 표현으로 짧은 대화문 작성하기, 발음 연습 녹음 제출',
-    next_lesson_plan: 'Telephone conversation practice',
-    parent_feedback: '레스토랑에서 음식 주문하기를 주제로 실용적인 회화 연습을 진행했습니다. 학생들이 적극적으로 참여했으며, 발음 교정을 통해 실력이 향상되고 있습니다.',
-  },
-  {
-    id: '3',
-    created_at: '2025-06-17T10:00:00',
-    updated_at: '2025-06-17T12:00:00',
-    org_id: 'org-1',
-    lesson_date: '2025-06-17',
-    lesson_time: '10:00',
-    class_id: 'class-3',
-    class_name: '국어 독해반',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    subject: '국어',
-    content: '현대 소설 분석 - 작품의 주제 의식과 인물 간 갈등 구조 파악. 문학적 표현 기법 학습.',
-    student_attitudes: '학생들이 텍스트 분석에 어려움을 겪었으나, 토론을 통해 이해도가 높아졌습니다.',
-    comprehension_level: 'low',
-    homework_assigned: '작품 전체 읽고 주제 의식 정리하기, 인물 관계도 작성',
-    next_lesson_plan: '시 문학의 이해 - 운율과 심상',
-    parent_feedback: '현대 소설 작품 분석을 통해 문학적 사고력을 키우는 시간이었습니다. 처음에는 어려워했지만, 토론을 통해 이해도가 높아졌으며, 개별 지도를 통해 실력 향상을 도모하고 있습니다.',
-  },
-  {
-    id: '4',
-    created_at: '2025-06-17T14:00:00',
-    updated_at: '2025-06-17T16:00:00',
-    org_id: 'org-1',
-    lesson_date: '2025-06-17',
-    lesson_time: '14:00',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    subject: '수학',
-    content: '이차함수의 그래프 - 평행이동과 대칭이동, 최댓값과 최솟값 구하기',
-    student_attitudes: '학생들이 그래프 그리기 실습에 집중했으며, 개념 이해가 빨랐습니다.',
-    comprehension_level: 'high',
-    homework_assigned: '이차함수 그래프 그리기 연습 10문제',
-    next_lesson_plan: '이차방정식과 이차함수의 관계',
-  },
-  {
-    id: '5',
-    created_at: '2025-06-16T11:00:00',
-    updated_at: '2025-06-16T13:00:00',
-    org_id: 'org-1',
-    lesson_date: '2025-06-16',
-    lesson_time: '11:00',
-    class_id: 'class-2',
-    class_name: '영어 회화반',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    subject: '영어',
-    content: 'Grammar focus - Present perfect tense usage and practice',
-    student_attitudes: '문법 개념 이해는 좋았으나 실제 문장 만들기에서 실수가 많았습니다.',
-    comprehension_level: 'medium',
-    homework_assigned: 'Present perfect tense 문장 20개 작성',
-    next_lesson_plan: 'Present perfect vs Simple past comparison',
-  },
-]
-
-// Today's lessons (filtering for selected date)
-const initialDate = '2025-06-18'
-
-// Mock statistics data
-const monthlyProgressData = [
-  { month: '1월', lessons: 18, planned: 20 },
-  { month: '2월', lessons: 19, planned: 20 },
-  { month: '3월', lessons: 20, planned: 20 },
-  { month: '4월', lessons: 17, planned: 20 },
-  { month: '5월', lessons: 19, planned: 20 },
-  { month: '6월', lessons: 12, planned: 20 },
-]
-
-const comprehensionTrendData = [
-  { week: '1주차', high: 65, medium: 25, low: 10 },
-  { week: '2주차', high: 70, medium: 20, low: 10 },
-  { week: '3주차', high: 68, medium: 22, low: 10 },
-  { week: '4주차', high: 75, medium: 20, low: 5 },
-]
+// Today's date
+const initialDate = format(new Date(), 'yyyy-MM-dd')
 
 const comprehensionMap = {
   high: { label: '상', variant: 'default' as const, color: 'text-green-600' },
@@ -238,7 +73,11 @@ export default function LessonsPage() {
   usePageAccess('lessons')
 
   const { toast } = useToast()
-  const [lessons, setLessons] = useState<LessonNote[]>(mockLessons)
+  const [lessons, setLessons] = useState<LessonNote[]>([])
+  const [scheduledClasses, setScheduledClasses] = useState<ScheduledClass[]>([])
+  const [monthlyProgressData, setMonthlyProgressData] = useState<{month: string; planned: number; lessons: number}[]>([])
+  const [comprehensionTrendData, setComprehensionTrendData] = useState<{week: string; high: number; medium: number; low: number}[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<string>(initialDate)
   const [selectedLesson, setSelectedLesson] = useState<LessonNote | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -273,6 +112,36 @@ export default function LessonsPage() {
     setCurrentTeacherId(teacherId)
   }, [])
 
+  // API에서 데이터 가져오기
+  useEffect(() => {
+    const fetchLessons = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/lessons', { credentials: 'include' })
+        const data = await response.json() as {
+          lessons?: LessonNote[]
+          scheduledClasses?: ScheduledClass[]
+          monthlyProgressData?: {month: string; planned: number; lessons: number}[]
+          comprehensionTrendData?: {week: string; high: number; medium: number; low: number}[]
+          error?: string
+        }
+        if (response.ok) {
+          setLessons(data.lessons || [])
+          setScheduledClasses(data.scheduledClasses || [])
+          setMonthlyProgressData(data.monthlyProgressData || [])
+          setComprehensionTrendData(data.comprehensionTrendData || [])
+        } else {
+          toast({ title: '수업일지 데이터 로드 실패', variant: 'destructive' })
+        }
+      } catch {
+        toast({ title: '오류 발생', variant: 'destructive' })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchLessons()
+  }, [toast])
+
   // Calculate today's lessons based on selected date
   const todayLessonsList = lessons.filter((lesson) => lesson.lesson_date === selectedDate)
 
@@ -281,10 +150,10 @@ export default function LessonsPage() {
   // 원장/관리자 계정일 경우: 모든 스케줄 표시
   const filteredScheduledClasses = useMemo(() => {
     if (userRole === 'teacher' && currentTeacherId) {
-      return mockScheduledClasses.filter(schedule => schedule.teacher_id === currentTeacherId)
+      return scheduledClasses.filter(schedule => (schedule as ScheduledClass & { teacher_id?: string }).teacher_id === currentTeacherId)
     }
-    return mockScheduledClasses
-  }, [userRole, currentTeacherId])
+    return scheduledClasses
+  }, [userRole, currentTeacherId, scheduledClasses])
 
   // Date navigation functions
   const handlePreviousDay = () => {
@@ -349,7 +218,7 @@ export default function LessonsPage() {
 
   const handleScheduleChange = (scheduleId: string) => {
     setSelectedSchedule(scheduleId)
-    const schedule = mockScheduledClasses.find((s) => s.id === scheduleId)
+    const schedule = scheduledClasses.find((s) => s.id === scheduleId)
 
     if (schedule) {
       setSelectedScheduleData(schedule)

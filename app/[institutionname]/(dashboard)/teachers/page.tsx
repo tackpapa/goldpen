@@ -2,7 +2,7 @@
 
 
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Button } from '@/components/ui/button'
@@ -44,198 +44,12 @@ import {
 } from '@/components/ui/select'
 import { TeacherDetailModal } from '@/components/teachers/TeacherDetailModal'
 
-// Generate unique token for lesson notes
-const generateToken = () => {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+interface StudentForAssignment {
+  id: string
+  name: string
+  grade: string
+  school: string
 }
-
-// Mock data
-const mockTeachers: Teacher[] = [
-  {
-    id: 'teacher-1',
-    created_at: '2024-01-15T00:00:00',
-    updated_at: '2024-01-15T00:00:00',
-    org_id: 'org-1',
-    name: '김선생',
-    email: 'kim@example.com',
-    phone: '010-1234-5678',
-    subjects: ['수학', '과학'],
-    status: 'active',
-    employment_type: 'full_time',
-    salary_type: 'monthly',
-    salary_amount: 3500000,
-    hire_date: '2024-01-15',
-    lesson_note_token: 'kim-teacher-abc123xyz',
-    assigned_students: ['1', '3'], // 김민준, 박지훈
-    notes: '수학 전문 강사',
-  },
-  {
-    id: 'teacher-2',
-    created_at: '2024-02-01T00:00:00',
-    updated_at: '2024-02-01T00:00:00',
-    org_id: 'org-1',
-    name: '박선생',
-    email: 'park@example.com',
-    phone: '010-2345-6789',
-    subjects: ['영어'],
-    status: 'active',
-    employment_type: 'full_time',
-    salary_type: 'monthly',
-    salary_amount: 3200000,
-    hire_date: '2024-02-01',
-    lesson_note_token: 'park-teacher-def456uvw',
-    assigned_students: ['2'], // 이서연
-    notes: '영어 회화 전문',
-  },
-  {
-    id: 'teacher-3',
-    created_at: '2024-03-10T00:00:00',
-    updated_at: '2024-03-10T00:00:00',
-    org_id: 'org-1',
-    name: '이선생',
-    email: 'lee@example.com',
-    phone: '010-3456-7890',
-    subjects: ['국어'],
-    status: 'active',
-    employment_type: 'part_time',
-    salary_type: 'hourly',
-    salary_amount: 50000,
-    hire_date: '2024-03-10',
-    lesson_note_token: 'lee-teacher-ghi789rst',
-    assigned_students: ['1', '2'], // 김민준, 이서연
-    total_hours_worked: 0,
-    earned_salary: 0,
-    notes: '국어 독해 전문',
-  },
-  {
-    id: 'teacher-4',
-    created_at: '2024-04-05T00:00:00',
-    updated_at: '2024-04-05T00:00:00',
-    org_id: 'org-1',
-    name: '최선생',
-    email: 'choi@example.com',
-    phone: '010-4567-8901',
-    subjects: ['수학', '물리'],
-    status: 'active',
-    employment_type: 'contract',
-    salary_type: 'monthly',
-    salary_amount: 2800000,
-    hire_date: '2024-04-05',
-    lesson_note_token: 'choi-teacher-jkl012mno',
-    assigned_students: [],
-  },
-  {
-    id: 'teacher-5',
-    created_at: '2023-09-01T00:00:00',
-    updated_at: '2025-05-01T00:00:00',
-    org_id: 'org-1',
-    name: '정선생',
-    email: 'jung@example.com',
-    phone: '010-5678-9012',
-    subjects: ['화학', '생물'],
-    status: 'inactive',
-    employment_type: 'full_time',
-    salary_type: 'monthly',
-    salary_amount: 3000000,
-    hire_date: '2023-09-01',
-    lesson_note_token: 'jung-teacher-pqr345stu',
-    assigned_students: [],
-    notes: '휴직 중',
-  },
-]
-
-// Mock students for student assignment - 50 students for scrolling
-const mockStudents = [
-  { id: '1', name: '김민준', grade: '고1', school: '강남고등학교' },
-  { id: '2', name: '이서연', grade: '고2', school: '서울고등학교' },
-  { id: '3', name: '박지훈', grade: '중3', school: '서울중학교' },
-  { id: '4', name: '최유진', grade: '고3', school: '강남고등학교' },
-  { id: '5', name: '정서준', grade: '중1', school: '대치중학교' },
-  { id: '6', name: '강하늘', grade: '고2', school: '대원고등학교' },
-  { id: '7', name: '조민서', grade: '중2', school: '서울중학교' },
-  { id: '8', name: '윤채원', grade: '고1', school: '휘문고등학교' },
-  { id: '9', name: '임도현', grade: '중3', school: '대치중학교' },
-  { id: '10', name: '한지우', grade: '고3', school: '강남고등학교' },
-  { id: '11', name: '송예은', grade: '중1', school: '청담중학교' },
-  { id: '12', name: '오준서', grade: '고2', school: '서울고등학교' },
-  { id: '13', name: '신지아', grade: '중2', school: '압구정중학교' },
-  { id: '14', name: '허현우', grade: '고1', school: '대원고등학교' },
-  { id: '15', name: '남수아', grade: '중3', school: '서울중학교' },
-  { id: '16', name: '구민재', grade: '고3', school: '휘문고등학교' },
-  { id: '17', name: '배시연', grade: '중1', school: '대치중학교' },
-  { id: '18', name: '황지훈', grade: '고2', school: '강남고등학교' },
-  { id: '19', name: '석채린', grade: '중2', school: '청담중학교' },
-  { id: '20', name: '노태양', grade: '고1', school: '서울고등학교' },
-  { id: '21', name: '문소율', grade: '중3', school: '압구정중학교' },
-  { id: '22', name: '탁준영', grade: '고3', school: '대원고등학교' },
-  { id: '23', name: '차은우', grade: '중1', school: '서울중학교' },
-  { id: '24', name: '진하준', grade: '고2', school: '휘문고등학교' },
-  { id: '25', name: '홍다은', grade: '중2', school: '대치중학교' },
-  { id: '26', name: '류시우', grade: '고1', school: '청담고등학교' },
-  { id: '27', name: '전나연', grade: '중3', school: '압구정중학교' },
-  { id: '28', name: '도영호', grade: '고3', school: '강남고등학교' },
-  { id: '29', name: '곽민지', grade: '중1', school: '서울중학교' },
-  { id: '30', name: '변준혁', grade: '고2', school: '대원고등학교' },
-  { id: '31', name: '설아린', grade: '중2', school: '청담중학교' },
-  { id: '32', name: '추윤서', grade: '고1', school: '휘문고등학교' },
-  { id: '33', name: '엄재윤', grade: '중3', school: '대치중학교' },
-  { id: '34', name: '사유빈', grade: '고3', school: '서울고등학교' },
-  { id: '35', name: '빈서현', grade: '중1', school: '압구정중학교' },
-  { id: '36', name: '길하윤', grade: '고2', school: '강남고등학교' },
-  { id: '37', name: '지유진', grade: '중2', school: '서울중학교' },
-  { id: '38', name: '팽도훈', grade: '고1', school: '대원고등학교' },
-  { id: '39', name: '선지민', grade: '중3', school: '청담중학교' },
-  { id: '40', name: '표서아', grade: '고3', school: '휘문고등학교' },
-  { id: '41', name: '명준우', grade: '중1', school: '대치중학교' },
-  { id: '42', name: '단채윤', grade: '고2', school: '압구정고등학교' },
-  { id: '43', name: '복시현', grade: '중2', school: '서울중학교' },
-  { id: '44', name: '여지환', grade: '고1', school: '강남고등학교' },
-  { id: '45', name: '경수민', grade: '중3', school: '대원중학교' },
-  { id: '46', name: '옹하은', grade: '고3', school: '청담고등학교' },
-  { id: '47', name: '제민준', grade: '중1', school: '휘문중학교' },
-  { id: '48', name: '방예진', grade: '고2', school: '서울고등학교' },
-  { id: '49', name: '공서진', grade: '중2', school: '대치중학교' },
-  { id: '50', name: '감도윤', grade: '고1', school: '압구정고등학교' },
-]
-
-const mockTeacherClasses: Record<string, TeacherClass[]> = {
-  'teacher-1': [
-    { teacher_id: 'teacher-1', class_id: 'class-1', class_name: '수학 특강반', subject: '수학', student_count: 15 },
-    { teacher_id: 'teacher-1', class_id: 'class-4', class_name: '과학 실험반', subject: '과학', student_count: 12 },
-  ],
-  'teacher-2': [
-    { teacher_id: 'teacher-2', class_id: 'class-2', class_name: '영어 회화반', subject: '영어', student_count: 18 },
-    { teacher_id: 'teacher-2', class_id: 'class-5', class_name: '영어 문법반', subject: '영어', student_count: 14 },
-  ],
-  'teacher-3': [
-    { teacher_id: 'teacher-3', class_id: 'class-3', class_name: '국어 독해반', subject: '국어', student_count: 16 },
-  ],
-  'teacher-4': [
-    { teacher_id: 'teacher-4', class_id: 'class-6', class_name: '물리 심화반', subject: '물리', student_count: 10 },
-  ],
-}
-
-// Mock statistics data
-const teacherHoursData = [
-  { name: '김선생', hours: 80 },
-  { name: '박선생', hours: 72 },
-  { name: '이선생', hours: 45 },
-  { name: '최선생', hours: 60 },
-  { name: '정선생', hours: 0 },
-]
-
-const teacherStudentsData = [
-  { name: '김선생', students: 27 },
-  { name: '박선생', students: 32 },
-  { name: '이선생', students: 16 },
-  { name: '최선생', students: 10 },
-]
-
-const employmentTypeData = [
-  { name: '정규직', value: 2 },
-  { name: '계약직', value: 1 },
-  { name: '시간강사', value: 1 },
-]
 
 const COLORS = ['#3b82f6', '#22c55e', '#eab308']
 
@@ -259,7 +73,9 @@ export default function TeachersPage() {
   usePageAccess('teachers')
 
   const { toast } = useToast()
-  const [teachers, setTeachers] = useState<Teacher[]>(mockTeachers)
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [allStudents, setAllStudents] = useState<StudentForAssignment[]>([])
+  const [isLoading, setIsLoading] = useState(false)
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
@@ -287,6 +103,51 @@ export default function TeachersPage() {
   })
 
   const [subjectInput, setSubjectInput] = useState('')
+
+  // Fetch teachers and students on component mount
+  useEffect(() => {
+    const fetchTeachers = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/teachers', { credentials: 'include', credentials: 'include' })
+        const data = await response.json() as { teachers?: Teacher[]; error?: string }
+
+        if (response.ok) {
+          setTeachers(data.teachers || [])
+        } else {
+          toast({
+            title: '데이터 로드 실패',
+            description: data.error || '강사 목록을 불러올 수 없습니다.',
+            variant: 'destructive',
+          })
+        }
+      } catch (error) {
+        toast({
+          title: '오류 발생',
+          description: '서버와 통신할 수 없습니다.',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    const fetchStudents = async () => {
+      try {
+        const response = await fetch('/api/students', { credentials: 'include', credentials: 'include' })
+        const data = await response.json() as { students?: any[]; error?: string }
+
+        if (response.ok) {
+          setAllStudents(data.students || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch students:', error)
+      }
+    }
+
+    fetchTeachers()
+    fetchStudents()
+  }, [toast])
 
   const handleCreateTeacher = () => {
     setIsEditing(false)
@@ -317,15 +178,39 @@ export default function TeachersPage() {
     setIsDeleteDialogOpen(true)
   }
 
-  const confirmDelete = () => {
-    if (selectedTeacher) {
-      setTeachers(teachers.filter((t) => t.id !== selectedTeacher.id))
-      toast({
-        title: '강사 삭제 완료',
-        description: `${selectedTeacher.name} 강사가 삭제되었습니다.`,
+  const confirmDelete = async () => {
+    if (!selectedTeacher) return
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/teachers/${selectedTeacher.id}`, {
+        method: 'DELETE',
       })
-      setIsDeleteDialogOpen(false)
-      setSelectedTeacher(null)
+
+      if (response.ok) {
+        setTeachers(teachers.filter((t) => t.id !== selectedTeacher.id))
+        toast({
+          title: '강사 삭제 완료',
+          description: `${selectedTeacher.name} 강사가 삭제되었습니다.`,
+        })
+        setIsDeleteDialogOpen(false)
+        setSelectedTeacher(null)
+      } else {
+        const data = await response.json() as { error?: string }
+        toast({
+          title: '삭제 실패',
+          description: data.error || '강사 삭제에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -337,12 +222,12 @@ export default function TeachersPage() {
   }
 
   // 검색어로 학생 필터링
-  const filteredStudents = mockStudents.filter((student) => {
+  const filteredStudents = allStudents.filter((student) => {
     const searchLower = studentSearchQuery.toLowerCase()
     return (
-      student.name.toLowerCase().includes(searchLower) ||
-      student.grade.toLowerCase().includes(searchLower) ||
-      student.school.toLowerCase().includes(searchLower)
+      student.name?.toLowerCase().includes(searchLower) ||
+      student.grade?.toLowerCase().includes(searchLower) ||
+      student.school?.toLowerCase().includes(searchLower)
     )
   })
 
@@ -396,7 +281,7 @@ export default function TeachersPage() {
     })
   }
 
-  const handleSaveTeacher = () => {
+  const handleSaveTeacher = async () => {
     if (!formData.name || !formData.email || !formData.phone) {
       toast({
         title: '필수 정보 누락',
@@ -406,40 +291,71 @@ export default function TeachersPage() {
       return
     }
 
-    if (isEditing && selectedTeacher) {
-      // Update existing teacher
-      const updatedTeachers = teachers.map((teacher) =>
-        teacher.id === selectedTeacher.id
-          ? { ...teacher, ...formData, updated_at: new Date().toISOString() }
-          : teacher
-      )
-      setTeachers(updatedTeachers)
+    setIsLoading(true)
+    try {
+      if (isEditing && selectedTeacher) {
+        // Update existing teacher
+        const response = await fetch(`/api/teachers/${selectedTeacher.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        })
 
-      toast({
-        title: '강사 정보 수정 완료',
-        description: '강사 정보가 성공적으로 수정되었습니다.',
-      })
-    } else {
-      // Create new teacher with unique lesson note token
-      const newTeacher: Teacher = {
-        ...formData as Teacher,
-        id: `teacher-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        org_id: 'org-1',
-        lesson_note_token: generateToken(),
+        if (response.ok) {
+          const result = await response.json() as { teacher: Teacher }
+          setTeachers(
+            teachers.map((teacher) =>
+              teacher.id === selectedTeacher.id ? result.teacher : teacher
+            )
+          )
+          toast({
+            title: '강사 정보 수정 완료',
+            description: '강사 정보가 성공적으로 수정되었습니다.',
+          })
+          setIsDialogOpen(false)
+          setSelectedTeacher(null)
+        } else {
+          const error = await response.json() as { error?: string }
+          toast({
+            title: '수정 실패',
+            description: error.error || '강사 정보 수정에 실패했습니다.',
+            variant: 'destructive',
+          })
+        }
+      } else {
+        // Create new teacher
+        const response = await fetch('/api/teachers', { credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        })
+
+        if (response.ok) {
+          const result = await response.json() as { teacher: Teacher }
+          setTeachers([result.teacher, ...teachers])
+          toast({
+            title: '강사 등록 완료',
+            description: '새로운 강사가 등록되었습니다.',
+          })
+          setIsDialogOpen(false)
+        } else {
+          const error = await response.json() as { error?: string }
+          toast({
+            title: '등록 실패',
+            description: error.error || '강사 등록에 실패했습니다.',
+            variant: 'destructive',
+          })
+        }
       }
-
-      setTeachers([newTeacher, ...teachers])
-
+    } catch (error) {
       toast({
-        title: '강사 등록 완료',
-        description: '새로운 강사가 등록되었습니다. 수업일지 등록 링크가 생성되었습니다.',
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
       })
+    } finally {
+      setIsLoading(false)
     }
-
-    setIsDialogOpen(false)
-    setSelectedTeacher(null)
   }
 
   const handleOpenTeacherDetail = (teacher: Teacher) => {
@@ -596,21 +512,11 @@ export default function TeachersPage() {
     },
   ]
 
-  // Get all teacher classes for the "담당 반 현황" tab
-  const allTeacherClasses = teachers.flatMap((teacher) =>
-    (mockTeacherClasses[teacher.id] || []).map((tc) => ({
-      ...tc,
-      teacher_name: teacher.name,
-    }))
-  )
-
-  // Statistics
+  // Statistics (now using DB data - currently empty until we add teacher-class relationship)
   const totalTeachers = teachers.length
   const activeTeachers = teachers.filter((t) => t.status === 'active').length
-  const totalClasses = Object.values(mockTeacherClasses).flat().length
-  const totalStudents = Object.values(mockTeacherClasses)
-    .flat()
-    .reduce((sum, tc) => sum + tc.student_count, 0)
+  const totalClasses = 0 // TODO: Get from teacher-class relationship table
+  const totalStudents = allStudents.length
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -704,9 +610,6 @@ export default function TeachersPage() {
             {teachers
               .filter((t) => t.status === 'active')
               .map((teacher) => {
-                const classes = mockTeacherClasses[teacher.id] || []
-                const totalStudents = classes.reduce((sum, c) => sum + c.student_count, 0)
-
                 return (
                   <Card key={teacher.id}>
                     <CardHeader>
@@ -714,18 +617,18 @@ export default function TeachersPage() {
                         <div className="flex items-center gap-3">
                           <Avatar>
                             <AvatarFallback>
-                              {teacher.name.split('').slice(0, 2).join('')}
+                              {teacher.name?.split('').slice(0, 2).join('') || ''}
                             </AvatarFallback>
                           </Avatar>
                           <div>
                             <CardTitle>{teacher.name}</CardTitle>
                             <CardDescription>
-                              {teacher.subjects.join(', ')} · {classes.length}개 반 · {totalStudents}명
+                              {teacher.subjects?.join(', ') || ''} · 0개 반 · 0명
                             </CardDescription>
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          {teacher.subjects.map((subject) => (
+                          {teacher.subjects?.map((subject) => (
                             <Badge key={subject} variant="outline">
                               {subject}
                             </Badge>
@@ -734,13 +637,9 @@ export default function TeachersPage() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      {classes.length > 0 ? (
-                        <DataTable columns={classColumns} data={classes} />
-                      ) : (
-                        <div className="text-center py-6 text-muted-foreground">
-                          담당 반이 없습니다
-                        </div>
-                      )}
+                      <div className="text-center py-6 text-muted-foreground">
+                        담당 반 정보가 없습니다
+                      </div>
                     </CardContent>
                   </Card>
                 )
@@ -1264,7 +1163,7 @@ export default function TeachersPage() {
                 {selectedTeacher.assigned_students && selectedTeacher.assigned_students.length > 0 ? (
                   <div className="space-y-2">
                     {selectedTeacher.assigned_students.map((studentId) => {
-                      const student = mockStudents.find((s) => s.id === studentId)
+                      const student = allStudents.find((s) => s.id === studentId)
                       return student ? (
                         <div key={studentId} className="flex items-center gap-2 p-2 bg-muted/50 rounded">
                           <Users className="h-4 w-4 text-muted-foreground" />

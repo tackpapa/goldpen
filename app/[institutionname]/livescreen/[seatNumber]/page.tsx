@@ -43,6 +43,8 @@ import type {
   LiveScreenState,
   StudyTimeRanking,
   CallRecord,
+  Subject,
+  SubjectStatistics,
 } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 
@@ -57,12 +59,75 @@ export default function LiveScreenPage({ params }: PageProps) {
   const { institutionname, seatNumber } = params
   const { toast } = useToast()
 
-  // State
-  const [studentId] = useState('student-1') // TODO: Get from auth/seat assignment
-  const [studentName] = useState('김민준') // TODO: Get from database
+  // State - fetch from seat_assignments
+  const [studentId, setStudentId] = useState<string | null>(null)
+  const [studentName, setStudentName] = useState<string>('')
+  const [loading, setLoading] = useState(true)
   const [isPlannerOpen, setIsPlannerOpen] = useState(false)
   const [isOutingModalOpen, setIsOutingModalOpen] = useState(false)
   const [dailyPlanner, setDailyPlanner] = useState<DailyPlanner | null>(null)
+  const [subjects, setSubjects] = useState<Subject[]>([])
+  const [statistics, setStatistics] = useState<SubjectStatistics[]>([])
+  const [completedSubjectIds, setCompletedSubjectIds] = useState<Set<string>>(new Set())
+  const [dataLoaded, setDataLoaded] = useState(false)
+
+  // Fetch student info from seat assignment
+  useEffect(() => {
+    const fetchStudentInfo = async () => {
+      try {
+        const response = await fetch('/api/seat-assignments', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json()
+          const assignment = data.assignments?.find((a: any) => a.seatNumber === parseInt(seatNumber))
+          if (assignment) {
+            setStudentId(assignment.studentId)
+            setStudentName(assignment.studentName || '학생')
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch student info:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchStudentInfo()
+  }, [seatNumber])
+
+  // Fetch all data when studentId is available
+  useEffect(() => {
+    if (!studentId) return
+
+    const getTodayDate = () => new Date().toISOString().split('T')[0]
+
+    const fetchAllData = async () => {
+      try {
+        const [subjectsRes, statsRes, plannerRes] = await Promise.all([
+          fetch(`/api/subjects?studentId=${studentId}`, { credentials: 'include' }),
+          fetch(`/api/daily-study-stats?studentId=${studentId}&date=${getTodayDate()}`, { credentials: 'include' }),
+          fetch(`/api/daily-planners?studentId=${studentId}`, { credentials: 'include' }),
+        ])
+
+        if (subjectsRes.ok) {
+          const data = await subjectsRes.json()
+          setSubjects(data.subjects || [])
+        }
+        if (statsRes.ok) {
+          const data = await statsRes.json()
+          setStatistics(data.stats || [])
+        }
+        if (plannerRes.ok) {
+          const data = await plannerRes.json()
+          setDailyPlanner(data.planner || null)
+        }
+      } catch (error) {
+        console.error('Failed to fetch data:', error)
+      } finally {
+        setDataLoaded(true)
+      }
+    }
+
+    fetchAllData()
+  }, [studentId])
 
   // Use Supabase Realtime hook for live screen state
   const {
@@ -74,10 +139,10 @@ export default function LiveScreenPage({ params }: PageProps) {
     endSleep,
     startOuting,
     endOuting,
-  } = useLivescreenState(studentId, parseInt(seatNumber))
+  } = useLivescreenState(studentId || '', parseInt(seatNumber))
 
   const [sleepRemainingSeconds, setSleepRemainingSeconds] = useState(0)
-  const [activeView, setActiveView] = useState<'timer' | 'planner' | 'planner-edit' | 'ranking' | 'stats'>('timer')
+  const [activeView, setActiveView] = useState<'timer' | 'planner' | 'ranking' | 'stats'>('timer')
   const [studyTimeMinutes, setStudyTimeMinutes] = useState(0)
   const [currentCall, setCurrentCall] = useState<CallRecord | null>(null)
 
@@ -92,64 +157,30 @@ export default function LiveScreenPage({ params }: PageProps) {
   const [isIOSDevice, setIsIOSDevice] = useState(false)
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
 
-  // Mock ranking data
-  const [rankings] = useState<{
+  // Ranking data - fetch from DB
+  const [rankings, setRankings] = useState<{
     daily: StudyTimeRanking[]
     weekly: StudyTimeRanking[]
     monthly: StudyTimeRanking[]
-  }>({
-    daily: [
-      { student_id: 'student-1', student_name: '김철수', surname: '김**', total_minutes: 480, rank: 1, period_type: 'daily', period: '2025-01-19' },
-      { student_id: 'student-2', student_name: '이영희', surname: '이**', total_minutes: 420, rank: 2, period_type: 'daily', period: '2025-01-19' },
-      { student_id: 'student-3', student_name: '박민수', surname: '박**', total_minutes: 360, rank: 3, period_type: 'daily', period: '2025-01-19' },
-      { student_id: studentId, student_name: studentName, surname: '김**', total_minutes: studyTimeMinutes, rank: 4, period_type: 'daily', period: '2025-01-19' },
-      { student_id: 'student-4', student_name: '최수진', surname: '최**', total_minutes: 300, rank: 5, period_type: 'daily', period: '2025-01-19' },
-    ],
-    weekly: [
-      { student_id: 'student-1', student_name: '김철수', surname: '김**', total_minutes: 2400, rank: 1, period_type: 'weekly', period: '2025-W03' },
-      { student_id: 'student-2', student_name: '이영희', surname: '이**', total_minutes: 2100, rank: 2, period_type: 'weekly', period: '2025-W03' },
-      { student_id: studentId, student_name: studentName, surname: '김**', total_minutes: studyTimeMinutes, rank: 3, period_type: 'weekly', period: '2025-W03' },
-      { student_id: 'student-3', student_name: '박민수', surname: '박**', total_minutes: 1800, rank: 4, period_type: 'weekly', period: '2025-W03' },
-    ],
-    monthly: [
-      { student_id: 'student-2', student_name: '이영희', surname: '이**', total_minutes: 9600, rank: 1, period_type: 'monthly', period: '2025-01' },
-      { student_id: 'student-1', student_name: '김철수', surname: '김**', total_minutes: 9000, rank: 2, period_type: 'monthly', period: '2025-01' },
-      { student_id: 'student-3', student_name: '박민수', surname: '박**', total_minutes: 8400, rank: 3, period_type: 'monthly', period: '2025-01' },
-      { student_id: studentId, student_name: studentName, surname: '김**', total_minutes: studyTimeMinutes, rank: 5, period_type: 'monthly', period: '2025-01' },
-    ],
-  })
+  }>({ daily: [], weekly: [], monthly: [] })
 
-  // Load planner from localStorage on mount (keep this for now until planner is migrated)
+  // Fetch rankings from DB
   useEffect(() => {
-    const savedPlanner = localStorage.getItem(`daily-planner-${studentId}-${new Date().toISOString().split('T')[0]}`)
-    if (savedPlanner) {
-      setDailyPlanner(JSON.parse(savedPlanner))
+    const fetchRankings = async () => {
+      try {
+        const response = await fetch('/api/study-time-rankings', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json()
+          setRankings(data.rankings || { daily: [], weekly: [], monthly: [] })
+        }
+      } catch (error) {
+        console.error('Failed to fetch rankings:', error)
+      }
     }
+    fetchRankings()
+  }, [])
 
-    // Initialize dummy data if no subjects exist
-    const savedSubjects = localStorage.getItem(`subjects-${studentId}`)
-    if (!savedSubjects) {
-      const dummySubjects = [
-        { id: 'subject-1', created_at: new Date().toISOString(), student_id: studentId, name: '국어', color: '#FF6B35', order: 0 },
-        { id: 'subject-2', created_at: new Date().toISOString(), student_id: studentId, name: '영어', color: '#F7931E', order: 1 },
-        { id: 'subject-3', created_at: new Date().toISOString(), student_id: studentId, name: '수학', color: '#4A90E2', order: 2 },
-        { id: 'subject-4', created_at: new Date().toISOString(), student_id: studentId, name: '과학', color: '#50C878', order: 3 },
-        { id: 'subject-5', created_at: new Date().toISOString(), student_id: studentId, name: '사회', color: '#9B59B6', order: 4 },
-      ]
-      localStorage.setItem(`subjects-${studentId}`, JSON.stringify(dummySubjects))
-
-      // Add dummy statistics
-      const today = new Date().toISOString().split('T')[0]
-      const dummyStats = [
-        { subject_id: 'subject-1', subject_name: '국어', subject_color: '#FF6B35', total_seconds: 5400, session_count: 3, date: today },
-        { subject_id: 'subject-2', subject_name: '영어', subject_color: '#F7931E', total_seconds: 7200, session_count: 4, date: today },
-        { subject_id: 'subject-3', subject_name: '수학', subject_color: '#4A90E2', total_seconds: 9000, session_count: 5, date: today },
-        { subject_id: 'subject-4', subject_name: '과학', subject_color: '#50C878', total_seconds: 3600, session_count: 2, date: today },
-        { subject_id: 'subject-5', subject_name: '사회', subject_color: '#9B59B6', total_seconds: 4500, session_count: 3, date: today },
-      ]
-      localStorage.setItem(`subject-stats-${studentId}-${today}`, JSON.stringify(dummyStats))
-    }
-  }, [studentId, seatNumber])
+  // Removed localStorage planner loading - now fetched from DB in fetchAllData
 
   // Reset scroll position on mount
   useEffect(() => {
@@ -779,88 +810,37 @@ export default function LiveScreenPage({ params }: PageProps) {
       <div className="max-w-7xl mx-auto w-full px-3 md:px-4 flex-1 flex flex-col min-h-0 mb-[88px]">
         {activeView === 'timer' && (
           <div className="h-full flex flex-col">
-            <SubjectTimer studentId={studentId} containerRef={containerRef} theme={theme} />
+            <SubjectTimer
+              studentId={studentId}
+              containerRef={containerRef}
+              theme={theme}
+              onSubjectsChange={setSubjects}
+              hiddenSubjectIds={completedSubjectIds}
+              initialSubjects={subjects}
+              initialStatistics={statistics}
+              dataLoaded={dataLoaded}
+              onStatisticsChange={setStatistics}
+            />
           </div>
         )}
 
-        {activeView === 'planner-edit' && (
+        {activeView === 'planner' && (
           <DailyPlannerPage
             studentId={studentId}
             seatNumber={parseInt(seatNumber)}
+            subjects={subjects}
             existingPlanner={dailyPlanner || undefined}
             containerRef={containerRef}
             onSave={(planner) => {
               setDailyPlanner(planner)
-              setActiveView('planner')
-              toast({
-                title: '플래너 저장 완료',
-                description: '오늘의 공부 계획이 저장되었습니다.',
-              })
             }}
             onBack={() => {
-              if (dailyPlanner) {
-                setActiveView('planner')
-              } else {
-                setActiveView('timer')
-              }
+              setActiveView('timer')
             }}
+            onCompletedSubjectsChange={setCompletedSubjectIds}
+            initialPlanner={dailyPlanner}
+            dataLoaded={dataLoaded}
           />
-        )}
-
-        {activeView === 'planner' && dailyPlanner && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  오늘의 공부 계획
-                </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setActiveView('planner-edit')}
-                >
-                  수정
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {dailyPlanner.study_plans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    className={`flex items-start gap-3 p-3 rounded-lg border ${
-                      plan.completed
-                        ? 'bg-green-50 border-green-200'
-                        : 'bg-muted/30'
-                    }`}
-                  >
-                    <div className="flex-1">
-                      <p
-                        className={`font-semibold ${
-                          plan.completed ? 'line-through text-muted-foreground' : ''
-                        }`}
-                      >
-                        {plan.subject}
-                      </p>
-                      <p
-                        className={`text-sm ${
-                          plan.completed ? 'line-through text-muted-foreground' : ''
-                        }`}
-                      >
-                        {plan.description}
-                      </p>
-                    </div>
-                    {plan.completed && (
-                      <Badge variant="default" className="bg-green-500">
-                        완료
-                      </Badge>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         )}
 
         {activeView === 'ranking' && (
@@ -906,16 +886,10 @@ export default function LiveScreenPage({ params }: PageProps) {
 
             {/* Daily Planner */}
             <Button
-              variant={activeView === 'planner' || activeView === 'planner-edit' ? 'default' : 'ghost'}
-              onClick={() => {
-                if (!dailyPlanner) {
-                  setActiveView('planner-edit')
-                } else {
-                  setActiveView('planner')
-                }
-              }}
+              variant={activeView === 'planner' ? 'default' : 'ghost'}
+              onClick={() => setActiveView('planner')}
               className={`h-16 flex flex-col gap-1 relative ${
-                theme === 'dark' && activeView !== 'planner' && activeView !== 'planner-edit' ? 'text-[#c9d1d9] hover:text-white hover:bg-[#21262d]' : ''
+                theme === 'dark' && activeView !== 'planner' ? 'text-[#c9d1d9] hover:text-white hover:bg-[#21262d]' : ''
               }`}
             >
               <FileText className="h-5 w-5" />

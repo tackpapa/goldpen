@@ -14,6 +14,13 @@ interface SubjectTimerProps {
   studentId: string
   containerRef?: React.RefObject<HTMLDivElement>
   theme?: Theme
+  onSubjectsChange?: (subjects: Subject[]) => void
+  hiddenSubjectIds?: Set<string>
+  // Props for parent-level data loading
+  initialSubjects?: Subject[]
+  initialStatistics?: SubjectStatistics[]
+  dataLoaded?: boolean
+  onStatisticsChange?: (stats: SubjectStatistics[]) => void
 }
 
 const DEFAULT_COLORS = [
@@ -27,13 +34,23 @@ const DEFAULT_COLORS = [
   '#FF5722', // 딥오렌지
 ]
 
-export function SubjectTimer({ studentId, containerRef, theme = 'color' }: SubjectTimerProps) {
-  // State
-  const [subjects, setSubjects] = useState<Subject[]>([])
+export function SubjectTimer({
+  studentId,
+  containerRef,
+  theme = 'color',
+  onSubjectsChange,
+  hiddenSubjectIds,
+  initialSubjects,
+  initialStatistics,
+  dataLoaded: parentDataLoaded,
+  onStatisticsChange,
+}: SubjectTimerProps) {
+  // State - use initial values from props if provided
+  const [subjects, setSubjects] = useState<Subject[]>(initialSubjects || [])
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
   const [totalSeconds, setTotalSeconds] = useState(0)
   const [currentSessionSeconds, setCurrentSessionSeconds] = useState(0)
-  const [statistics, setStatistics] = useState<SubjectStatistics[]>([])
+  const [statistics, setStatistics] = useState<SubjectStatistics[]>(initialStatistics || [])
 
   // Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -48,18 +65,59 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
   const [isPomodoroRunning, setIsPomodoroRunning] = useState(false)
   const [pomodoroTotalSeconds, setPomodoroTotalSeconds] = useState(25 * 60)
 
-  // Load subjects from localStorage
+  // Prevent double-click
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  // Loading state - use parent's dataLoaded if provided
+  const [isLoaded, setIsLoaded] = useState(parentDataLoaded ?? false)
+
+  const getTodayDate = () => new Date().toISOString().split('T')[0]
+
+  // Sync with parent data when props change
   useEffect(() => {
-    const savedSubjects = localStorage.getItem(`subjects-${studentId}`)
-    if (savedSubjects) {
-      setSubjects(JSON.parse(savedSubjects))
+    if (initialSubjects) setSubjects(initialSubjects)
+  }, [initialSubjects])
+
+  useEffect(() => {
+    if (initialStatistics) setStatistics(initialStatistics)
+  }, [initialStatistics])
+
+  useEffect(() => {
+    if (parentDataLoaded !== undefined) setIsLoaded(parentDataLoaded)
+  }, [parentDataLoaded])
+
+  // Only fetch if no initial data provided (fallback)
+  useEffect(() => {
+    if (initialSubjects !== undefined || !studentId) return
+
+    const fetchData = async () => {
+      try {
+        const [subjectsRes, statsRes] = await Promise.all([
+          fetch(`/api/subjects?studentId=${studentId}`, { credentials: 'include' }),
+          fetch(`/api/daily-study-stats?studentId=${studentId}&date=${getTodayDate()}`, { credentials: 'include' })
+        ])
+
+        if (subjectsRes.ok) {
+          const data = await subjectsRes.json()
+          setSubjects(data.subjects || [])
+        }
+        if (statsRes.ok) {
+          const data = await statsRes.json()
+          setStatistics(data.stats || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch data:', error)
+      } finally {
+        setIsLoaded(true)
+      }
     }
 
-    const savedStats = localStorage.getItem(`subject-stats-${studentId}-${getTodayDate()}`)
-    if (savedStats) {
-      setStatistics(JSON.parse(savedStats))
-    }
+    fetchData()
+  }, [studentId, initialSubjects])
 
+  // Load active session from localStorage
+  useEffect(() => {
+    if (!studentId) return
     const savedSession = localStorage.getItem(`active-session-${studentId}`)
     if (savedSession) {
       const session = JSON.parse(savedSession)
@@ -67,12 +125,14 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
     }
   }, [studentId])
 
-  // Save subjects to localStorage
+  // subjects는 DB에서 관리되므로 localStorage 저장 제거
+
+  // Notify parent when subjects change
   useEffect(() => {
-    if (subjects.length > 0) {
-      localStorage.setItem(`subjects-${studentId}`, JSON.stringify(subjects))
+    if (subjects.length > 0 && onSubjectsChange) {
+      onSubjectsChange(subjects)
     }
-  }, [subjects, studentId])
+  }, [subjects, onSubjectsChange])
 
   // Timer for active session
   useEffect(() => {
@@ -131,8 +191,6 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
     setPomodoroSeconds(pomodoroTotalSeconds % 60)
   }, [pomodoroTotalSeconds])
 
-  const getTodayDate = () => new Date().toISOString().split('T')[0]
-
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600)
     const minutes = Math.floor((seconds % 3600) / 60)
@@ -152,16 +210,27 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
   const handleAddSubject = async () => {
     if (!newSubjectName.trim()) return
 
-    const newSubject: Subject = {
-      id: `subject-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      student_id: studentId,
-      name: newSubjectName.trim(),
-      color: selectedColor,
-      order: subjects.length,
+    try {
+      const response = await fetch('/api/subjects', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId,
+          name: newSubjectName.trim(),
+          color: selectedColor,
+          order: subjects.length,
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSubjects([...subjects, data.subject])
+      }
+    } catch (error) {
+      console.error('Failed to add subject:', error)
     }
 
-    setSubjects([...subjects, newSubject])
     setNewSubjectName('')
     setSelectedColor(DEFAULT_COLORS[0])
     setIsAddModalOpen(false)
@@ -221,50 +290,87 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
     }
   }
 
-  const handleDeleteSubject = (subjectId: string) => {
-    // Only remove the subject, keep statistics
-    setSubjects(subjects.filter(s => s.id !== subjectId))
-    // Do NOT remove statistics - keep the time data
-    // setStatistics(statistics.filter(s => s.subject_id !== subjectId))
+  const handleDeleteSubject = async (subjectId: string) => {
+    try {
+      const response = await fetch(`/api/subjects?id=${subjectId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+
+      if (response.ok) {
+        setSubjects(subjects.filter(s => s.id !== subjectId))
+      }
+    } catch (error) {
+      console.error('Failed to delete subject:', error)
+    }
   }
 
-  const handleStartSession = (subject: Subject) => {
-    if (activeSession) {
-      // Stop current session first
-      handleStopSession()
-    }
+  const handleStartSession = async (subject: Subject) => {
+    if (isProcessing) return
+    setIsProcessing(true)
 
-    const session: StudySession = {
-      id: `session-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      student_id: studentId,
-      subject_id: subject.id,
-      subject_name: subject.name,
-      date: getTodayDate(),
-      start_time: new Date().toISOString(),
-      duration_seconds: 0,
-      status: 'active',
-    }
+    try {
+      // Optimistic update - create local session immediately
+      const localSession: StudySession = {
+        id: `session-${Date.now()}`,
+        created_at: new Date().toISOString(),
+        student_id: studentId,
+        subject_id: subject.id,
+        subject_name: subject.name,
+        date: getTodayDate(),
+        start_time: new Date().toISOString(),
+        duration_seconds: 0,
+        status: 'active',
+      }
+      setActiveSession(localSession)
+      localStorage.setItem(`active-session-${studentId}`, JSON.stringify(localSession))
 
-    setActiveSession(session)
-    localStorage.setItem(`active-session-${studentId}`, JSON.stringify(session))
+      // Then sync with DB
+      const response = await fetch('/api/study-sessions', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId,
+          subjectId: subject.id,
+          subjectName: subject.name,
+          action: 'start',
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        const session: StudySession = {
+          id: data.session.id,
+          created_at: data.session.created_at,
+          student_id: studentId,
+          subject_id: subject.id,
+          subject_name: subject.name,
+          date: getTodayDate(),
+          start_time: data.session.start_time || localSession.start_time,
+          duration_seconds: 0,
+          status: 'active',
+        }
+        setActiveSession(session)
+        localStorage.setItem(`active-session-${studentId}`, JSON.stringify(session))
+      }
+    } catch (error) {
+      console.error('Failed to start session:', error)
+      // Local session already set, keep it
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
-  const handleStopSession = () => {
-    if (!activeSession) return
+  const handleStopSession = async () => {
+    if (!activeSession || isProcessing) return
+    setIsProcessing(true)
 
     const endTime = new Date()
     const startTime = new Date(activeSession.start_time)
     const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
 
-    const completedSession: StudySession = {
-      ...activeSession,
-      end_time: endTime.toISOString(),
-      duration_seconds: durationSeconds,
-      status: 'completed',
-    }
-
-    // Update statistics
+    // Update local statistics immediately (optimistic)
     const existingStat = statistics.find(s => s.subject_id === activeSession.subject_id)
     let newStats: SubjectStatistics[]
 
@@ -294,22 +400,43 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
     }
 
     setStatistics(newStats)
-    localStorage.setItem(`subject-stats-${studentId}-${getTodayDate()}`, JSON.stringify(newStats))
     localStorage.removeItem(`active-session-${studentId}`)
     setActiveSession(null)
+
+    // Then sync with DB
+    try {
+      await fetch('/api/study-sessions', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId,
+          subjectId: activeSession.subject_id,
+          subjectName: activeSession.subject_name,
+          sessionId: activeSession.id,
+          durationSeconds,
+          action: 'stop',
+        }),
+      })
+    } catch (error) {
+      console.error('Failed to stop session:', error)
+    } finally {
+      setIsProcessing(false)
+    }
   }
 
   const getSubjectStats = (subjectId: string) => {
     const stat = statistics.find(s => s.subject_id === subjectId)
-    if (!stat) return { total_seconds: 0, session_count: 0 }
 
-    // Add current session time if this subject is active
+    // Add current session time if this subject is active (check BEFORE returning early!)
     if (activeSession && activeSession.subject_id === subjectId) {
       return {
-        total_seconds: stat.total_seconds + currentSessionSeconds,
-        session_count: stat.session_count,
+        total_seconds: (stat?.total_seconds || 0) + currentSessionSeconds,
+        session_count: stat?.session_count || 0,
       }
     }
+
+    if (!stat) return { total_seconds: 0, session_count: 0 }
 
     return stat
   }
@@ -517,7 +644,24 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
 
       {/* Subject List - Horizontal Scrollable Cards */}
       <div className="flex gap-4 overflow-x-auto pb-1 snap-x snap-mandatory hide-scrollbar flex-shrink-0">
-        {subjects.map((subject) => {
+        {/* Skeleton while loading */}
+        {!isLoaded && [1, 2].map((i) => (
+          <Card
+            key={`skeleton-${i}`}
+            className="shadow-lg flex-shrink-0 w-72 h-72 snap-center bg-gray-100 animate-pulse"
+          >
+            <CardContent className="p-6 h-full flex flex-col justify-between">
+              <div className="h-8 bg-gray-200 rounded w-20" />
+              <div className="space-y-2">
+                <div className="h-4 bg-gray-200 rounded w-16" />
+                <div className="h-12 bg-gray-200 rounded w-32" />
+              </div>
+              <div className="h-14 bg-gray-200 rounded w-full" />
+            </CardContent>
+          </Card>
+        ))}
+
+        {isLoaded && subjects.filter(s => !hiddenSubjectIds?.has(s.id)).map((subject) => {
           const stats = getSubjectStats(subject.id)
           const isActive = activeSession?.subject_id === subject.id
 
@@ -597,6 +741,7 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
                     backgroundColor: theme === 'white' ? subject.color : undefined,
                     borderColor: theme === 'white' ? subject.color : undefined,
                   }}
+                  disabled={isProcessing}
                   onClick={() => isActive ? handleStopSession() : handleStartSession(subject)}
                 >
                   {isActive ? (
@@ -625,6 +770,7 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
         })}
 
         {/* Add Subject Button */}
+        {isLoaded && (
         <Card
           className={`border-2 border-dashed transition-all cursor-pointer flex-shrink-0 w-72 h-72 snap-center ${
             theme === 'dark'
@@ -677,6 +823,7 @@ export function SubjectTimer({ studentId, containerRef, theme = 'color' }: Subje
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
 
       {/* Add Subject Modal */}

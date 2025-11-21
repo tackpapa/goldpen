@@ -32,8 +32,11 @@ export function useAllSeatsRealtime(studentIds: string[]) {
       try {
         setStatus((prev) => ({ ...prev, loading: true }))
 
+        console.log('🔍 [AllSeatsRealtime] Loading status for studentIds:', studentIds)
+        console.log('🔍 [AllSeatsRealtime] Today:', today)
+
         // Load all sleep records at once
-        const { data: sleepData } = await supabase
+        const { data: sleepData, error: sleepError } = await supabase
           .from('sleep_records')
           .select('*')
           .in('student_id', studentIds)
@@ -41,12 +44,15 @@ export function useAllSeatsRealtime(studentIds: string[]) {
           .eq('status', 'sleeping')
 
         // Load all outing records at once
-        const { data: outingData } = await supabase
+        const { data: outingData, error: outingError } = await supabase
           .from('outing_records')
           .select('*')
           .in('student_id', studentIds)
           .eq('date', today)
           .eq('status', 'out')
+
+        console.log('🔍 [AllSeatsRealtime] Sleep data:', sleepData, 'Error:', sleepError)
+        console.log('🔍 [AllSeatsRealtime] Outing data:', outingData, 'Error:', outingError)
 
         const sleepMap = new Map<string, SleepRecord>()
         sleepData?.forEach((record) => {
@@ -57,6 +63,8 @@ export function useAllSeatsRealtime(studentIds: string[]) {
         outingData?.forEach((record) => {
           outingMap.set(record.student_id, record as OutingRecord)
         })
+
+        console.log('🔍 [AllSeatsRealtime] Final maps - Sleep:', sleepMap.size, 'Outing:', outingMap.size)
 
         setStatus({
           sleepRecords: sleepMap,

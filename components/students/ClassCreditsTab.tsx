@@ -1,60 +1,38 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import type { Student } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Clock, TrendingUp, User, Calendar as CalendarIcon } from 'lucide-react'
-
-interface CreditUsage {
-  id: string
-  date: string
-  teacher_name: string
-  class_time: string
-  hours_used: number
-  subject: string
-}
+import { Clock, User, Calendar as CalendarIcon } from 'lucide-react'
 
 interface ClassCreditsTabProps {
   student: Student
+  credits?: any[]
+  creditUsages?: any[]
+  loading?: boolean
 }
 
-// 대량 더미 이용 내역 생성
-const generateDummyCreditUsages = (): CreditUsage[] => {
-  const teachers = ['김선생', '이선생', '박선생', '최선생', '정선생']
-  const subjects = ['수학', '영어', '과학', '국어', '사회']
-  const usages: CreditUsage[] = []
-
-  // 80개 이용 내역 생성 (최근 4개월)
-  for (let i = 0; i < 80; i++) {
-    const daysAgo = Math.floor(i / 2) // 하루에 2개 수업
-    const date = new Date()
-    date.setDate(date.getDate() - daysAgo)
-
-    const startHour = [9, 11, 13, 14, 16, 18][Math.floor(Math.random() * 6)]
-    const duration = [1, 1.5, 2, 2.5][Math.floor(Math.random() * 4)]
-    const endHour = startHour + duration
-
-    usages.push({
-      id: `usage-${i}`,
-      date: date.toISOString().split('T')[0],
-      teacher_name: teachers[Math.floor(Math.random() * teachers.length)],
-      class_time: `${startHour.toString().padStart(2, '0')}:00-${Math.floor(endHour).toString().padStart(2, '0')}:${endHour % 1 === 0.5 ? '30' : '00'}`,
-      hours_used: duration,
-      subject: subjects[Math.floor(Math.random() * subjects.length)],
-    })
+export function ClassCreditsTab({
+  student,
+  credits = [],
+  creditUsages = [],
+  loading = false
+}: ClassCreditsTabProps) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    )
   }
 
-  return usages.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-}
+  // 현재 활성 크레딧 총합 계산
+  const activeCredits = credits.filter(c => c.status === 'active')
+  const currentCredits = activeCredits.reduce((sum, c) => sum + (c.remaining_hours || 0), 0)
 
-export function ClassCreditsTab({ student }: ClassCreditsTabProps) {
-  const [creditUsages] = useState<CreditUsage[]>(generateDummyCreditUsages())
-
-  // 통계 계산
-  const currentCredits = 48.5 // 현재 남은 크레딧
-  const totalUsedCredits = creditUsages.reduce((sum, u) => sum + u.hours_used, 0)
-  const totalChargedCredits = currentCredits + totalUsedCredits
+  // 모든 사용 내역 (별도로 전달받은 creditUsages 사용)
+  const allUsages = creditUsages
+  const totalUsedCredits = allUsages.reduce((sum, u) => sum + (u.hours_used || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -82,53 +60,85 @@ export function ClassCreditsTab({ student }: ClassCreditsTabProps) {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-orange-600">{totalUsedCredits}시간</div>
-            <p className="text-xs text-muted-foreground mt-1">총 {creditUsages.length}회 수업</p>
+            <p className="text-xs text-muted-foreground mt-1">총 {allUsages.length}회 수업</p>
           </CardContent>
         </Card>
       </div>
+
+      {/* 활성 크레딧 목록 */}
+      {activeCredits.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>활성 크레딧</CardTitle>
+            <CardDescription>현재 사용 가능한 크레딧</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {activeCredits.map(credit => (
+                <div
+                  key={credit.id}
+                  className="flex items-center justify-between p-3 border rounded-lg"
+                >
+                  <div>
+                    <p className="font-medium">
+                      {credit.remaining_hours}/{credit.total_hours}시간 남음
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      만료: {new Date(credit.expiry_date).toLocaleDateString('ko-KR')}
+                    </p>
+                  </div>
+                  <Badge variant="default">활성</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 크레딧 이용 내역 */}
       <Card>
         <CardHeader>
           <CardTitle>크레딧 이용 내역</CardTitle>
-          <CardDescription>수업 참여 기록 ({creditUsages.length}건)</CardDescription>
+          <CardDescription>수업 참여 기록 ({allUsages.length}건)</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
-            {creditUsages.map(usage => (
-              <div
-                key={usage.id}
-                className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Badge variant="outline" className="font-semibold">
-                      {usage.subject}
-                    </Badge>
-                    <span className="font-medium">{usage.teacher_name}</span>
+          {allUsages.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              이용 내역이 없습니다.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {allUsages.map(usage => (
+                <div
+                  key={usage.id}
+                  className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge variant="outline" className="font-semibold">
+                        {usage.subject || '수업'}
+                      </Badge>
+                      <span className="font-medium">{usage.teacher_name || '선생님'}</span>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <CalendarIcon className="h-3 w-3" />
+                        {new Date(usage.used_at || usage.created_at).toLocaleDateString('ko-KR', {
+                          month: 'long',
+                          day: 'numeric',
+                        })}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <CalendarIcon className="h-3 w-3" />
-                      {new Date(usage.date).toLocaleDateString('ko-KR', {
-                        month: 'long',
-                        day: 'numeric',
-                      })}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {usage.class_time}
-                    </span>
+                  <div className="text-right">
+                    <div className="text-lg font-bold text-orange-600">-{usage.hours_used}시간</div>
                   </div>
                 </div>
-
-                <div className="text-right">
-                  <div className="text-lg font-bold text-orange-600">-{usage.hours_used}시간</div>
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

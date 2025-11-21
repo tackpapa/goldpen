@@ -24,55 +24,68 @@ import type { Attendance } from '@/lib/types/database'
 import { format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
-// Mock data - 오늘 예정 학생 (teacher_id와 is_one_on_one 추가)
-const mockTodayStudents = [
-  { id: '1', student_id: 'st1', student_name: '김민준', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'present' as const },
-  { id: '2', student_id: 'st2', student_name: '이서연', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '1500~1700', teacher_id: 't2', teacher_name: '김영희', is_one_on_one: false, status: 'scheduled' as const },
-  { id: '3', student_id: 'st3', student_name: '박준호', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'late' as const },
-  { id: '4', student_id: 'st4', student_name: '최지우', class_id: null, class_name: null, scheduled_time: '1600~1800', teacher_id: 't3', teacher_name: '이민준', is_one_on_one: true, status: 'absent' as const },
-  { id: '5', student_id: 'st5', student_name: '정하은', class_id: 'class-2', class_name: '영어 회화반', scheduled_time: '1500~1700', teacher_id: 't2', teacher_name: '김영희', is_one_on_one: false, status: 'scheduled' as const },
-  { id: '6', student_id: 'st6', student_name: '강민서', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'present' as const },
-  { id: '7', student_id: 'st7', student_name: '윤서준', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '1600~1800', teacher_id: 't3', teacher_name: '이민준', is_one_on_one: false, status: 'scheduled' as const },
-  { id: '8', student_id: 'st8', student_name: '장서연', class_id: null, class_name: null, scheduled_time: '1500~1700', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: true, status: 'excused' as const },
-  { id: '9', student_id: 'st9', student_name: '임도윤', class_id: 'class-1', class_name: '수학 특강반', scheduled_time: '1400~1600', teacher_id: 't1', teacher_name: '박철수', is_one_on_one: false, status: 'present' as const },
-  { id: '10', student_id: 'st10', student_name: '한지우', class_id: 'class-3', class_name: '국어 독해반', scheduled_time: '1600~1800', teacher_id: 't3', teacher_name: '이민준', is_one_on_one: false, status: 'late' as const },
-]
+// Type definitions
+interface TodayStudent {
+  id: string
+  student_id: string
+  student_name: string
+  class_id: string | null
+  class_name: string | null
+  scheduled_time: string
+  teacher_id: string
+  teacher_name: string
+  is_one_on_one: boolean
+  status: 'scheduled' | 'present' | 'late' | 'absent' | 'excused'
+}
 
-// Mock data - 최근 출결 기록
-const mockAttendanceHistory: Attendance[] = [
-  { id: 'a1', created_at: '2025-06-17', date: '2025-06-17', class_id: 'class-1', student_id: 'st1', status: 'present', notes: '' },
-  { id: 'a2', created_at: '2025-06-17', date: '2025-06-17', class_id: 'class-2', student_id: 'st2', status: 'present', notes: '' },
-  { id: 'a3', created_at: '2025-06-17', date: '2025-06-17', class_id: 'class-1', student_id: 'st3', status: 'late', notes: '버스 연착' },
-  { id: 'a4', created_at: '2025-06-16', date: '2025-06-16', class_id: 'class-1', student_id: 'st1', status: 'present', notes: '' },
-  { id: 'a5', created_at: '2025-06-16', date: '2025-06-16', class_id: 'class-2', student_id: 'st2', status: 'present', notes: '' },
-  { id: 'a6', created_at: '2025-06-16', date: '2025-06-16', class_id: 'class-3', student_id: 'st4', status: 'absent', notes: '병결' },
-  { id: 'a7', created_at: '2025-06-15', date: '2025-06-15', class_id: 'class-1', student_id: 'st1', status: 'present', notes: '' },
-  { id: 'a8', created_at: '2025-06-15', date: '2025-06-15', class_id: 'class-2', student_id: 'st2', status: 'late', notes: '' },
-]
+interface WeeklyStatItem {
+  date: string
+  present: number
+  late: number
+  absent: number
+  excused: number
+}
 
-// 주간 출결 통계 (일별)
-const weeklyStats = [
-  { date: '월', present: 28, late: 2, absent: 1, excused: 1 },
-  { date: '화', present: 30, late: 1, absent: 0, excused: 1 },
-  { date: '수', present: 29, late: 2, absent: 2, excused: 0 },
-  { date: '목', present: 31, late: 1, absent: 1, excused: 0 },
-  { date: '금', present: 27, late: 3, absent: 2, excused: 1 },
-]
-
-// 학생별 출결률
-const studentAttendanceRate = [
-  { name: '김민준', rate: 100, present: 20, late: 0, absent: 0 },
-  { name: '이서연', rate: 95, present: 19, late: 1, absent: 0 },
-  { name: '박준호', rate: 90, present: 18, late: 2, absent: 0 },
-  { name: '최지우', rate: 85, present: 17, late: 1, absent: 2 },
-  { name: '정하은', rate: 100, present: 20, late: 0, absent: 0 },
-]
+interface StudentAttendanceRateItem {
+  name: string
+  rate: number
+  present: number
+  late: number
+  absent: number
+}
 
 export default function AttendancePage() {
   usePageAccess('attendance')
 
   const { toast } = useToast()
-  const [todayAttendance, setTodayAttendance] = useState(mockTodayStudents)
+  const [todayAttendance, setTodayAttendance] = useState<TodayStudent[]>([])
+  const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
+  const [weeklyStats, setWeeklyStats] = useState<WeeklyStatItem[]>([])
+  const [studentAttendanceRate, setStudentAttendanceRate] = useState<StudentAttendanceRateItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchAttendance = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/attendance', { credentials: 'include' })
+        const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[]; error?: string }
+        if (response.ok) {
+          setAttendanceHistory(data.attendance || [])
+          setTodayAttendance(data.todayStudents || [])
+          setWeeklyStats(data.weeklyStats || [])
+          setStudentAttendanceRate(data.studentRates || [])
+        } else {
+          toast({ title: '출결 데이터 로드 실패', variant: 'destructive' })
+        }
+      } catch {
+        toast({ title: '오류 발생', variant: 'destructive' })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchAttendance()
+  }, [toast])
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null)
@@ -110,7 +123,7 @@ export default function AttendancePage() {
     })
   }
 
-  const todayColumns: ColumnDef<typeof mockTodayStudents[0]>[] = [
+  const todayColumns: ColumnDef<TodayStudent>[] = [
     {
       accessorKey: 'student_name',
       header: '학생 이름',
@@ -347,7 +360,7 @@ export default function AttendancePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockAttendanceHistory.map((record) => {
+                    {attendanceHistory.map((record) => {
                       const statusInfo = statusMap[record.status]
                       const Icon = statusInfo.icon
                       return (

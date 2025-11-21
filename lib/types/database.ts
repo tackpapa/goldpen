@@ -609,6 +609,19 @@ export interface MonthlyExpenseSummary {
 // LIVE SCREEN (독서실 라이브 스크린)
 // ============================================
 
+// 개별 학습 계획 (태스크)
+export interface StudyPlan {
+  id: string
+  subject: string
+  subject_id?: string      // 타이머 과목 연동 시
+  subject_color?: string   // 과목 색상
+  description: string
+  completed: boolean
+  started_at?: string      // 태스크 시작 시간
+  completed_at?: string    // 완료 시간
+  elapsed_seconds?: number // 소요 시간 (초)
+}
+
 // 일일 플래너 (학생의 오늘 공부 계획)
 export interface DailyPlanner {
   id: string
@@ -616,12 +629,7 @@ export interface DailyPlanner {
   student_id: string
   seat_number: number
   date: string // YYYY-MM-DD
-  study_plans: {
-    id: string
-    subject: string
-    description: string
-    completed: boolean
-  }[]
+  study_plans: StudyPlan[]
   notes?: string
 }
 

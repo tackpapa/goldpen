@@ -1,12 +1,11 @@
 'use client'
 
-
-
-import { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { DoorOpen, Users, Calendar, BookOpen } from 'lucide-react'
+import { DoorOpen, Users, Calendar, BookOpen, Loader2 } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -14,558 +13,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { Room, RoomSchedule } from '@/lib/types/database'
 import { cn } from '@/lib/utils'
 import { getInstitutionHref } from '@/lib/utils/route'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 
-// Mock data - Rooms
-const mockRooms: Room[] = [
-  { id: 'room-1', created_at: '2025-01-01', org_id: 'org-1', name: '201호', capacity: 15, status: 'active' },
-  { id: 'room-2', created_at: '2025-01-01', org_id: 'org-1', name: '202호', capacity: 20, status: 'active' },
-  { id: 'room-3', created_at: '2025-01-01', org_id: 'org-1', name: '203호', capacity: 15, status: 'active' },
-  { id: 'room-4', created_at: '2025-01-01', org_id: 'org-1', name: '실험실', capacity: 10, status: 'active' },
-  { id: 'room-5', created_at: '2025-01-01', org_id: 'org-1', name: '특강실', capacity: 30, status: 'active' },
-]
+// API에서 가져올 스케줄 타입
+interface ScheduleData {
+  id: string
+  org_id: string
+  class_id: string
+  teacher_id: string | null
+  room_id: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+  status: string
+  notes?: string
+  classes?: { name: string; teacher_id?: string | null } | null
+  rooms?: { name: string } | null
+  teacher?: { name: string } | null
+}
 
-// Mock data - Teachers
-const mockTeachers = [
-  { id: 'teacher-1', name: '김선생' },
-  { id: 'teacher-2', name: '박선생' },
-  { id: 'teacher-3', name: '이선생' },
-  { id: 'teacher-4', name: '최선생' },
-  { id: 'teacher-5', name: '정선생' },
-]
+interface Room {
+  id: string
+  name: string
+  capacity: number
+  status: string
+}
 
-// Mock data - Students (expanded)
-const mockStudents = [
-  { id: 'student-1', name: '김민준', grade: 3 },
-  { id: 'student-2', name: '이서연', grade: 4 },
-  { id: 'student-3', name: '박준호', grade: 2 },
-  { id: 'student-4', name: '최지우', grade: 5 },
-  { id: 'student-5', name: '정하은', grade: 3 },
-  { id: 'student-6', name: '강도윤', grade: 6 },
-  { id: 'student-7', name: '조시우', grade: 1 },
-  { id: 'student-8', name: '윤서준', grade: 4 },
-  { id: 'student-9', name: '장서아', grade: 2 },
-  { id: 'student-10', name: '임지호', grade: 5 },
-  { id: 'student-11', name: '한예진', grade: 3 },
-  { id: 'student-12', name: '오민서', grade: 4 },
-  { id: 'student-13', name: '신우진', grade: 2 },
-  { id: 'student-14', name: '권지안', grade: 5 },
-  { id: 'student-15', name: '배수빈', grade: 6 },
-  { id: 'student-16', name: '송하린', grade: 1 },
-  { id: 'student-17', name: '안태우', grade: 3 },
-  { id: 'student-18', name: '홍다은', grade: 4 },
-  { id: 'student-19', name: '구민재', grade: 5 },
-  { id: 'student-20', name: '남윤아', grade: 2 },
-]
-
-// Mock data - Room Schedules (대폭 확장)
-const mockSchedules: RoomSchedule[] = [
-  // 기존 데이터
-  {
-    id: '1',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'monday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-1',
-    student_name: '김민준',
-    student_grade: 3,
-  },
-  {
-    id: '2',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'wednesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-2',
-    student_name: '이서연',
-    student_grade: 4,
-  },
-  {
-    id: '3',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'monday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-3',
-    student_name: '박준호',
-    student_grade: 2,
-  },
-  {
-    id: '4',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'friday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-4',
-    student_name: '최지우',
-    student_grade: 5,
-  },
-  {
-    id: '5',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'tuesday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-5',
-    student_name: '정하은',
-    student_grade: 3,
-  },
-  {
-    id: '6',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'thursday',
-    start_time: '15:00',
-    end_time: '17:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-6',
-    student_name: '강도윤',
-    student_grade: 6,
-  },
-  {
-    id: '7',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'wednesday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-7',
-    student_name: '조시우',
-    student_grade: 1,
-  },
-  {
-    id: '8',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'saturday',
-    start_time: '11:00',
-    end_time: '13:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-8',
-    student_name: '윤서준',
-    student_grade: 4,
-  },
-  {
-    id: '9',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'tuesday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-9',
-    student_name: '장서아',
-    student_grade: 2,
-  },
-  {
-    id: '10',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'friday',
-    start_time: '16:00',
-    end_time: '18:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-10',
-    student_name: '임지호',
-    student_grade: 5,
-  },
-  {
-    id: '11',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'friday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-6',
-    student_name: '강도윤',
-    student_grade: 6,
-  },
-  {
-    id: '12',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'thursday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-7',
-    student_name: '조시우',
-    student_grade: 1,
-  },
-
-  // ⭐ 화요일 13:00 - 5개 교실 모두 수업 (피크 시간대)
-  {
-    id: '13',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'tuesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-11',
-    student_name: '한예진',
-    student_grade: 3,
-  },
-  {
-    id: '14',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'tuesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-12',
-    student_name: '오민서',
-    student_grade: 4,
-  },
-  {
-    id: '15',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'tuesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-13',
-    student_name: '신우진',
-    student_grade: 2,
-  },
-  {
-    id: '16',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'tuesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-14',
-    student_name: '권지안',
-    student_grade: 5,
-  },
-  {
-    id: '17',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'tuesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-15',
-    student_name: '배수빈',
-    student_grade: 6,
-  },
-
-  // 월요일 10:00 - 4개 교실 (피크 시간대)
-  {
-    id: '18',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'monday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-16',
-    student_name: '송하린',
-    student_grade: 1,
-  },
-  {
-    id: '19',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'monday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-17',
-    student_name: '안태우',
-    student_grade: 3,
-  },
-  {
-    id: '20',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'monday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-18',
-    student_name: '홍다은',
-    student_grade: 4,
-  },
-  {
-    id: '21',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'monday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-19',
-    student_name: '구민재',
-    student_grade: 5,
-  },
-
-  // 수요일 14:00 - 4개 교실 (피크 시간대)
-  {
-    id: '22',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'wednesday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-20',
-    student_name: '남윤아',
-    student_grade: 2,
-  },
-  {
-    id: '23',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'wednesday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-1',
-    student_name: '김민준',
-    student_grade: 3,
-  },
-  {
-    id: '24',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'wednesday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-3',
-    student_name: '박준호',
-    student_grade: 2,
-  },
-  {
-    id: '25',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'wednesday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-4',
-    student_name: '최지우',
-    student_grade: 5,
-  },
-
-  // 목요일 15:00 - 3개 교실
-  {
-    id: '26',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'thursday',
-    start_time: '15:00',
-    end_time: '17:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-5',
-    student_name: '정하은',
-    student_grade: 3,
-  },
-  {
-    id: '27',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'thursday',
-    start_time: '15:00',
-    end_time: '17:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-7',
-    student_name: '조시우',
-    student_grade: 1,
-  },
-  {
-    id: '28',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'thursday',
-    start_time: '15:00',
-    end_time: '17:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-8',
-    student_name: '윤서준',
-    student_grade: 4,
-  },
-
-  // 추가 수업들 (다양한 시간대)
-  {
-    id: '29',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'tuesday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-9',
-    student_name: '장서아',
-    student_grade: 2,
-  },
-  {
-    id: '30',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'wednesday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-10',
-    student_name: '임지호',
-    student_grade: 5,
-  },
-  {
-    id: '31',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'friday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-11',
-    student_name: '한예진',
-    student_grade: 3,
-  },
-  {
-    id: '32',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'thursday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-12',
-    student_name: '오민서',
-    student_grade: 4,
-  },
-  {
-    id: '33',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'monday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-13',
-    student_name: '신우진',
-    student_grade: 2,
-  },
-  {
-    id: '34',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'saturday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-14',
-    student_name: '권지안',
-    student_grade: 5,
-  },
-  {
-    id: '35',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'saturday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-15',
-    student_name: '배수빈',
-    student_grade: 6,
-  },
-]
+interface Teacher {
+  id: string
+  name: string
+}
 
 const dayOfWeekMap = {
   monday: { label: '월', index: 0 },
@@ -578,7 +58,9 @@ const dayOfWeekMap = {
 }
 
 const timeSlots = [
-  '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
+  '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+  '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'
 ]
 
 // Room color mapping
@@ -593,8 +75,41 @@ const roomColors: Record<string, { bg: string; text: string; border: string }> =
 export default function AllSchedulesPage() {
   usePageAccess('all-schedules')
 
+  const params = useParams()
+  const institutionName = params.institutionname as string
+  const [schedules, setSchedules] = useState<ScheduleData[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [loading, setLoading] = useState(true)
   const [filterRoom, setFilterRoom] = useState<string>('all')
   const [filterTeacher, setFilterTeacher] = useState<string>('all')
+
+  // API에서 데이터 fetch
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        const [schedulesRes, roomsRes, teachersRes] = await Promise.all([
+          fetch('/api/schedules', { credentials: 'include' }),
+          fetch('/api/rooms', { credentials: 'include' }),
+          fetch('/api/teachers', { credentials: 'include', credentials: 'include' }),
+        ])
+
+        const schedulesData = await schedulesRes.json()
+        const roomsData = await roomsRes.json()
+        const teachersData = await teachersRes.json()
+
+        if (schedulesData.schedules) setSchedules(schedulesData.schedules)
+        if (roomsData.rooms) setRooms(roomsData.rooms)
+        if (teachersData.teachers) setTeachers(teachersData.teachers)
+      } catch (error) {
+        console.error('Failed to fetch data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
 
   const getRoomColor = (roomName: string) => {
     return roomColors[roomName] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
@@ -602,14 +117,17 @@ export default function AllSchedulesPage() {
 
   // Filter schedules
   const getFilteredSchedules = () => {
-    let filtered = mockSchedules
+    let filtered = schedules
 
     if (filterRoom !== 'all') {
       filtered = filtered.filter(s => s.room_id === filterRoom)
     }
 
     if (filterTeacher !== 'all') {
-      filtered = filtered.filter(s => s.teacher_id === filterTeacher)
+      // teacher_id 또는 classes.teacher_id로 필터링
+      filtered = filtered.filter(s =>
+        s.teacher_id === filterTeacher || s.classes?.teacher_id === filterTeacher
+      )
     }
 
     return filtered
@@ -617,15 +135,18 @@ export default function AllSchedulesPage() {
 
   const filteredSchedules = getFilteredSchedules()
 
-  // Get all schedules for a time slot
-  const getAllSchedulesForTimeSlot = (dayOfWeek: keyof typeof dayOfWeekMap, time: string) => {
-    return filteredSchedules.filter(s => s.day_of_week === dayOfWeek && s.start_time === time)
-  }
-
   // Statistics
   const totalSchedules = filteredSchedules.length
-  const activeRooms = mockRooms.filter(r => r.status === 'active').length
-  const uniqueTeachers = new Set(filteredSchedules.map(s => s.teacher_id)).size
+  const activeRooms = rooms.filter(r => r.status === 'available' || r.status === 'active').length
+  const uniqueTeachers = new Set(filteredSchedules.map(s => s.teacher_id).filter(Boolean)).size
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -637,35 +158,13 @@ export default function AllSchedulesPage() {
             모든 교실의 수업 스케줄을 한눈에 확인합니다
           </p>
         </div>
-        <Link href={getInstitutionHref('/rooms')} className="w-full sm:w-auto">
+        <Link href={getInstitutionHref('/rooms', institutionName)} className="w-full sm:w-auto">
           <Button variant="outline" className="w-full sm:w-auto">
             <BookOpen className="mr-2 h-4 w-4" />
             스케줄 등록하기
           </Button>
         </Link>
       </div>
-
-      {/* View Switcher */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">뷰 옵션</CardTitle>
-        </CardHeader>
-        <CardContent className="flex gap-2">
-          <Button variant="default" size="sm">
-            기본 뷰
-          </Button>
-          <Link href="/all-schedules-v2">
-            <Button variant="outline" size="sm">
-              Compact 뷰
-            </Button>
-          </Link>
-          <Link href="/all-schedules-v3">
-            <Button variant="outline" size="sm">
-              Heat Map 뷰
-            </Button>
-          </Link>
-        </CardContent>
-      </Card>
 
       {/* Stats Cards */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -717,7 +216,7 @@ export default function AllSchedulesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 교실</SelectItem>
-                {mockRooms.map((room) => (
+                {rooms.map((room) => (
                   <SelectItem key={room.id} value={room.id}>
                     {room.name}
                   </SelectItem>
@@ -733,7 +232,7 @@ export default function AllSchedulesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">전체 강사</SelectItem>
-                {mockTeachers.map((teacher) => (
+                {teachers.map((teacher) => (
                   <SelectItem key={teacher.id} value={teacher.id}>
                     {teacher.name}
                   </SelectItem>
@@ -754,90 +253,148 @@ export default function AllSchedulesPage() {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <div className="grid grid-cols-8 gap-2 min-w-[1000px]">
-              {/* Header */}
-              <div className="font-medium text-sm text-muted-foreground p-2">시간</div>
-              {Object.keys(dayOfWeekMap).map((dayKey) => {
-                const day = dayOfWeekMap[dayKey as keyof typeof dayOfWeekMap]
-                return (
-                  <div key={dayKey} className="text-center p-2 font-medium">
-                    {day.label}
-                  </div>
-                )
-              })}
+            {(() => {
+              const CELL_HEIGHT = 50
+              const dayKeys = Object.keys(dayOfWeekMap)
 
-              {/* Time slots */}
-              {timeSlots.map((time) => (
-                <>
-                  <div key={`time-${time}`} className="text-sm text-muted-foreground p-2 flex items-center">
-                    {time}
+              // 시간이 겹치는 스케줄들에 column 할당 (greedy 알고리즘)
+              const assignColumns = (daySchedules: typeof filteredSchedules) => {
+                if (daySchedules.length === 0) return { columns: new Map<string, number>(), maxColumns: 1 }
+
+                // 시작시간 순 정렬
+                const sorted = [...daySchedules].sort((a, b) => {
+                  const aStart = timeSlots.indexOf(a.start_time.substring(0, 5))
+                  const bStart = timeSlots.indexOf(b.start_time.substring(0, 5))
+                  return aStart - bStart
+                })
+
+                const columns = new Map<string, number>()
+                const columnEndTimes: number[] = [] // 각 column의 끝 시간 인덱스
+
+                for (const schedule of sorted) {
+                  const startIdx = timeSlots.indexOf(schedule.start_time.substring(0, 5))
+                  let endIdx = timeSlots.indexOf(schedule.end_time.substring(0, 5))
+                  if (endIdx === -1) endIdx = timeSlots.length
+
+                  // 사용 가능한 가장 왼쪽 column 찾기
+                  let col = 0
+                  while (col < columnEndTimes.length && columnEndTimes[col] > startIdx) {
+                    col++
+                  }
+
+                  columns.set(schedule.id, col)
+                  columnEndTimes[col] = endIdx
+                }
+
+                return { columns, maxColumns: Math.max(1, columnEndTimes.length) }
+              }
+
+              return (
+                <div className="min-w-[900px] flex">
+                  {/* 시간 컬럼 */}
+                  <div className="w-14 flex-shrink-0">
+                    <div className="h-10 p-2 text-sm font-medium text-muted-foreground">시간</div>
+                    {timeSlots.map(time => (
+                      <div
+                        key={time}
+                        className="text-xs text-muted-foreground px-2 border-t flex items-start pt-1"
+                        style={{ height: `${CELL_HEIGHT}px` }}
+                      >
+                        {time}
+                      </div>
+                    ))}
                   </div>
-                  {Object.keys(dayOfWeekMap).map((dayKey) => {
-                    const schedulesInSlot = getAllSchedulesForTimeSlot(
-                      dayKey as keyof typeof dayOfWeekMap,
-                      time
-                    )
+
+                  {/* 각 요일 컬럼 */}
+                  {dayKeys.map(dayKey => {
+                    const day = dayOfWeekMap[dayKey as keyof typeof dayOfWeekMap]
+                    const daySchedules = filteredSchedules.filter(s => s.day_of_week === dayKey)
+                    const { columns, maxColumns } = assignColumns(daySchedules)
 
                     return (
-                      <div
-                        key={`${time}-${dayKey}`}
-                        className={cn(
-                          "border rounded-lg p-1 bg-muted/20",
-                          schedulesInSlot.length === 0 && "min-h-[60px]",
-                          schedulesInSlot.length > 3 && "max-h-[280px] overflow-y-auto"
-                        )}
-                      >
-                        {schedulesInSlot.length === 0 ? (
-                          <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-                            -
-                          </div>
-                        ) : schedulesInSlot.length > 3 ? (
-                          <div className="space-y-1">
-                            {schedulesInSlot.map((schedule) => (
+                      <div key={dayKey} className="border-l" style={{ width: `${maxColumns * 83}px`, flexShrink: 0 }}>
+                        {/* 요일 헤더 */}
+                        <div className="h-10 p-2 text-center font-medium text-sm">
+                          {day.label}
+                        </div>
+
+                        {/* 스케줄 영역 - position relative 컨테이너 */}
+                        <div
+                          className="relative"
+                          style={{ height: `${timeSlots.length * CELL_HEIGHT}px` }}
+                        >
+                          {/* 시간 그리드 라인 (배경) */}
+                          {timeSlots.map((time, idx) => (
+                            <div
+                              key={time}
+                              className="absolute w-full border-t"
+                              style={{ top: `${idx * CELL_HEIGHT}px`, height: `${CELL_HEIGHT}px` }}
+                            />
+                          ))}
+
+                          {/* 스케줄 카드들 - absolute 배치 */}
+                          {daySchedules.map(schedule => {
+                            const startTime = schedule.start_time.substring(0, 5)
+                            const endTime = schedule.end_time.substring(0, 5)
+                            const startIdx = timeSlots.indexOf(startTime)
+                            let endIdx = timeSlots.indexOf(endTime)
+
+                            // 시작시간이 타임슬롯에 없으면 렌더링 안함
+                            if (startIdx === -1) return null
+                            // 끝시간이 타임슬롯에 없으면 마지막까지
+                            if (endIdx === -1) endIdx = timeSlots.length
+
+                            const top = startIdx * CELL_HEIGHT
+                            const height = Math.max(1, endIdx - startIdx) * CELL_HEIGHT
+
+                            // column 기반 위치 계산
+                            const col = columns.get(schedule.id) ?? 0
+                            const widthPercent = 100 / maxColumns
+                            const leftPercent = col * widthPercent
+
+                            const roomName = schedule.rooms?.name || '미지정'
+                            const className = schedule.classes?.name || '미지정'
+                            const teacherName = schedule.teacher?.name || ''
+
+                            return (
                               <div
                                 key={schedule.id}
-                                className={cn(
-                                  "text-xs p-1.5 rounded border-l-3",
-                                  getRoomColor(schedule.room_name).bg,
-                                  getRoomColor(schedule.room_name).border
-                                )}
+                                className="absolute p-0.5"
+                                style={{
+                                  top: `${top}px`,
+                                  height: `${height}px`,
+                                  left: `${leftPercent}%`,
+                                  width: `${widthPercent}%`
+                                }}
                               >
-                                <div className={cn("font-bold text-[11px]", getRoomColor(schedule.room_name).text)}>
-                                  {schedule.room_name} {schedule.teacher_name}
-                                </div>
-                                <div className="text-muted-foreground text-[10px]">
-                                  {schedule.student_grade}학년 {schedule.student_name} {schedule.start_time}-{schedule.end_time}
+                                <div className={cn(
+                                  "h-full p-2 rounded flex flex-col justify-center overflow-hidden",
+                                  getRoomColor(roomName).bg,
+                                  getRoomColor(roomName).border
+                                )}>
+                                  <div className={cn("font-bold text-sm leading-tight", getRoomColor(roomName).text)}>
+                                    {roomName}
+                                  </div>
+                                  <div className={cn("text-xs leading-tight", getRoomColor(roomName).text)}>
+                                    {teacherName}
+                                  </div>
+                                  <div className="text-muted-foreground text-xs leading-tight truncate">
+                                    {className}
+                                  </div>
+                                  <div className="text-muted-foreground text-xs leading-tight">
+                                    {startTime}-{endTime}
+                                  </div>
                                 </div>
                               </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {schedulesInSlot.map((schedule) => (
-                              <div
-                                key={schedule.id}
-                                className={cn(
-                                  "text-xs p-2 rounded border-l-4",
-                                  getRoomColor(schedule.room_name).bg,
-                                  getRoomColor(schedule.room_name).border
-                                )}
-                              >
-                                <div className={cn("font-bold text-sm", getRoomColor(schedule.room_name).text)}>
-                                  {schedule.room_name} {schedule.teacher_name}
-                                </div>
-                                <div className="text-muted-foreground text-[11px] mt-1">
-                                  {schedule.student_grade}학년 {schedule.student_name} {schedule.start_time}-{schedule.end_time}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                            )
+                          })}
+                        </div>
                       </div>
                     )
                   })}
-                </>
-              ))}
-            </div>
+                </div>
+              )
+            })()}
           </div>
         </CardContent>
       </Card>
@@ -850,7 +407,7 @@ export default function AllSchedulesPage() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-3">
-            {mockRooms.map((room) => (
+            {rooms.map((room) => (
               <div key={room.id} className="flex items-center gap-2">
                 <div
                   className={cn(

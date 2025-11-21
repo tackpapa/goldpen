@@ -24,15 +24,26 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('사용자')
+  const [userEmail, setUserEmail] = useState<string>('')
 
-  // Get user role and name from localStorage
+  // Get user info from Supabase Auth and localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const role = localStorage.getItem('userRole')
-      const name = localStorage.getItem('userName') || '사용자'
-      setUserRole(role)
-      setUserName(name)
+    const loadUserInfo = async () => {
+      // Supabase Auth에서 이메일 가져오기
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user?.email) {
+        setUserEmail(user.email)
+      }
+
+      // localStorage에서 역할/이름 가져오기
+      if (typeof window !== 'undefined') {
+        const role = localStorage.getItem('userRole')
+        const name = localStorage.getItem('userName') || '사용자'
+        setUserRole(role)
+        setUserName(name)
+      }
     }
+    loadUserInfo()
   }, [])
 
   // Get greeting based on role
@@ -102,7 +113,7 @@ export function Header() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 md:h-10 md:w-10 rounded-full">
               <Avatar className="h-8 w-8 md:h-10 md:w-10">
-                <AvatarImage src="/avatars/01.png" alt="User" />
+                <AvatarImage src="/avatars/01.svg" alt="User" />
                 <AvatarFallback>U</AvatarFallback>
               </Avatar>
             </Button>
@@ -110,9 +121,9 @@ export function Header() {
           <DropdownMenuContent className="w-56" align="end" forceMount>
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">사용자</p>
+                <p className="text-sm font-medium leading-none">{userName}</p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  user@goldpen.kr
+                  {userEmail || '로딩 중...'}
                 </p>
               </div>
             </DropdownMenuLabel>

@@ -1,97 +1,146 @@
 'use client'
 
-import { useState } from 'react'
-import type { Student, StudentFile } from '@/lib/types/database'
+import { useState, useEffect } from 'react'
+import type { Student } from '@/lib/types/database'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Upload, FileText, Image as ImageIcon, File, X, Eye, Download } from 'lucide-react'
+import { Upload, FileText, Image as ImageIcon, File, X, Eye, Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
+
+interface StudentFile {
+  id: string
+  name: string
+  type: string
+  size: number
+  url: string | null
+  uploaded_at: string
+}
 
 interface StudentFilesTabProps {
   student: Student
   onUpdate?: (student: Student) => void
+  onRefresh?: () => void
 }
 
-export function StudentFilesTab({ student, onUpdate }: StudentFilesTabProps) {
+export function StudentFilesTab({ student, onUpdate, onRefresh }: StudentFilesTabProps) {
   const { toast } = useToast()
-  const [files, setFiles] = useState<StudentFile[]>(student.files || [])
+  const [files, setFiles] = useState<StudentFile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [uploading, setUploading] = useState(false)
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const uploadedFiles = Array.from(e.target.files || [])
+  // Fetch files on mount
+  useEffect(() => {
+    fetchFiles()
+  }, [student.id])
 
-    uploadedFiles.forEach((file) => {
-      // 파일 크기 체크 (9MB)
-      if (file.size > 9 * 1024 * 1024) {
-        toast({
-          title: '파일 크기 초과',
-          description: `${file.name}은(는) 9MB를 초과합니다.`,
-          variant: 'destructive',
-        })
-        return
+  const fetchFiles = async () => {
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/students/${student.id}/files`)
+      if (res.ok) {
+        const data = await res.json()
+        setFiles(data.files || [])
       }
-
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const newFile: StudentFile = {
-          id: `file-${Date.now()}-${Math.random()}`,
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          url: reader.result as string,
-          uploaded_at: new Date().toISOString(),
-        }
-
-        setFiles((prev) => [...prev, newFile])
-
-        // Update student in localStorage
-        const studentsData = localStorage.getItem('students')
-        if (studentsData) {
-          const students = JSON.parse(studentsData) as Student[]
-          const updatedStudents = students.map((s) =>
-            s.id === student.id ? { ...s, files: [...(s.files || []), newFile] } : s
-          )
-          localStorage.setItem('students', JSON.stringify(updatedStudents))
-          onUpdate?.({ ...student, files: [...(student.files || []), newFile] })
-        }
-
-        toast({
-          title: '파일 업로드 완료',
-          description: `${file.name}이(가) 업로드되었습니다.`,
-        })
-      }
-      reader.readAsDataURL(file)
-    })
-
-    e.target.value = '' // Reset input
+    } catch (error) {
+      console.error('Failed to fetch files:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleDeleteFile = (fileId: string) => {
-    const updatedFiles = files.filter((f) => f.id !== fileId)
-    setFiles(updatedFiles)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = Array.from(e.target.files || [])
 
-    // Update student in localStorage
-    const studentsData = localStorage.getItem('students')
-    if (studentsData) {
-      const students = JSON.parse(studentsData) as Student[]
-      const updatedStudents = students.map((s) =>
-        s.id === student.id ? { ...s, files: updatedFiles } : s
-      )
-      localStorage.setItem('students', JSON.stringify(updatedStudents))
-      onUpdate?.({ ...student, files: updatedFiles })
+    for (const file of uploadedFiles) {
+      // 파일 크기 체크 (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        toast({
+          title: '파일 크기 초과',
+          description: `${file.name}은(는) 10MB를 초과합니다.`,
+          variant: 'destructive',
+        })
+        continue
+      }
+
+      try {
+        setUploading(true)
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('org_id', student.org_id)
+
+        const res = await fetch(`/api/students/${student.id}/files`, {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          setFiles((prev) => [data.file, ...prev])
+          toast({
+            title: '파일 업로드 완료',
+            description: `${file.name}이(가) 업로드되었습니다.`,
+          })
+        } else {
+          const error = await res.json()
+          toast({
+            title: '업로드 실패',
+            description: error.error || '파일 업로드에 실패했습니다.',
+            variant: 'destructive',
+          })
+        }
+      } catch (error) {
+        toast({
+          title: '업로드 실패',
+          description: '파일 업로드 중 오류가 발생했습니다.',
+          variant: 'destructive',
+        })
+      } finally {
+        setUploading(false)
+      }
     }
 
-    toast({
-      title: '파일 삭제 완료',
-      description: '파일이 삭제되었습니다.',
-    })
+    e.target.value = '' // Reset input
+    onRefresh?.()
+  }
+
+  const handleDeleteFile = async (fileId: string) => {
+    try {
+      const res = await fetch(`/api/students/${student.id}/files`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId }),
+      })
+
+      if (res.ok) {
+        setFiles((prev) => prev.filter((f) => f.id !== fileId))
+        toast({
+          title: '파일 삭제 완료',
+          description: '파일이 삭제되었습니다.',
+        })
+        onRefresh?.()
+      } else {
+        toast({
+          title: '삭제 실패',
+          description: '파일 삭제에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '삭제 실패',
+        description: '파일 삭제 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleViewFile = (file: StudentFile) => {
-    window.open(file.url, '_blank', 'noopener,noreferrer')
+    if (file.url) {
+      window.open(file.url, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const formatFileSize = (bytes: number) => {
@@ -128,13 +177,19 @@ export function StudentFilesTab({ student, onUpdate }: StudentFilesTabProps) {
               multiple
               onChange={handleFileUpload}
               className="hidden"
+              disabled={uploading}
             />
             <Button
               variant="outline"
               onClick={() => document.getElementById('student-file-upload')?.click()}
+              disabled={uploading}
             >
-              <Upload className="mr-2 h-4 w-4" />
-              파일 업로드
+              {uploading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              {uploading ? '업로드 중...' : '파일 업로드'}
             </Button>
             <span className="text-sm text-muted-foreground">
               {files.length}개 파일 ({formatFileSize(files.reduce((sum, f) => sum + f.size, 0))})
@@ -143,7 +198,11 @@ export function StudentFilesTab({ student, onUpdate }: StudentFilesTabProps) {
         </div>
 
         {/* Files List */}
-        {files.length === 0 ? (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : files.length === 0 ? (
           <div className="text-center py-12 border-2 border-dashed rounded-lg">
             <File className="mx-auto h-12 w-12 text-muted-foreground" />
             <p className="mt-2 text-sm text-muted-foreground">업로드된 파일이 없습니다</p>

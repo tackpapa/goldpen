@@ -3,6 +3,7 @@
 
 
 import { useState, useEffect, useRef } from 'react'
+import { useParams } from 'next/navigation'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,7 @@ import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import type { Student } from '@/lib/types/database'
 import { useAllSeatsRealtime } from '@/hooks/use-all-seats-realtime'
+import { useSeatAssignmentsRealtime } from '@/hooks/use-seat-assignments-realtime'
 import { createClient } from '@/lib/supabase/client'
 
 // LiveScreen State Types
@@ -90,6 +92,11 @@ interface Seat {
   status: 'checked_in' | 'checked_out' | 'vacant'
   type_name?: string
   check_in_time?: string // ISO string for check-in time
+  session_start_time?: string // ISO string for session start
+  allocated_minutes?: number // allocated usage time
+  remaining_minutes?: number | null // student's remaining usage time (hours pass)
+  pass_type?: 'hours' | 'days' | null // type of active pass
+  remaining_days?: number | null // remaining days for days-based pass
 }
 
 interface SeatType {
@@ -110,19 +117,13 @@ const gradeOptions = [
   { value: '재수', label: '재수' },
 ]
 
-// Mock data - Students
-const mockStudents = [
-  { id: 'student-1', name: '김민준', grade: '중3', school: '서울중학교' },
-  { id: 'student-2', name: '이서연', grade: '고1', school: '강남고등학교' },
-  { id: 'student-3', name: '박준호', grade: '중2', school: '서울중학교' },
-  { id: 'student-4', name: '최지우', grade: '고2', school: '강남고등학교' },
-  { id: 'student-5', name: '정하은', grade: '중3', school: '목동중학교' },
-  { id: 'student-6', name: '강도윤', grade: '고3', school: '대치고등학교' },
-  { id: 'student-7', name: '조시우', grade: '중1', school: '서울중학교' },
-  { id: 'student-8', name: '윤서준', grade: '고1', school: '강남고등학교' },
-  { id: 'student-9', name: '장서아', grade: '중2', school: '목동중학교' },
-  { id: 'student-10', name: '임지호', grade: '재수', school: '강남종합학원' },
-]
+// Student interface for local use
+interface LocalStudent {
+  id: string
+  name: string
+  grade: string
+  school: string
+}
 
 // Initialize seats with some mock data
 // Helper function to get live screen state from localStorage
@@ -211,42 +212,47 @@ function SleepStatus({
   }, [onSleepExpired])
 
   useEffect(() => {
-    // Reset notification flag when sleep record changes
+    // Reset notification flag when sleep record changes (including status change)
     hasNotifiedRef.current = false
+
+    // Don't process if already awake
+    if (sleepRecord.status !== 'sleeping') {
+      setRemaining('')
+      setIsExpiring(false)
+      return
+    }
 
     const calculateRemaining = () => {
       const now = Date.now()
       const sleepStart = new Date(sleepRecord.sleep_time).getTime()
       const elapsed = now - sleepStart
-      const maxDuration = 1 * 60 * 1000 // 1 minute in milliseconds
-      const remaining = maxDuration - elapsed
+      const maxDuration = 15 * 60 * 1000 // 15 minutes in milliseconds
+      const remainingMs = maxDuration - elapsed
 
-      if (remaining <= 0) {
+      if (remainingMs <= 0) {
         setRemaining('시간 종료')
         setIsExpiring(true)
 
-        // Trigger notification only once AND only if student is still sleeping
-        if (!hasNotifiedRef.current &&
-            onSleepExpiredRef.current &&
-            sleepRecord.status === 'sleeping') {
+        // Trigger notification only once
+        if (!hasNotifiedRef.current && onSleepExpiredRef.current) {
           hasNotifiedRef.current = true
           onSleepExpiredRef.current(sleepRecord.seat_number, '')
         }
         return
       }
 
-      const minutes = Math.floor(remaining / (1000 * 60))
-      const seconds = Math.floor((remaining % (1000 * 60)) / 1000)
+      const minutes = Math.floor(remainingMs / (1000 * 60))
+      const seconds = Math.floor((remainingMs % (1000 * 60)) / 1000)
 
       setRemaining(`${minutes}:${seconds.toString().padStart(2, '0')}`)
-      setIsExpiring(remaining <= 30 * 1000) // Last 30 seconds
+      setIsExpiring(remainingMs <= 30 * 1000) // Last 30 seconds
     }
 
     calculateRemaining()
     const interval = setInterval(calculateRemaining, 1000)
 
     return () => clearInterval(interval)
-  }, [sleepRecord.sleep_time, sleepRecord.seat_number])
+  }, [sleepRecord.sleep_time, sleepRecord.seat_number, sleepRecord.status])
 
   return (
     <div className={cn(
@@ -289,6 +295,78 @@ function OutingStatus({ outingRecord }: { outingRecord: OutingRecord }) {
     <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded bg-blue-100 text-blue-700">
       <DoorOpen className="h-3.5 w-3.5" />
       <span>외출 {elapsed}</span>
+    </div>
+  )
+}
+
+// Usage Time Status Component - shows remaining usage time
+function UsageTimeStatus({
+  sessionStartTime,
+  remainingMinutes,
+  onExpired,
+}: {
+  sessionStartTime: string
+  remainingMinutes: number
+  onExpired?: () => void
+}) {
+  const [remaining, setRemaining] = useState('')
+  const [isExpired, setIsExpired] = useState(false)
+  const hasNotifiedRef = useRef(false)
+  const onExpiredRef = useRef(onExpired)
+
+  useEffect(() => {
+    onExpiredRef.current = onExpired
+  }, [onExpired])
+
+  useEffect(() => {
+    hasNotifiedRef.current = false // Reset on mount
+
+    const calculateRemaining = () => {
+      const now = Date.now()
+      const start = new Date(sessionStartTime).getTime()
+      const elapsedMs = now - start
+      const elapsedMinutes = elapsedMs / (1000 * 60)
+      const remainingMs = (remainingMinutes - elapsedMinutes) * 60 * 1000
+
+      if (remainingMs <= 0) {
+        setRemaining('이용시간 끝')
+        setIsExpired(true)
+
+        if (!hasNotifiedRef.current && onExpiredRef.current) {
+          hasNotifiedRef.current = true
+          onExpiredRef.current()
+        }
+        return
+      }
+
+      const hours = Math.floor(remainingMs / (1000 * 60 * 60))
+      const minutes = Math.floor((remainingMs % (1000 * 60 * 60)) / (1000 * 60))
+
+      if (hours > 0) {
+        setRemaining(`${hours}시간 ${minutes}분 남음`)
+      } else {
+        setRemaining(`${minutes}분 남음`)
+      }
+      setIsExpired(false)
+    }
+
+    calculateRemaining()
+    const interval = setInterval(calculateRemaining, 10000) // Update every 10 seconds
+
+    return () => clearInterval(interval)
+  }, [sessionStartTime, remainingMinutes])
+
+  if (isExpired) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded bg-red-600 text-white animate-pulse">
+        ⏰ 이용시간 끝
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded bg-orange-100 text-orange-700">
+      ⏱️ {remaining}
     </div>
   )
 }
@@ -375,7 +453,8 @@ function SeatCard({
   handleToggleAttendance,
   handleCallStudent,
   handleSleepExpired,
-  mockStudents
+  handleUsageTimeExpired,
+  students
 }: {
   seat: any
   sleepRecord: SleepRecord | null
@@ -386,7 +465,8 @@ function SeatCard({
   handleToggleAttendance: (seatId: string) => void
   handleCallStudent: (seatNumber: number, studentId: string, studentName: string) => void
   handleSleepExpired: (seatNumber: number, studentName: string) => void
-  mockStudents: Student[]
+  handleUsageTimeExpired: (seatNumber: number, studentName: string) => void
+  students: LocalStudent[]
 }) {
   // Determine card style based on live status
   let cardStyle = getCardStyle(seat.status)
@@ -406,7 +486,7 @@ function SeatCard({
       )}
       onClick={() => handleSeatClick(seat)}
     >
-      <CardContent className="p-4 space-y-3">
+      <CardContent className="p-4 space-y-3 flex flex-col h-full">
         {/* Seat Number and Type */}
         <div className="flex items-center justify-between">
           <div className="flex flex-col gap-1">
@@ -425,12 +505,12 @@ function SeatCard({
         {/* Student Info */}
         {seat.student_name ? (
           <>
-            <div className="space-y-1">
+            <div className="space-y-1 flex-grow">
               <div className="text-sm font-medium">{seat.student_name}</div>
               <div className="text-xs text-muted-foreground">
-                {mockStudents.find(s => s.id === seat.student_id)?.grade}학년
+                {students.find(s => s.id === seat.student_id)?.grade}학년
               </div>
-            </div>
+
 
             {/* Live Status Indicator (Sleep/Outing) */}
             {seat.student_id && (
@@ -444,10 +524,41 @@ function SeatCard({
               />
             )}
 
+            {/* Usage Time Status */}
+            {seat.status === 'checked_in' && seat.session_start_time && seat.remaining_minutes != null && seat.remaining_minutes > 0 && (
+              <UsageTimeStatus
+                sessionStartTime={seat.session_start_time}
+                remainingMinutes={seat.remaining_minutes}
+                onExpired={() => handleUsageTimeExpired(seat.number, seat.student_name)}
+              />
+            )}
+
+            {/* Show expired badge if remaining_minutes is 0 (hours pass) */}
+            {seat.pass_type === 'hours' && seat.remaining_minutes === 0 && (
+              <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded bg-red-600 text-white">
+                ⏰ 이용시간 끝
+              </div>
+            )}
+
+            {/* Show remaining days for days-based pass */}
+            {seat.pass_type === 'days' && seat.remaining_days != null && seat.remaining_days > 0 && (
+              <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded bg-blue-600 text-white">
+                📅 {seat.remaining_days}일 남음
+              </div>
+            )}
+
+            {/* Show remaining hours for hours-based pass (when not checked in) */}
+            {seat.pass_type === 'hours' && seat.remaining_minutes != null && seat.remaining_minutes > 0 && seat.status !== 'checked_in' && (
+              <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded bg-green-600 text-white">
+                ⏱️ {Math.floor(seat.remaining_minutes / 60)}시간 {seat.remaining_minutes % 60}분 남음
+              </div>
+            )}
+
             {/* Elapsed Time (only show when checked in) */}
             {seat.status === 'checked_in' && seat.check_in_time && (
               <ElapsedTime checkInTime={seat.check_in_time} />
             )}
+            </div>
 
             {/* Toggle Button */}
             {seat.status !== 'vacant' && (
@@ -493,16 +604,10 @@ function SeatCard({
 const initializeSeats = (totalSeats: number, seatTypes: SeatType[] = []): Seat[] => {
   const seats: Seat[] = []
   for (let i = 1; i <= totalSeats; i++) {
-    // Assign some students to first few seats for demo
-    const mockAssignments: Record<number, { student_id: string; student_name: string; status: 'checked_in' | 'checked_out'; check_in_time?: string }> = {
-      1: { student_id: 'student-1', student_name: '김민준', status: 'checked_in', check_in_time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString() }, // 2시간 전
-      2: { student_id: 'student-2', student_name: '이서연', status: 'checked_in', check_in_time: new Date(Date.now() - 45 * 60 * 1000).toISOString() }, // 45분 전
-      3: { student_id: 'student-3', student_name: '박준호', status: 'checked_out' },
-      5: { student_id: 'student-5', student_name: '정하은', status: 'checked_in', check_in_time: new Date(Date.now() - 3.5 * 60 * 60 * 1000).toISOString() }, // 3.5시간 전
-      7: { student_id: 'student-7', student_name: '조시우', status: 'checked_out' },
-    }
+    // Seat assignments loaded from API
+    const seatAssignments: Record<number, { student_id: string; student_name: string; status: 'checked_in' | 'checked_out'; check_in_time?: string }> = {}
 
-    const assignment = mockAssignments[i]
+    const assignment = seatAssignments[i]
 
     // Find seat type for this seat number
     const seatType = seatTypes.find(
@@ -525,6 +630,8 @@ const initializeSeats = (totalSeats: number, seatTypes: SeatType[] = []): Seat[]
 export default function SeatsPage() {
   usePageAccess('seats')
 
+  const params = useParams()
+  const institutionName = params.institutionname as string
   const { toast } = useToast()
   const [totalSeats, setTotalSeats] = useState(20)
   const [seatTypes, setSeatTypes] = useState<SeatType[]>([])
@@ -544,6 +651,10 @@ export default function SeatsPage() {
   const [newStudentSchool, setNewStudentSchool] = useState('')
   const [newStudentPhone, setNewStudentPhone] = useState('')
 
+  // Usage time state (이용시간)
+  const [newStudentUsageHours, setNewStudentUsageHours] = useState('0')
+  const [newStudentUsageMinutes, setNewStudentUsageMinutes] = useState('0')
+
   // Sleep expiration alert state
   const [sleepAlertOpen, setSleepAlertOpen] = useState(false)
   const [sleepAlertInfo, setSleepAlertInfo] = useState<{ seatNumber: number; studentName: string } | null>(null)
@@ -560,12 +671,160 @@ export default function SeatsPage() {
   // Manager call alert state
   const [managerCallAlert, setManagerCallAlert] = useState<{ seatNumber: number; studentName: string } | null>(null)
 
+  // Usage time expiry alert state
+  const [usageTimeAlertOpen, setUsageTimeAlertOpen] = useState(false)
+  const [usageTimeAlertInfo, setUsageTimeAlertInfo] = useState<{ seatNumber: number; studentName: string } | null>(null)
+  const [usageTimeAlarmInterval, setUsageTimeAlarmInterval] = useState<NodeJS.Timeout | null>(null)
+
   // URL copy state
   const [urlCopied, setUrlCopied] = useState(false)
-  const [liveScreenUrl, setLiveScreenUrl] = useState('/goldpen/livescreen/1')
+  const [liveScreenUrl, setLiveScreenUrl] = useState('')
+
+  // Students from API
+  const [students, setStudents] = useState<LocalStudent[]>([])
+
+  // Org ID for realtime subscription
+  const [orgId, setOrgId] = useState<string | null>(null)
+
+  // Realtime seat assignments subscription
+  const { assignments: realtimeAssignments, loading: realtimeLoading } = useSeatAssignmentsRealtime(orgId)
+
+  // orgId is now set from seat-config API response (see below)
+
+  // Sync realtime assignments with seats state
+  useEffect(() => {
+    if (realtimeLoading || !realtimeAssignments) return
+
+    setSeats((prevSeats) => {
+      // Get all seat numbers that have assignments
+      const assignedSeatNumbers = new Set(realtimeAssignments.keys())
+
+      return prevSeats.map((seat) => {
+        const assignment = realtimeAssignments.get(seat.number)
+        if (assignment) {
+          // Update seat with assignment data, but preserve pass info from initial API load
+          return {
+            ...seat,
+            student_id: assignment.student_id,
+            student_name: assignment.student_name,
+            status: assignment.status,
+            check_in_time: assignment.check_in_time || undefined,
+            session_start_time: assignment.session_start_time || undefined,
+            // Preserve pass info (realtime doesn't have it)
+            // remaining_minutes, pass_type, remaining_days are kept from initial load
+          }
+        } else if (seat.student_id && !assignedSeatNumbers.has(seat.number)) {
+          // Seat had assignment but now removed (deleted from DB)
+          return {
+            ...seat,
+            student_id: null,
+            student_name: null,
+            status: 'vacant' as const,
+            check_in_time: undefined,
+          }
+        }
+        // Keep seat as is (vacant seats without changes)
+        return seat
+      })
+    })
+  }, [realtimeAssignments, realtimeLoading])
+
+  // Fetch seat config and assignments on mount
+  useEffect(() => {
+    const fetchSeatConfigAndAssignments = async () => {
+      try {
+        // Fetch config and assignments in parallel
+        const [configRes, assignmentsRes] = await Promise.all([
+          fetch('/api/seat-config', { credentials: 'include' }),
+          fetch('/api/seat-assignments', { credentials: 'include' }),
+        ])
+
+        const configData = await configRes.json()
+        const assignmentsData = await assignmentsRes.json()
+
+        let total = 20
+        let types: SeatType[] = []
+
+        if (configRes.ok && configData.totalSeats) {
+          total = configData.totalSeats
+          types = (configData.seatTypes || []).map((t: any) => ({
+            id: t.id || `type-${Date.now()}-${Math.random()}`,
+            startNumber: t.startNumber,
+            endNumber: t.endNumber,
+            typeName: t.typeName,
+          }))
+          setTotalSeats(total)
+          setSeatTypes(types)
+
+          // Set orgId for realtime subscription
+          if (configData.orgId) {
+            setOrgId(configData.orgId)
+          }
+        }
+
+        // Initialize seats with assignments
+        const initialSeats = initializeSeats(total, types)
+
+        if (assignmentsRes.ok && assignmentsData.assignments) {
+          const assignments = assignmentsData.assignments as Array<{
+            seatNumber: number
+            studentId: string
+            studentName: string | null
+            studentGrade: string | null
+            status: string
+            checkInTime: string | null
+            sessionStartTime: string | null
+            remainingMinutes: number | null
+            passType: 'hours' | 'days' | null
+            remainingDays: number | null
+          }>
+
+          // Apply assignments to seats
+          console.log('[Seats] Assignments from API:', assignments)
+          assignments.forEach(assignment => {
+            const seatIndex = initialSeats.findIndex(s => s.number === assignment.seatNumber)
+            if (seatIndex !== -1) {
+              initialSeats[seatIndex] = {
+                ...initialSeats[seatIndex],
+                student_id: assignment.studentId,
+                student_name: assignment.studentName,
+                status: assignment.status as 'checked_in' | 'checked_out' | 'vacant',
+                check_in_time: assignment.checkInTime || undefined,
+                session_start_time: assignment.sessionStartTime || undefined,
+                remaining_minutes: assignment.remainingMinutes ?? null,
+                pass_type: assignment.passType ?? null,
+                remaining_days: assignment.remainingDays ?? null,
+              }
+            }
+          })
+        }
+
+        setSeats(initialSeats)
+      } catch {
+        console.error('Failed to fetch seat config/assignments')
+      }
+    }
+    fetchSeatConfigAndAssignments()
+  }, [])
+
+  // Fetch students from API
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        const response = await fetch('/api/students', { credentials: 'include' })
+        const data = await response.json() as { students?: LocalStudent[]; error?: string }
+        if (response.ok && data.students) {
+          setStudents(data.students)
+        }
+      } catch {
+        console.error('Failed to fetch students')
+      }
+    }
+    fetchStudents()
+  }, [])
 
   // Filter students by search query
-  const filteredStudents = mockStudents.filter(student =>
+  const filteredStudents = students.filter(student =>
     studentSearchQuery === '' ||
     student.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
     `${student.grade}학년`.includes(studentSearchQuery)
@@ -663,7 +922,6 @@ export default function SeatsPage() {
   // Subscribe to manager_calls
   useEffect(() => {
     const supabase = createClient()
-    const today = new Date().toISOString().split('T')[0]
 
     // Subscribe to changes
     const channel = supabase
@@ -676,14 +934,17 @@ export default function SeatsPage() {
           table: 'manager_calls',
         },
         (payload) => {
+          console.log('📞 [Manager Call] Received:', payload)
           const record = payload.new as any
           setManagerCallAlert({
             seatNumber: record.seat_number,
-            studentName: record.student_name,
+            studentName: record.student_name || '학생',
           })
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('🔌 [Manager Call] Subscription status:', status)
+      })
 
     return () => {
       channel.unsubscribe()
@@ -759,6 +1020,36 @@ export default function SeatsPage() {
     setSleepAlertOpen(true)
   }
 
+  // Handle usage time expiration notification
+  const handleUsageTimeExpired = (seatNumber: number, studentName: string) => {
+    // Play alarm immediately
+    playAlarmBeep()
+
+    // Continue playing alarm every 2 seconds
+    const interval = setInterval(() => {
+      playAlarmBeep()
+    }, 2000)
+
+    setUsageTimeAlarmInterval(interval)
+
+    // Show modal
+    setUsageTimeAlertInfo({ seatNumber, studentName })
+    setUsageTimeAlertOpen(true)
+  }
+
+  // Handle closing usage time alert
+  const handleCloseUsageTimeAlert = () => {
+    // Stop alarm
+    if (usageTimeAlarmInterval) {
+      clearInterval(usageTimeAlarmInterval)
+      setUsageTimeAlarmInterval(null)
+    }
+
+    // Close modal
+    setUsageTimeAlertOpen(false)
+    setUsageTimeAlertInfo(null)
+  }
+
   // Handle closing sleep alert
   const handleCloseSleepAlert = async () => {
     // Stop alarm
@@ -797,10 +1088,10 @@ export default function SeatsPage() {
 
   // Set liveScreenUrl on mount (client-side only)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setLiveScreenUrl(`${window.location.origin}/goldpen/livescreen/1`)
+    if (typeof window !== 'undefined' && institutionName) {
+      setLiveScreenUrl(`${window.location.origin}/${institutionName}/livescreen/1`)
     }
-  }, [])
+  }, [institutionName])
 
   // Handle copying livescreen URL
   const handleCopyUrl = async () => {
@@ -900,7 +1191,7 @@ export default function SeatsPage() {
     }
   }
 
-  const handleConfigureTotalSeats = () => {
+  const handleConfigureTotalSeats = async () => {
     if (tempTotalSeats < 1 || tempTotalSeats > 100) {
       toast({
         title: '잘못된 좌석 수',
@@ -930,15 +1221,51 @@ export default function SeatsPage() {
       }
     }
 
-    setTotalSeats(tempTotalSeats)
-    setSeatTypes(tempSeatTypes)
-    setSeats(initializeSeats(tempTotalSeats, tempSeatTypes))
-    setIsConfigDialogOpen(false)
+    // Save to API
+    try {
+      const response = await fetch('/api/seat-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          totalSeats: tempTotalSeats,
+          seatTypes: tempSeatTypes.map(t => ({
+            startNumber: t.startNumber,
+            endNumber: t.endNumber,
+            typeName: t.typeName,
+          })),
+        }),
+      })
 
-    toast({
-      title: '좌석 설정 완료',
-      description: `총 ${tempTotalSeats}개의 좌석이 설정되었습니다.`,
-    })
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast({
+          title: '저장 실패',
+          description: data.error || '좌석 설정 저장에 실패했습니다.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // Update local state after successful save
+      setTotalSeats(tempTotalSeats)
+      setSeatTypes(tempSeatTypes)
+      setSeats(initializeSeats(tempTotalSeats, tempSeatTypes))
+      setIsConfigDialogOpen(false)
+
+      toast({
+        title: '좌석 설정 완료',
+        description: `총 ${tempTotalSeats}개의 좌석이 설정되었습니다.`,
+      })
+    } catch (error) {
+      console.error('Failed to save seat config:', error)
+      toast({
+        title: '저장 실패',
+        description: '네트워크 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const handleAddSeatType = () => {
@@ -980,12 +1307,12 @@ export default function SeatsPage() {
     setIsAssignDialogOpen(true)
   }
 
-  const handleAssignStudent = () => {
+  const handleAssignStudent = async () => {
     if (!selectedSeat) return
 
     if (assignmentTab === 'existing') {
       // Existing student assignment
-      const student = mockStudents.find(s => s.id === selectedStudentId)
+      const student = students.find(s => s.id === selectedStudentId)
 
       if (!selectedStudentId || !student) {
         toast({
@@ -996,24 +1323,54 @@ export default function SeatsPage() {
         return
       }
 
-      const updatedSeats = seats.map(seat =>
-        seat.id === selectedSeat.id
-          ? {
-              ...seat,
-              student_id: selectedStudentId,
-              student_name: student.name,
-              status: 'checked_out' as const, // Default to checked_out when newly assigned
-            }
-          : seat
-      )
+      try {
+        const response = await fetch('/api/seat-assignments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            seatNumber: selectedSeat.number,
+            studentId: selectedStudentId,
+          }),
+        })
 
-      setSeats(updatedSeats)
-      setIsAssignDialogOpen(false)
+        const data = await response.json()
 
-      toast({
-        title: '좌석 배정 완료',
-        description: `${selectedSeat.number}번 좌석에 ${student.name} 학생이 배정되었습니다.`,
-      })
+        if (!response.ok) {
+          toast({
+            title: '배정 실패',
+            description: data.error || '좌석 배정에 실패했습니다.',
+            variant: 'destructive',
+          })
+          return
+        }
+
+        const updatedSeats = seats.map(seat =>
+          seat.id === selectedSeat.id
+            ? {
+                ...seat,
+                student_id: selectedStudentId,
+                student_name: student.name,
+                status: 'checked_out' as const,
+              }
+            : seat
+        )
+
+        setSeats(updatedSeats)
+        setIsAssignDialogOpen(false)
+
+        toast({
+          title: '좌석 배정 완료',
+          description: `${selectedSeat.number}번 좌석에 ${student.name} 학생이 배정되었습니다.`,
+        })
+      } catch (error) {
+        console.error('Failed to assign student:', error)
+        toast({
+          title: '배정 실패',
+          description: '네트워크 오류가 발생했습니다.',
+          variant: 'destructive',
+        })
+      }
     } else {
       // New student registration and assignment
       if (!newStudentName.trim() || !newStudentGrade || !newStudentSchool.trim() || !newStudentPhone.trim()) {
@@ -1025,48 +1382,139 @@ export default function SeatsPage() {
         return
       }
 
-      // Create new student ID
-      const newStudentId = `student-${Date.now()}`
+      // Calculate total usage minutes
+      const usageHours = parseInt(newStudentUsageHours) || 0
+      const usageMinutes = parseInt(newStudentUsageMinutes) || 0
+      const totalUsageMinutes = usageHours * 60 + usageMinutes
 
-      // Create full student object for database
-      const newStudent: Student = {
-        id: newStudentId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        org_id: 'org-1',
-        name: newStudentName.trim(),
-        grade: newStudentGrade,
-        school: newStudentSchool.trim(),
-        phone: newStudentPhone.trim(),
-        parent_name: '',
-        parent_phone: '',
-        subjects: [],
-        status: 'active',
-        enrollment_date: new Date().toISOString(),
+      try {
+        // Create student via API
+        const response = await fetch('/api/students', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            name: newStudentName.trim(),
+            grade: newStudentGrade,
+            school: newStudentSchool.trim(),
+            phone: newStudentPhone.trim(),
+            remaining_minutes: totalUsageMinutes > 0 ? totalUsageMinutes : null,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          toast({
+            title: '등록 실패',
+            description: data.error || '학생 등록에 실패했습니다.',
+            variant: 'destructive',
+          })
+          return
+        }
+
+        const newStudentId = data.student?.id || data.id
+
+        // Add to students state
+        setStudents(prev => [...prev, {
+          id: newStudentId,
+          name: newStudentName.trim(),
+          grade: newStudentGrade,
+          school: newStudentSchool.trim(),
+        }])
+
+        // Assign to seat with usage time
+        const assignResponse = await fetch('/api/seat-assignments', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            seatNumber: selectedSeat.number,
+            studentId: newStudentId,
+            allocatedMinutes: totalUsageMinutes > 0 ? totalUsageMinutes : null,
+          }),
+        })
+
+        const assignData = await assignResponse.json()
+
+        if (!assignResponse.ok) {
+          toast({
+            title: '배정 실패',
+            description: assignData.error || '좌석 배정에 실패했습니다.',
+            variant: 'destructive',
+          })
+          return
+        }
+
+        // Update local seats state
+        const updatedSeats = seats.map(seat =>
+          seat.id === selectedSeat.id
+            ? {
+                ...seat,
+                student_id: newStudentId,
+                student_name: newStudentName.trim(),
+                status: 'checked_out' as const,
+              }
+            : seat
+        )
+
+        setSeats(updatedSeats)
+        setIsAssignDialogOpen(false)
+
+        toast({
+          title: '학생 등록 및 배정 완료',
+          description: `${newStudentName} 학생이 ${selectedSeat.number}번 좌석에 배정되었습니다.${totalUsageMinutes > 0 ? ` (이용시간: ${usageHours}시간 ${usageMinutes}분)` : ''}`,
+        })
+
+        // Reset form
+        setNewStudentName('')
+        setNewStudentGrade('')
+        setNewStudentSchool('')
+        setNewStudentPhone('')
+        setNewStudentUsageHours('0')
+        setNewStudentUsageMinutes('0')
+      } catch (error) {
+        console.error('Failed to create student:', error)
+        toast({
+          title: '등록 실패',
+          description: '네트워크 오류가 발생했습니다.',
+          variant: 'destructive',
+        })
       }
+    }
+  }
 
-      // Add to mockStudents
-      mockStudents.push({
-        id: newStudentId,
-        name: newStudentName.trim(),
-        grade: newStudentGrade,
-        school: newStudentSchool.trim(),
+  const handleRemoveStudent = async () => {
+    if (!selectedSeat) return
+
+    try {
+      const response = await fetch('/api/seat-assignments', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          seatNumber: selectedSeat.number,
+        }),
       })
 
-      // Save to localStorage (students database)
-      const studentsData = localStorage.getItem('students')
-      let allStudents: Student[] = studentsData ? JSON.parse(studentsData) : []
-      allStudents.push(newStudent)
-      localStorage.setItem('students', JSON.stringify(allStudents))
+      const data = await response.json()
 
-      // Assign to seat
+      if (!response.ok) {
+        toast({
+          title: '해제 실패',
+          description: data.error || '배정 해제에 실패했습니다.',
+          variant: 'destructive',
+        })
+        return
+      }
+
       const updatedSeats = seats.map(seat =>
         seat.id === selectedSeat.id
           ? {
               ...seat,
-              student_id: newStudentId,
-              student_name: newStudentName.trim(),
-              status: 'checked_out' as const,
+              student_id: null,
+              student_name: null,
+              status: 'vacant' as const,
             }
           : seat
       )
@@ -1075,63 +1523,72 @@ export default function SeatsPage() {
       setIsAssignDialogOpen(false)
 
       toast({
-        title: '학생 등록 및 배정 완료',
-        description: `${newStudentName} 학생이 ${selectedSeat.number}번 좌석에 배정되었습니다.`,
+        title: '좌석 배정 해제',
+        description: `${selectedSeat.number}번 좌석 배정이 해제되었습니다.`,
       })
-
-      // Reset form
-      setNewStudentName('')
-      setNewStudentGrade('')
-      setNewStudentSchool('')
-      setNewStudentPhone('')
+    } catch (error) {
+      console.error('Failed to remove student:', error)
+      toast({
+        title: '해제 실패',
+        description: '네트워크 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
     }
   }
 
-  const handleRemoveStudent = () => {
-    if (!selectedSeat) return
-
-    const updatedSeats = seats.map(seat =>
-      seat.id === selectedSeat.id
-        ? {
-            ...seat,
-            student_id: null,
-            student_name: null,
-            status: 'vacant' as const,
-          }
-        : seat
-    )
-
-    setSeats(updatedSeats)
-    setIsAssignDialogOpen(false)
-
-    toast({
-      title: '좌석 배정 해제',
-      description: `${selectedSeat.number}번 좌석 배정이 해제되었습니다.`,
-    })
-  }
-
-  const handleToggleAttendance = (seatId: string) => {
-    const updatedSeats = seats.map(seat => {
-      if (seat.id === seatId && seat.student_id) {
-        const newStatus: Seat['status'] = seat.status === 'checked_in' ? 'checked_out' : 'checked_in'
-        return {
-          ...seat,
-          status: newStatus,
-          check_in_time: newStatus === 'checked_in' ? new Date().toISOString() : undefined
-        }
-      }
-      return seat
-    })
-
-    setSeats(updatedSeats)
-
+  const handleToggleAttendance = async (seatId: string) => {
     const seat = seats.find(s => s.id === seatId)
-    const newStatus = seat?.status === 'checked_in' ? '하원' : '등원'
+    if (!seat || !seat.student_id) return
 
-    toast({
-      title: '출결 상태 변경',
-      description: `${seat?.number}번 좌석 - ${seat?.student_name} (${newStatus})`,
-    })
+    const newStatus = seat.status === 'checked_in' ? 'checked_out' : 'checked_in'
+
+    try {
+      const response = await fetch('/api/seat-assignments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          seatNumber: seat.number,
+          status: newStatus,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast({
+          title: '상태 변경 실패',
+          description: data.error || '출결 상태 변경에 실패했습니다.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      const updatedSeats = seats.map(s => {
+        if (s.id === seatId && s.student_id) {
+          return {
+            ...s,
+            status: newStatus as Seat['status'],
+            check_in_time: newStatus === 'checked_in' ? new Date().toISOString() : undefined
+          }
+        }
+        return s
+      })
+
+      setSeats(updatedSeats)
+
+      toast({
+        title: '출결 상태 변경',
+        description: `${seat.number}번 좌석 - ${seat.student_name} (${newStatus === 'checked_in' ? '등원' : '하원'})`,
+      })
+    } catch (error) {
+      console.error('Failed to toggle attendance:', error)
+      toast({
+        title: '상태 변경 실패',
+        description: '네트워크 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const getStatusBadge = (status: Seat['status']) => {
@@ -1281,7 +1738,8 @@ export default function SeatsPage() {
                 handleToggleAttendance={handleToggleAttendance}
                 handleCallStudent={handleCallStudent}
                 handleSleepExpired={handleSleepExpired}
-                mockStudents={mockStudents}
+                handleUsageTimeExpired={handleUsageTimeExpired}
+                students={students}
               />
             ))}
           </div>
@@ -1509,6 +1967,40 @@ export default function SeatsPage() {
                 />
               </div>
 
+              {/* 이용시간 설정 */}
+              <div className="space-y-2">
+                <Label>이용시간 설정 (선택)</Label>
+                <div className="flex gap-2 items-center">
+                  <Select value={newStudentUsageHours} onValueChange={setNewStudentUsageHours}>
+                    <SelectTrigger className="w-24">
+                      <SelectValue placeholder="시간" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 13 }, (_, i) => (
+                        <SelectItem key={i} value={i.toString()}>
+                          {i}시간
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={newStudentUsageMinutes} onValueChange={setNewStudentUsageMinutes}>
+                    <SelectTrigger className="w-24">
+                      <SelectValue placeholder="분" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[0, 30].map((m) => (
+                        <SelectItem key={m} value={m.toString()}>
+                          {m}분
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  이용시간을 설정하면 하원 시 자동으로 차감됩니다
+                </p>
+              </div>
+
               <div className="rounded-lg bg-muted p-3 text-sm text-muted-foreground">
                 💡 신규 학생을 등록하고 바로 좌석에 배정합니다
               </div>
@@ -1540,21 +2032,53 @@ export default function SeatsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold text-red-600">⏰ 잠자기 시간 종료</DialogTitle>
-            <DialogDescription className="text-lg pt-4">
-              {sleepAlertInfo && (
-                <div className="space-y-2">
-                  <p className="font-semibold text-foreground">
-                    {sleepAlertInfo.seatNumber}번 학생 <span className="text-primary">{sleepAlertInfo.studentName}</span> 깨워주세요
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    1분 잠자기 시간이 종료되었습니다.
-                  </p>
-                </div>
-              )}
+            <DialogDescription asChild className="text-lg pt-4">
+              <div>
+                {sleepAlertInfo && (
+                  <div className="space-y-2">
+                    <p className="font-semibold text-foreground">
+                      {sleepAlertInfo.seatNumber}번 학생 <span className="text-primary">{sleepAlertInfo.studentName}</span> 깨워주세요
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      15분 잠자기 시간이 종료되었습니다.
+                    </p>
+                  </div>
+                )}
+              </div>
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button onClick={handleCloseSleepAlert} className="w-full">
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Usage Time Expiration Alert Dialog */}
+      <Dialog open={usageTimeAlertOpen} onOpenChange={(open) => {
+        if (!open) handleCloseUsageTimeAlert()
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold text-red-600">⏰ 이용시간 종료</DialogTitle>
+            <DialogDescription asChild className="text-lg pt-4">
+              <div>
+                {usageTimeAlertInfo && (
+                  <div className="space-y-2">
+                    <p className="font-semibold text-foreground">
+                      {usageTimeAlertInfo.seatNumber}번 좌석 <span className="text-primary">{usageTimeAlertInfo.studentName}</span> 학생
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      이용시간이 모두 소진되었습니다.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button onClick={handleCloseUsageTimeAlert} className="w-full">
               확인
             </Button>
           </DialogFooter>

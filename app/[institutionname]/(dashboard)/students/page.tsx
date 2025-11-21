@@ -2,7 +2,7 @@
 
 
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Button } from '@/components/ui/button'
@@ -28,7 +28,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Pencil, Trash2, MoreHorizontal, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, MoreHorizontal, RefreshCw } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { StudentSchema, type StudentInput } from '@/lib/validations/student'
@@ -53,127 +53,49 @@ const gradeOptions = [
   { value: '재수', label: '재수' },
 ]
 
-// Mock data for development
-const mockStudents: Student[] = [
-  {
-    id: '1',
-    created_at: '2025-01-01',
-    updated_at: '2025-01-01',
-    org_id: 'org-1',
-    name: '김민준',
-    attendance_code: '1234',
-    grade: '고1',
-    school: '강남고등학교',
-    phone: '010-1234-5678',
-    parent_name: '김아무개',
-    parent_phone: '010-9876-5432',
-    parent_email: 'parent@example.com',
-    address: '서울시 강남구',
-    subjects: ['수학', '영어'],
-    status: 'active',
-    enrollment_date: '2025-01-01',
-    notes: '성실한 학생',
-    files: [
-      {
-        id: 'file-1',
-        name: '성적표_2025_1학기.pdf',
-        type: 'application/pdf',
-        size: 245678,
-        url: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-        uploaded_at: '2025-01-15T10:30:00',
-      },
-      {
-        id: 'file-2',
-        name: '학생증_사진.jpg',
-        type: 'image/jpeg',
-        size: 156789,
-        url: 'https://images.unsplash.com/photo-1434030216411-0b793f4b4173?w=400&h=300&fit=crop',
-        uploaded_at: '2025-01-20T14:20:00',
-      },
-    ],
-  },
-  {
-    id: '2',
-    created_at: '2025-01-02',
-    updated_at: '2025-01-02',
-    org_id: 'org-1',
-    name: '이서연',
-    attendance_code: '5678',
-    grade: '고2',
-    school: '서울고등학교',
-    phone: '010-2345-6789',
-    parent_name: '이아무개',
-    parent_phone: '010-8765-4321',
-    parent_email: 'parent2@example.com',
-    subjects: ['국어', '사회'],
-    status: 'active',
-    enrollment_date: '2025-01-02',
-  },
-  {
-    id: '3',
-    created_at: '2025-01-03',
-    updated_at: '2025-01-03',
-    org_id: 'org-1',
-    name: '박준호',
-    attendance_code: '9012',
-    grade: '중3',
-    school: '서울중학교',
-    phone: '010-3456-7890',
-    parent_name: '박아무개',
-    parent_phone: '010-7654-3210',
-    parent_email: 'parent3@example.com',
-    subjects: ['수학', '과학'],
-    status: 'active',
-    enrollment_date: '2025-01-03',
-  },
-  {
-    id: '4',
-    created_at: '2025-01-04',
-    updated_at: '2025-01-04',
-    org_id: 'org-1',
-    name: '최지우',
-    attendance_code: '3456',
-    grade: '고3',
-    school: '강남고등학교',
-    phone: '010-4567-8901',
-    parent_name: '최아무개',
-    parent_phone: '010-6543-2109',
-    subjects: ['영어', '국어'],
-    status: 'active',
-    enrollment_date: '2025-01-04',
-  },
-  {
-    id: '5',
-    created_at: '2025-01-05',
-    updated_at: '2025-01-05',
-    org_id: 'org-1',
-    name: '정수민',
-    attendance_code: '7890',
-    grade: '고1',
-    school: '서울고등학교',
-    phone: '010-5678-9012',
-    parent_name: '정아무개',
-    parent_phone: '010-5432-1098',
-    parent_email: 'parent5@example.com',
-    subjects: ['수학'],
-    status: 'active',
-    enrollment_date: '2025-01-05',
-  },
-]
-
 export default function StudentsPage() {
   usePageAccess('students')
 
   const { toast } = useToast()
-  const [students, setStudents] = useState<Student[]>(mockStudents)
+  const [students, setStudents] = useState<Student[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingStudent, setEditingStudent] = useState<Student | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+    const [isLoading, setIsLoading] = useState(false)
   const [attendanceCodeError, setAttendanceCodeError] = useState<string>('')
 
   // Student detail modal state
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+
+  // Fetch students from API on mount
+  useEffect(() => {
+    const fetchStudents = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/students', { credentials: 'include', credentials: 'include' })
+        const data = await response.json() as { students?: Student[]; error?: string }
+
+        if (response.ok) {
+          setStudents(data.students || [])
+        } else {
+          toast({
+            title: '데이터 로드 실패',
+            description: data.error || '학생 목록을 불러올 수 없습니다.',
+            variant: 'destructive',
+          })
+        }
+      } catch (error) {
+        toast({
+          title: '오류 발생',
+          description: '서버와 통신할 수 없습니다.',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchStudents()
+  }, [toast])
 
   const {
     register,
@@ -266,10 +188,6 @@ export default function StudentsPage() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleEdit(student)}>
-                <Pencil className="mr-2 h-4 w-4" />
-                수정
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => handleDelete(student.id)}>
                 <Trash2 className="mr-2 h-4 w-4" />
                 삭제
@@ -282,31 +200,11 @@ export default function StudentsPage() {
   ]
 
   const handleOpenDialog = () => {
-    setEditingStudent(null)
     reset({
       status: 'active',
       subjects: [],
     })
     setAttendanceCodeError('')
-    setIsDialogOpen(true)
-  }
-
-  const handleEdit = (student: Student) => {
-    setEditingStudent(student)
-    reset({
-      name: student.name,
-      attendance_code: student.attendance_code || '',
-      grade: student.grade as StudentInput['grade'],
-      school: student.school,
-      phone: student.phone,
-      parent_name: student.parent_name,
-      parent_phone: student.parent_phone,
-      parent_email: student.parent_email || '',
-      address: student.address || '',
-      subjects: student.subjects,
-      status: student.status as StudentInput['status'],
-      notes: student.notes || '',
-    })
     setIsDialogOpen(true)
   }
 
@@ -330,9 +228,8 @@ export default function StudentsPage() {
       return
     }
 
-    // 중복 검증 (수정 시 자기 자신은 제외)
+    // 중복 검증
     const existingCodes = students
-      .filter(s => editingStudent ? s.id !== editingStudent.id : true)
       .map(s => s.attendance_code)
       .filter(Boolean) as string[]
 
@@ -343,13 +240,37 @@ export default function StudentsPage() {
     }
   }
 
-  const handleDelete = (id: string) => {
-    if (confirm('정말로 삭제하시겠습니까?')) {
-      setStudents(students.filter((s) => s.id !== id))
-      toast({
-        title: '삭제 완료',
-        description: '학생 정보가 삭제되었습니다.',
+  const handleDelete = async (id: string) => {
+    if (!confirm('정말로 삭제하시겠습니까?')) return
+
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/students/${id}`, {
+        method: 'DELETE',
       })
+
+      if (response.ok) {
+        setStudents(students.filter((s) => s.id !== id))
+        toast({
+          title: '삭제 완료',
+          description: '학생 정보가 삭제되었습니다.',
+        })
+      } else {
+        const data = await response.json() as { error?: string }
+        toast({
+          title: '삭제 실패',
+          description: data.error || '학생 삭제에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -374,7 +295,6 @@ export default function StudentsPage() {
       } else {
         // 수동 입력한 경우 최종 중복 검증
         const existingCodes = students
-          .filter(s => editingStudent ? s.id !== editingStudent.id : true)
           .map(s => s.attendance_code)
           .filter(Boolean) as string[]
 
@@ -389,39 +309,35 @@ export default function StudentsPage() {
         }
       }
 
-      // TODO: Supabase integration
-      if (editingStudent) {
-        // Update existing student
-        setStudents(
-          students.map((s) =>
-            s.id === editingStudent.id
-              ? { ...s, ...data, attendance_code: attendanceCode, updated_at: new Date().toISOString() }
-              : s
-          )
-        )
-        toast({
-          title: '수정 완료',
-          description: '학생 정보가 수정되었습니다.',
+      // API call
+      const payload = { ...data, attendance_code: attendanceCode }
+
+      // Create new student
+      const response = await fetch('/api/students', { credentials: 'include',
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         })
-      } else {
-        // Create new student
-        const newStudent: Student = {
-          id: Date.now().toString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          org_id: 'org-1',
-          ...data,
-          attendance_code: attendanceCode,
-        } as Student
-        setStudents([...students, newStudent])
-        toast({
-          title: '등록 완료',
-          description: `학생이 등록되었습니다. 출결코드: ${attendanceCode}`,
-        })
+
+        if (response.ok) {
+          const data = await response.json() as { student: Student }
+          setStudents([...students, data.student])
+          toast({
+            title: '등록 완료',
+            description: `학생이 등록되었습니다. 출결코드: ${attendanceCode}`,
+          })
+          setIsDialogOpen(false)
+          reset()
+          setAttendanceCodeError('')
+        } else {
+          const data = await response.json() as { error?: string }
+          toast({
+            title: '등록 실패',
+            description: data.error || '학생 등록에 실패했습니다.',
+            variant: 'destructive',
+          })
+        }
       }
-      setIsDialogOpen(false)
-      reset()
-      setAttendanceCodeError('')
     } catch (error) {
       toast({
         title: '오류 발생',
@@ -461,7 +377,7 @@ export default function StudentsPage() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>
-              {editingStudent ? '학생 정보 수정' : '학생 등록'}
+              학생 등록
             </DialogTitle>
             <DialogDescription>
               학생의 기본 정보와 학부모 정보를 입력해주세요
@@ -520,8 +436,7 @@ export default function StudentsPage() {
                 <Select
                   disabled={isLoading}
                   onValueChange={(value) => setValue('grade', value as any)}
-                  defaultValue={editingStudent?.grade}
-                >
+                                  >
                   <SelectTrigger id="grade">
                     <SelectValue placeholder="학년을 선택하세요" />
                   </SelectTrigger>
@@ -661,11 +576,7 @@ export default function StudentsPage() {
                 취소
               </Button>
               <Button type="submit" disabled={isLoading}>
-                {isLoading
-                  ? '처리중...'
-                  : editingStudent
-                  ? '수정'
-                  : '등록'}
+                {isLoading ? '처리중...' : '등록'}
               </Button>
             </DialogFooter>
           </form>

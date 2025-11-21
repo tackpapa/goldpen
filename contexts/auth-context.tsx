@@ -8,7 +8,7 @@ export interface User {
   id: string
   email: string
   name: string
-  role: 'owner' | 'manager' | 'teacher' | 'staff' | 'student' | 'parent'
+  role: 'super_admin' | 'owner' | 'manager' | 'teacher' | 'staff' | 'student' | 'parent'
 }
 
 export interface Organization {
@@ -25,7 +25,7 @@ export interface AuthState {
 }
 
 export interface AuthContextType extends AuthState {
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; user?: User; org?: Organization }>
   logout: () => Promise<void>
   refreshSession: () => Promise<void>
 }
@@ -53,11 +53,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(data.user)
         setOrg(data.org)
       } else {
+        // 401은 정상 (로그인 안된 상태) - 에러 로그 출력 안함
         setUser(null)
         setOrg(null)
       }
     } catch (error) {
-      console.error('[Auth] Session refresh error:', error)
+      // 네트워크 에러만 로그 출력
       setUser(null)
       setOrg(null)
     }
@@ -88,9 +89,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json()
 
       if (response.ok) {
+        // Supabase 세션을 클라이언트에 설정
+        if (data.session) {
+          const { createClient } = await import('@/lib/supabase/client')
+          const supabase = createClient()
+          await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          })
+        }
+
         setUser(data.user)
         setOrg(data.org)
-        return { success: true }
+        return { success: true, user: data.user, org: data.org }
       } else {
         return { success: false, error: data.error || '로그인에 실패했습니다' }
       }

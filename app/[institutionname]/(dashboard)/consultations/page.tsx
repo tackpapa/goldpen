@@ -3,7 +3,7 @@
 
 
 // Consultations page with waitlist feature
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -47,90 +47,17 @@ interface Waitlist {
   consultationIds: string[]
 }
 
-// Mock data
-const mockConsultations: Consultation[] = [
-  {
-    id: '1',
-    created_at: '2025-06-15T10:00:00',
-    updated_at: '2025-06-15T10:00:00',
-    org_id: 'org-1',
-    student_name: '김철수',
-    student_grade: 10,
-    parent_name: '김학부모',
-    parent_phone: '010-1234-5678',
-    parent_email: 'parent@example.com',
-    goals: '수학 성적 향상',
-    preferred_times: '평일 오후 2-4시',
-    scheduled_date: '2025-06-20T14:00:00',
-    status: 'scheduled',
-    notes: '수학 기초가 부족함',
-    images: [
-      'https://images.unsplash.com/photo-1509062522246-3755977927d7?w=400&h=300&fit=crop',
-      'https://images.unsplash.com/photo-1503676260728-1c00da094a0b?w=400&h=300&fit=crop',
-    ],
-  },
-  {
-    id: '2',
-    created_at: '2025-06-16T09:00:00',
-    updated_at: '2025-06-16T09:00:00',
-    org_id: 'org-1',
-    student_name: '이영희',
-    student_grade: 11,
-    parent_name: '이학부모',
-    parent_phone: '010-2345-6789',
-    parent_email: 'parent2@example.com',
-    goals: '영어 회화 실력 향상',
-    preferred_times: '주말 오전',
-    status: 'new',
-    images: [
-      'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=400&h=300&fit=crop',
-    ],
-  },
-  {
-    id: '3',
-    created_at: '2025-06-10T11:00:00',
-    updated_at: '2025-06-10T11:00:00',
-    org_id: 'org-1',
-    student_name: '박민준',
-    student_grade: 9,
-    parent_name: '박학부모',
-    parent_phone: '010-3456-7890',
-    goals: '전반적인 학습 관리',
-    scheduled_date: '2025-06-12T15:00:00',
-    status: 'enrolled',
-    result: '수학, 영어 수강 등록 완료. 주 3회 수업 (월/수/금 오후 4-6시)',
-    images: [
-      'https://images.unsplash.com/photo-1427504494785-3a9ca7044f45?w=400&h=300&fit=crop',
-      'https://images.unsplash.com/photo-1524178232363-1fb2b075b655?w=400&h=300&fit=crop',
-      'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=400&h=300&fit=crop',
-    ],
-  },
-  {
-    id: '4',
-    created_at: '2025-06-14T14:00:00',
-    updated_at: '2025-06-14T14:00:00',
-    org_id: 'org-1',
-    student_name: '최지훈',
-    student_grade: 12,
-    parent_name: '최학부모',
-    parent_phone: '010-4567-8901',
-    goals: '대입 준비',
-    preferred_times: '평일 저녁',
-    scheduled_date: '2025-06-16T18:00:00',
-    status: 'rejected',
-    notes: '타 학원 등록 결정',
-  },
-]
 
 export default function ConsultationsPage() {
   usePageAccess('consultations')
 
   const { toast } = useToast()
-  const [consultations, setConsultations] = useState<Consultation[]>(mockConsultations)
+  const [consultations, setConsultations] = useState<Consultation[]>([])
   const [selectedConsultation, setSelectedConsultation] = useState<Consultation | null>(null)
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
   const [isNewDialogOpen, setIsNewDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
+  const [isLoading, setIsLoading] = useState(false)
 
   const [newConsultation, setNewConsultation] = useState({
     student_name: '',
@@ -157,6 +84,37 @@ export default function ConsultationsPage() {
   // Enrollment confirmation modal states
   const [isEnrollmentDialogOpen, setIsEnrollmentDialogOpen] = useState(false)
   const [consultationToEnroll, setConsultationToEnroll] = useState<Consultation | null>(null)
+
+  // Fetch consultations from API
+  useEffect(() => {
+    const fetchConsultations = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/consultations', { credentials: 'include', credentials: 'include' })
+        const data = await response.json() as { consultations?: Consultation[]; error?: string }
+
+        if (response.ok) {
+          setConsultations(data.consultations || [])
+        } else {
+          toast({
+            title: '데이터 로드 실패',
+            description: data.error || '상담 목록을 불러올 수 없습니다.',
+            variant: 'destructive',
+          })
+        }
+      } catch (error) {
+        toast({
+          title: '오류 발생',
+          description: '서버와 통신할 수 없습니다.',
+          variant: 'destructive',
+        })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchConsultations()
+  }, [toast])
 
   const statusMap = {
     new: { label: '신규', variant: 'default' as const, color: 'bg-blue-100 text-blue-700' },
@@ -314,7 +272,7 @@ export default function ConsultationsPage() {
     setIsDetailDialogOpen(true)
   }
 
-  const handleChangeStatus = (id: string, newStatus: Consultation['status']) => {
+  const handleChangeStatus = async (id: string, newStatus: Consultation['status']) => {
     // If changing to 'enrolled', show enrollment confirmation modal
     if (newStatus === 'enrolled') {
       const consultation = consultations.find(c => c.id === id)
@@ -325,65 +283,143 @@ export default function ConsultationsPage() {
       return
     }
 
-    // For other status changes, update directly
-    setConsultations(
-      consultations.map((c) =>
-        c.id === id ? { ...c, status: newStatus, updated_at: new Date().toISOString() } : c
-      )
-    )
-    toast({
-      title: '상태 변경 완료',
-      description: `상담 상태가 ${statusMap[newStatus].label}(으)로 변경되었습니다.`,
-    })
+    // For other status changes, update via API
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/consultations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (response.ok) {
+        const result = await response.json() as { consultation: Consultation }
+        setConsultations(
+          consultations.map((c) =>
+            c.id === id ? result.consultation : c
+          )
+        )
+        toast({
+          title: '상태 변경 완료',
+          description: `상담 상태가 ${statusMap[newStatus].label}(으)로 변경되었습니다.`,
+        })
+      } else {
+        const error = await response.json() as { error?: string }
+        toast({
+          title: '상태 변경 실패',
+          description: error.error || '상담 상태 변경에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleConfirmEnrollment = () => {
+  const handleConfirmEnrollment = async () => {
     if (!consultationToEnroll) return
 
-    const enrollmentDate = new Date().toISOString()
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/consultations/${consultationToEnroll.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'enrolled' }),
+      })
 
-    // Update consultation status and add enrollment date
-    setConsultations(
-      consultations.map((c) =>
-        c.id === consultationToEnroll.id
-          ? { ...c, status: 'enrolled', enrolled_date: enrollmentDate, updated_at: enrollmentDate }
-          : c
-      )
-    )
+      if (response.ok) {
+        const result = await response.json() as { consultation: Consultation }
 
-    // Remove from waitlist if present
-    setWaitlists(
-      waitlists.map((w) => ({
-        ...w,
-        consultationIds: w.consultationIds.filter(cId => cId !== consultationToEnroll.id)
-      }))
-    )
+        // Update consultation status
+        setConsultations(
+          consultations.map((c) =>
+            c.id === consultationToEnroll.id ? result.consultation : c
+          )
+        )
 
-    toast({
-      title: '✅ 학생 등록 완료',
-      description: `${consultationToEnroll.student_name} 학생이 입교 처리되었습니다. 입교 날짜: ${new Date(enrollmentDate).toLocaleDateString('ko-KR')}`,
-    })
+        // Remove from waitlist if present
+        setWaitlists(
+          waitlists.map((w) => ({
+            ...w,
+            consultationIds: w.consultationIds.filter(cId => cId !== consultationToEnroll.id)
+          }))
+        )
 
-    setIsEnrollmentDialogOpen(false)
-    setConsultationToEnroll(null)
+        toast({
+          title: '✅ 학생 등록 완료',
+          description: `${consultationToEnroll.student_name} 학생이 입교 처리되었습니다.`,
+        })
+
+        setIsEnrollmentDialogOpen(false)
+        setConsultationToEnroll(null)
+      } else {
+        const error = await response.json() as { error?: string }
+        toast({
+          title: '등록 실패',
+          description: error.error || '학생 등록에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleSaveResult = () => {
+  const handleSaveResult = async () => {
     if (!selectedConsultation) return
 
-    setConsultations(
-      consultations.map((c) =>
-        c.id === selectedConsultation.id ? selectedConsultation : c
-      )
-    )
-    toast({
-      title: '저장 완료',
-      description: '상담 내용이 저장되었습니다.',
-    })
-    setIsDetailDialogOpen(false)
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/consultations/${selectedConsultation.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(selectedConsultation),
+      })
+
+      if (response.ok) {
+        const result = await response.json() as { consultation: Consultation }
+        setConsultations(
+          consultations.map((c) =>
+            c.id === selectedConsultation.id ? result.consultation : c
+          )
+        )
+        toast({
+          title: '저장 완료',
+          description: '상담 내용이 저장되었습니다.',
+        })
+        setIsDetailDialogOpen(false)
+      } else {
+        const error = await response.json() as { error?: string }
+        toast({
+          title: '저장 실패',
+          description: error.error || '상담 내용 저장에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleCreateConsultation = () => {
+  const handleCreateConsultation = async () => {
     if (!newConsultation.student_name || !newConsultation.parent_name || !newConsultation.parent_phone) {
       toast({
         title: '입력 오류',
@@ -393,42 +429,63 @@ export default function ConsultationsPage() {
       return
     }
 
-    const consultation: Consultation = {
-      id: `new-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      org_id: 'org-1',
-      student_name: newConsultation.student_name,
-      student_grade: newConsultation.student_grade ? parseInt(newConsultation.student_grade) : undefined,
-      parent_name: newConsultation.parent_name,
-      parent_phone: newConsultation.parent_phone,
-      parent_email: newConsultation.parent_email || undefined,
-      goals: newConsultation.goals || undefined,
-      preferred_times: newConsultation.preferred_times || undefined,
-      notes: newConsultation.notes || undefined,
-      images: newConsultation.images.length > 0 ? newConsultation.images : undefined,
-      status: 'new',
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/consultations', { credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_name: newConsultation.student_name,
+          student_grade: newConsultation.student_grade ? parseInt(newConsultation.student_grade) : undefined,
+          parent_name: newConsultation.parent_name,
+          parent_phone: newConsultation.parent_phone,
+          parent_email: newConsultation.parent_email || undefined,
+          goals: newConsultation.goals || undefined,
+          preferred_times: newConsultation.preferred_times || undefined,
+          notes: newConsultation.notes || undefined,
+          images: newConsultation.images.length > 0 ? newConsultation.images : undefined,
+          status: 'new',
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json() as { consultation: Consultation }
+        setConsultations([result.consultation, ...consultations])
+        toast({
+          title: '등록 완료',
+          description: `${newConsultation.student_name} 학생의 상담이 등록되었습니다.`,
+        })
+
+        // Reset form
+        setNewConsultation({
+          student_name: '',
+          student_grade: '',
+          parent_name: '',
+          parent_phone: '',
+          parent_email: '',
+          goals: '',
+          preferred_times: '',
+          notes: '',
+          images: [],
+        })
+        setIsNewDialogOpen(false)
+      } else {
+        const error = await response.json() as { error?: string }
+        toast({
+          title: '등록 실패',
+          description: error.error || '상담 등록에 실패했습니다.',
+          variant: 'destructive',
+        })
+      }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
     }
-
-    setConsultations([consultation, ...consultations])
-    toast({
-      title: '등록 완료',
-      description: `${newConsultation.student_name} 학생의 상담이 등록되었습니다.`,
-    })
-
-    // Reset form
-    setNewConsultation({
-      student_name: '',
-      student_grade: '',
-      parent_name: '',
-      parent_phone: '',
-      parent_email: '',
-      goals: '',
-      preferred_times: '',
-      notes: '',
-      images: [],
-    })
-    setIsNewDialogOpen(false)
   }
 
   const handleCreateWaitlist = () => {

@@ -2,10 +2,10 @@
 
 
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Cloud, CloudRain, Sun, Unlock, Maximize2 } from 'lucide-react'
+import { Cloud, CloudRain, Sun, Unlock, Maximize2, Clock, X } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -13,11 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { createClient } from '@/lib/supabase/client'
 
-// Mock organization data (in real app, fetch from Supabase)
-const mockOrganization = {
-  name: 'GoldPen 학원',
-  logo_url: '/logo.png', // placeholder
+interface Organization {
+  name: string
+  logo_url: string | null
 }
 
 export default function LiveAttendancePage() {
@@ -25,6 +25,7 @@ export default function LiveAttendancePage() {
   const institutionName = params.institutionname as string
 
   const [mounted, setMounted] = useState(false)
+  const [organization, setOrganization] = useState<Organization>({ name: '', logo_url: null })
   const [currentTime, setCurrentTime] = useState('')
   const [currentDate, setCurrentDate] = useState('')
   const [temperature, setTemperature] = useState('--°')
@@ -41,6 +42,33 @@ export default function LiveAttendancePage() {
 
   // Track attendance status: { studentId: 'checked_in' | 'checked_out' }
   const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'checked_in' | 'checked_out'>>({})
+  const [seatAssignments, setSeatAssignments] = useState<Array<{ seatNumber: number; studentId: string; studentCode: string; studentName: string; status: string; sessionStartTime?: string; remainingMinutes?: number }>>([])
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Usage time expired alerts
+  const [usageTimeExpiredOpen, setUsageTimeExpiredOpen] = useState(false)
+  const [expiredStudentInfo, setExpiredStudentInfo] = useState<{ seatNumber: number; studentName: string } | null>(null)
+  const [usageAlarmInterval, setUsageAlarmInterval] = useState<NodeJS.Timeout | null>(null)
+  const [orgId, setOrgId] = useState<string | null>(null)
+
+  // Alarm sound for usage time expired
+  const playAlarmBeep = useCallback(() => {
+    try {
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      oscillator.frequency.value = 880
+      oscillator.type = 'sine'
+      gainNode.gain.setValueAtTime(0.5, audioContext.currentTime)
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
+      oscillator.start(audioContext.currentTime)
+      oscillator.stop(audioContext.currentTime + 0.5)
+    } catch (e) {
+      console.error('Audio play error:', e)
+    }
+  }, [])
 
   // Fix hydration error by only rendering time on client
   useEffect(() => {
@@ -338,6 +366,117 @@ export default function LiveAttendancePage() {
     return () => clearInterval(weatherInterval)
   }, [])
 
+  // Fetch seat assignments with student codes
+  useEffect(() => {
+    const fetchSeatAssignments = async () => {
+      try {
+        const response = await fetch('/api/seat-assignments', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json()
+          // Also fetch student codes
+          const studentsResponse = await fetch('/api/students', { credentials: 'include' })
+          if (studentsResponse.ok) {
+            const studentsData = await studentsResponse.json()
+            const studentCodeMap: Record<string, string> = {}
+            const studentMinutesMap: Record<string, number> = {}
+            studentsData.students?.forEach((s: any) => {
+              if (s.student_code) studentCodeMap[s.id] = s.student_code
+              if (s.remaining_minutes != null) studentMinutesMap[s.id] = s.remaining_minutes
+            })
+
+            const assignmentsWithCodes = data.assignments?.map((a: any) => ({
+              seatNumber: a.seatNumber,
+              studentId: a.studentId,
+              studentCode: studentCodeMap[a.studentId] || '',
+              studentName: a.studentName || '',
+              status: a.status,
+              sessionStartTime: a.sessionStartTime,
+              remainingMinutes: a.remainingMinutes ?? studentMinutesMap[a.studentId] ?? null,
+            })) || []
+
+            setSeatAssignments(assignmentsWithCodes)
+
+            // Initialize attendance status from assignments
+            const statusMap: Record<string, 'checked_in' | 'checked_out'> = {}
+            assignmentsWithCodes.forEach((a: any) => {
+              if (a.studentCode && (a.status === 'checked_in' || a.status === 'checked_out')) {
+                statusMap[a.studentCode] = a.status
+              }
+            })
+            setAttendanceStatus(statusMap)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch seat assignments:', error)
+      }
+    }
+
+    fetchSeatAssignments()
+  }, [])
+
+  // Check usage time expiry every 30 seconds
+  useEffect(() => {
+    if (!mounted) return
+
+    const checkUsageTimeExpiry = () => {
+      seatAssignments.forEach((a) => {
+        if (a.status === 'checked_in' && a.sessionStartTime && a.remainingMinutes != null) {
+          const sessionStart = new Date(a.sessionStartTime).getTime()
+          const now = Date.now()
+          const usedMinutes = Math.floor((now - sessionStart) / (1000 * 60))
+          const remaining = a.remainingMinutes - usedMinutes
+
+          if (remaining <= 0 && !usageTimeExpiredOpen) {
+            // Usage time expired - show red modal
+            playAlarmBeep()
+            const interval = setInterval(() => playAlarmBeep(), 2000)
+            setUsageAlarmInterval(interval)
+            setExpiredStudentInfo({ seatNumber: a.seatNumber, studentName: a.studentName })
+            setUsageTimeExpiredOpen(true)
+          }
+        }
+      })
+    }
+
+    checkUsageTimeExpiry()
+    const interval = setInterval(checkUsageTimeExpiry, 30000)
+    return () => clearInterval(interval)
+  }, [mounted, seatAssignments, usageTimeExpiredOpen, playAlarmBeep])
+
+  // Close usage time expired modal
+  const handleCloseUsageTimeExpired = () => {
+    if (usageAlarmInterval) {
+      clearInterval(usageAlarmInterval)
+      setUsageAlarmInterval(null)
+    }
+    setUsageTimeExpiredOpen(false)
+    setExpiredStudentInfo(null)
+  }
+
+  // Fetch organization data
+  useEffect(() => {
+    const fetchOrganization = async () => {
+      try {
+        const response = await fetch(`/api/organizations/${institutionName}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.organization) {
+            setOrganization({
+              name: data.organization.name || institutionName,
+              logo_url: data.organization.logo_url || null,
+            })
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch organization:', error)
+      }
+    }
+
+    if (institutionName) {
+      fetchOrganization()
+    }
+  }, [institutionName])
+
   const updateDateTime = () => {
     const now = new Date()
     const month = String(now.getMonth() + 1).padStart(2, '0')
@@ -365,50 +504,61 @@ export default function LiveAttendancePage() {
   }
 
   const handleCheckInOut = async () => {
-    if (studentId.length !== 4) {
+    if (studentId.length !== 4 || isLoading) {
       return
     }
 
-    // In real app: call API to check in/out
-    const mockStudents = [
-      { id: '1234', name: '김민준' },
-      { id: '5678', name: '이서연' },
-      { id: '9012', name: '박준호' },
-    ]
+    // Find student by code from seat assignments
+    const assignment = seatAssignments.find(a => a.studentCode === studentId)
 
-    const student = mockStudents.find(s => s.id === studentId)
+    if (assignment) {
+      setIsLoading(true)
+      try {
+        // Fetch current status from DB to ensure accuracy
+        const statusResponse = await fetch('/api/seat-assignments', { credentials: 'include' })
+        const statusData = await statusResponse.json()
+        const currentAssignment = statusData.assignments?.find((a: any) => a.seatNumber === assignment.seatNumber)
+        const currentStatus = currentAssignment?.status || 'checked_out'
+        const newStatus = currentStatus === 'checked_in' ? 'checked_out' : 'checked_in'
 
-    if (student) {
-      // Check current status
-      const currentStatus = attendanceStatus[studentId]
+        // Call API to update status
+        const response = await fetch('/api/seat-assignments', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            seatNumber: assignment.seatNumber,
+            status: newStatus,
+          }),
+        })
 
-      // Toggle status
-      if (currentStatus === 'checked_in') {
-        // 이미 등원 상태 -> 하원 처리
-        setAttendanceStatus(prev => ({
-          ...prev,
-          [studentId]: 'checked_out'
-        }))
-        setWelcomeName(student.name)
-        setWelcomeMessage('안녕히 가세요!')
-        setShowWelcome(true)
-      } else {
-        // 미등원 또는 하원 상태 -> 등원 처리
-        setAttendanceStatus(prev => ({
-          ...prev,
-          [studentId]: 'checked_in'
-        }))
-        setWelcomeName(student.name)
-        setWelcomeMessage('오늘도 열공하세요!')
-        setShowWelcome(true)
-      }
+        if (response.ok) {
+          // Update local state
+          setAttendanceStatus(prev => ({
+            ...prev,
+            [studentId]: newStatus,
+          }))
 
-      setTimeout(() => {
-        setShowWelcome(false)
+          setWelcomeName(assignment.studentName)
+          setWelcomeMessage(newStatus === 'checked_in' ? '오늘도 열공하세요!' : '안녕히 가세요!')
+          setShowWelcome(true)
+
+          setTimeout(() => {
+            setShowWelcome(false)
+            setStudentId('')
+          }, 3000)
+        } else {
+          console.error('Failed to update attendance')
+          setStudentId('')
+        }
+      } catch (error) {
+        console.error('Error updating attendance:', error)
         setStudentId('')
-      }, 3000)
+      } finally {
+        setIsLoading(false)
+      }
     } else {
-      // 학생을 찾지 못한 경우
+      // 학생을 찾지 못한 경우 (좌석 배정 안됨)
       setStudentId('')
     }
   }
@@ -469,10 +619,16 @@ export default function LiveAttendancePage() {
         <div className="relative z-10 w-full max-w-md">
           {/* Institution Logo and Name */}
           <div className="text-center mb-12">
-            <div className="w-24 h-24 mx-auto mb-4 bg-white rounded-2xl flex items-center justify-center shadow-lg">
-              <span className="text-4xl font-bold text-blue-500">CF</span>
+            <div className="w-24 h-24 mx-auto mb-4 bg-white rounded-2xl flex items-center justify-center shadow-lg overflow-hidden">
+              {organization.logo_url ? (
+                <img src={organization.logo_url} alt={organization.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-4xl font-bold text-blue-500">
+                  {organization.name ? organization.name.substring(0, 2).toUpperCase() : 'GP'}
+                </span>
+              )}
             </div>
-            <h1 className="text-3xl font-bold">{mockOrganization.name}</h1>
+            <h1 className="text-3xl font-bold">{organization.name || institutionName}</h1>
           </div>
 
           {/* Date */}
@@ -570,6 +726,34 @@ export default function LiveAttendancePage() {
           </Button>
         </div>
       </div>
+
+      {/* Usage Time Expired Modal - Red Full Screen */}
+      {usageTimeExpiredOpen && expiredStudentInfo && (
+        <div className="fixed inset-0 z-[100] bg-red-600 flex flex-col items-center justify-center animate-pulse">
+          <button
+            onClick={handleCloseUsageTimeExpired}
+            className="absolute top-6 right-6 p-3 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+          >
+            <X className="w-8 h-8 text-white" />
+          </button>
+          <div className="text-center space-y-8">
+            <Clock className="w-32 h-32 text-white mx-auto animate-bounce" />
+            <h1 className="text-6xl md:text-8xl font-bold text-white">
+              이용시간이 끝났어요!
+            </h1>
+            <div className="text-4xl md:text-5xl text-white/90">
+              <p className="font-semibold">{expiredStudentInfo.studentName}님</p>
+              <p className="text-3xl mt-2">좌석 {expiredStudentInfo.seatNumber}번</p>
+            </div>
+            <Button
+              onClick={handleCloseUsageTimeExpired}
+              className="mt-8 px-12 py-6 text-2xl font-bold bg-white text-red-600 hover:bg-white/90 rounded-2xl shadow-lg"
+            >
+              확인
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

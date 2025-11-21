@@ -1,9 +1,8 @@
 'use client'
 
-
-
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { createClient } from '@/lib/supabase/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
@@ -60,46 +59,11 @@ interface RevenueTransaction {
   payment_method: '현금' | '카드' | '계좌이체'
 }
 
-const mockRevenueTransactions: RevenueTransaction[] = [
-  // 수강료
-  { id: 'r1', date: '2025-06-01', category: '수강료', amount: 500000, student_name: '김민준', description: '수학 특강반 6월 수강료', payment_method: '계좌이체' },
-  { id: 'r2', date: '2025-06-01', category: '수강료', amount: 450000, student_name: '이서연', description: '영어 회화반 6월 수강료', payment_method: '카드' },
-  { id: 'r3', date: '2025-06-02', category: '수강료', amount: 500000, student_name: '박준호', description: '수학 특강반 6월 수강료', payment_method: '현금' },
-  { id: 'r4', date: '2025-06-03', category: '수강료', amount: 400000, student_name: '최지우', description: '국어 독해반 6월 수강료', payment_method: '계좌이체' },
-  { id: 'r5', date: '2025-06-03', category: '수강료', amount: 450000, student_name: '정하은', description: '영어 회화반 6월 수강료', payment_method: '카드' },
-  { id: 'r6', date: '2025-06-05', category: '수강료', amount: 500000, student_name: '강민서', description: '수학 특강반 6월 수강료', payment_method: '계좌이체' },
-  { id: 'r7', date: '2025-06-05', category: '수강료', amount: 400000, student_name: '윤서준', description: '국어 독해반 6월 수강료', payment_method: '현금' },
-  { id: 'r8', date: '2025-06-07', category: '수강료', amount: 450000, student_name: '장서연', description: '영어 회화반 6월 수강료', payment_method: '카드' },
-  { id: 'r9', date: '2025-06-08', category: '수강료', amount: 500000, student_name: '임도윤', description: '수학 특강반 6월 수강료', payment_method: '계좌이체' },
-  { id: 'r10', date: '2025-06-10', category: '수강료', amount: 400000, student_name: '한지우', description: '국어 독해반 6월 수강료', payment_method: '카드' },
-
-  // 자릿세 (독서실)
-  { id: 'r11', date: '2025-06-01', category: '자릿세', amount: 150000, student_name: '송민재', description: '독서실 1번 좌석 6월 이용료', payment_method: '계좌이체' },
-  { id: 'r12', date: '2025-06-01', category: '자릿세', amount: 150000, student_name: '김서윤', description: '독서실 5번 좌석 6월 이용료', payment_method: '현금' },
-  { id: 'r13', date: '2025-06-02', category: '자릿세', amount: 150000, student_name: '이준혁', description: '독서실 10번 좌석 6월 이용료', payment_method: '카드' },
-  { id: 'r14', date: '2025-06-03', category: '자릿세', amount: 150000, student_name: '박지은', description: '독서실 15번 좌석 6월 이용료', payment_method: '계좌이체' },
-  { id: 'r15', date: '2025-06-05', category: '자릿세', amount: 200000, student_name: '최수민', description: '독서실 VIP 좌석 6월 이용료', payment_method: '카드' },
-  { id: 'r16', date: '2025-06-07', category: '자릿세', amount: 150000, student_name: '정예준', description: '독서실 20번 좌석 6월 이용료', payment_method: '현금' },
-  { id: 'r17', date: '2025-06-10', category: '자릿세', amount: 150000, student_name: '강하린', description: '독서실 25번 좌석 6월 이용료', payment_method: '계좌이체' },
-
-  // 룸이용료
-  { id: 'r18', date: '2025-06-05', category: '룸이용료', amount: 300000, student_name: '김영수', description: '스터디룸 A 6월 대여료', payment_method: '계좌이체' },
-  { id: 'r19', date: '2025-06-06', category: '룸이용료', amount: 250000, student_name: '이철민', description: '스터디룸 B 6월 대여료', payment_method: '카드' },
-  { id: 'r20', date: '2025-06-08', category: '룸이용료', amount: 300000, student_name: '박소현', description: '스터디룸 A 주말 대여료', payment_method: '현금' },
-  { id: 'r21', date: '2025-06-12', category: '룸이용료', amount: 250000, student_name: '최민지', description: '스터디룸 B 주말 대여료', payment_method: '카드' },
-
-  // 교재판매
-  { id: 'r22', date: '2025-06-02', category: '교재판매', amount: 45000, student_name: '김민준', description: '수학 문제집 (상), (하) 2권', payment_method: '현금' },
-  { id: 'r23', date: '2025-06-03', category: '교재판매', amount: 35000, student_name: '이서연', description: '영어 워크북', payment_method: '카드' },
-  { id: 'r24', date: '2025-06-05', category: '교재판매', amount: 50000, student_name: '박준호', description: '수학 심화 문제집 세트', payment_method: '계좌이체' },
-  { id: 'r25', date: '2025-06-07', category: '교재판매', amount: 30000, student_name: '최지우', description: '국어 독해 교재', payment_method: '현금' },
-  { id: 'r26', date: '2025-06-10', category: '교재판매', amount: 40000, student_name: '정하은', description: '영어 단어장 + 워크북', payment_method: '카드' },
-  { id: 'r27', date: '2025-06-12', category: '교재판매', amount: 55000, student_name: '강민서', description: '과학 탐구 실험 교재 세트', payment_method: '계좌이체' },
-  { id: 'r28', date: '2025-06-15', category: '교재판매', amount: 38000, student_name: '윤서준', description: '국어 문학 작품집', payment_method: '현금' },
-]
+// Revenue transactions loaded from API
+const revenueTransactions: RevenueTransaction[] = []
 
 // Mock data - 월별 매출 요약
-const mockMonthlySummary: MonthlyRevenueSummary[] = [
+const monthlySummary: MonthlyRevenueSummary[] = [
   {
     month: '2025-01',
     revenue: 18500000,
@@ -160,51 +124,249 @@ const expensesCategoryData = [
   { name: '기타', value: 400000, color: '#6b7280' },
 ]
 
-// 강사별 급여 데이터
-const teacherSalaryData = [
-  { name: '김선생', type: '정규직', salary: 3500000, hours: 160 },
-  { name: '박선생', type: '정규직', salary: 3200000, hours: 160 },
-  { name: '이선생', type: '시간강사', salary: 800000, hours: 40 },
-  { name: '최선생', type: '시간강사', salary: 600000, hours: 30 },
-  { name: '정선생', type: '시간강사', salary: 400000, hours: 20 },
-]
-
-// 월별 수익률 데이터
-const profitMarginData = mockMonthlySummary.map(item => ({
-  month: item.month.split('-')[1] + '월',
-  수익률: Math.round((item.net_profit / item.revenue) * 100),
-  수익: item.revenue,
-  지출: item.expenses,
-}))
+// 강사별 급여 데이터 - Now using real data from teacher_salaries table
+// Moved to after data fetching (line ~295)
 
 export default function BillingPage() {
   usePageAccess('billing')
 
   const { toast } = useToast()
+  const supabase = createClient()
+
   const [selectedMonth, setSelectedMonth] = useState('2025-06')
   const [selectedCategory, setSelectedCategory] = useState<string>('전체')
 
+  // State for real data
+  const [billingTransactions, setBillingTransactions] = useState<any[]>([])
+  const [expenses, setExpenses] = useState<any[]>([])
+  const [expenseCategories, setExpenseCategories] = useState<any[]>([])
+  const [teacherSalaries, setTeacherSalaries] = useState<any[]>([])
+  const [students, setStudents] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch data from Supabase
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Fetch billing transactions
+        const { data: transactionsData, error: transactionsError } = await supabase
+          .from('billing_transactions')
+          .select('*')
+          .order('payment_date', { ascending: false })
+
+        if (transactionsError) throw transactionsError
+
+        // Fetch expenses
+        const { data: expensesData, error: expensesError } = await supabase
+          .from('expenses')
+          .select('*, category:expense_categories(name, color)')
+          .order('expense_date', { ascending: false })
+
+        if (expensesError) throw expensesError
+
+        // Fetch expense categories
+        const { data: categoriesData, error: categoriesError} = await supabase
+          .from('expense_categories')
+          .select('*')
+
+        if (categoriesError) throw categoriesError
+
+        // Fetch teacher salaries
+        const { data: salariesData, error: salariesError } = await supabase
+          .from('teacher_salaries')
+          .select('*')
+          .order('payment_date', { ascending: false })
+
+        if (salariesError) throw salariesError
+
+        // Fetch students (for monthly count calculation)
+        const { data: studentsData, error: studentsError } = await supabase
+          .from('students')
+          .select('id, created_at, status')
+          .eq('status', 'active')
+
+        if (studentsError) throw studentsError
+
+        setBillingTransactions(transactionsData || [])
+        setExpenses(expensesData || [])
+        setExpenseCategories(categoriesData || [])
+        setTeacherSalaries(salariesData || [])
+        setStudents(studentsData || [])
+      } catch (err) {
+        console.error('Error fetching billing data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to fetch data')
+        toast({
+          title: '데이터 로딩 실패',
+          description: '데이터를 불러오는데 실패했습니다.',
+          variant: 'destructive',
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [supabase, toast])
+
+  // Compute monthly summary from real data
+  const computeMonthlySummary = () => {
+    const monthlyData = new Map<string, { revenue: number; expenses: number }>()
+
+    // Aggregate billing transactions (revenue) by month
+    billingTransactions.forEach((tx) => {
+      const month = tx.payment_date.substring(0, 7) // YYYY-MM format
+      const current = monthlyData.get(month) || { revenue: 0, expenses: 0 }
+      // Amount is in cents, convert to won
+      current.revenue += tx.amount / 100
+      monthlyData.set(month, current)
+    })
+
+    // Aggregate expenses by month
+    expenses.forEach((exp) => {
+      const month = exp.expense_date.substring(0, 7) // YYYY-MM format
+      const current = monthlyData.get(month) || { revenue: 0, expenses: 0 }
+      // Amount is in cents, convert to won
+      current.expenses += exp.amount / 100
+      monthlyData.set(month, current)
+    })
+
+    // Convert to array and calculate student counts
+    return Array.from(monthlyData.entries())
+      .map(([month, data]) => {
+        // Count students who were created before or during this month (active students)
+        const monthEnd = `${month}-31` // Approximate end of month
+        const studentCount = students.filter(student => {
+          const createdMonth = student.created_at.substring(0, 7) // YYYY-MM format
+          return createdMonth <= month // Students registered on or before this month
+        }).length
+
+        return {
+          month,
+          revenue: data.revenue,
+          expenses: data.expenses,
+          net_profit: data.revenue - data.expenses,
+          student_count: studentCount,
+          revenue_per_student: studentCount > 0 ? Math.round(data.revenue / studentCount) : 0,
+        }
+      })
+      .sort((a, b) => a.month.localeCompare(b.month))
+  }
+
+  const monthlySummary = loading ? [] : computeMonthlySummary()
+
+  // Transform real billing transactions to match the expected format
+  const revenueTransactions = billingTransactions.map(tx => ({
+    id: tx.id,
+    date: tx.payment_date,
+    category: tx.category || '수강료',
+    amount: tx.amount / 100, // Convert cents to won
+    student_name: tx.description ? tx.description.split(' - ')[1] || tx.description.substring(0, 10) : '미상',
+    description: tx.description || '',
+    payment_method: tx.payment_method === 'card' ? '카드' : tx.payment_method === 'cash' ? '현금' : '계좌이체'
+  }))
+
+  // Transform teacher salaries to match the expected format
+  const teacherSalaryData = teacherSalaries.map(ts => ({
+    name: ts.name,
+    type: ts.type,
+    salary: ts.salary / 100, // Convert cents to won
+    hours: ts.hours || 160 // Default to 160 hours for 정규직
+  }))
+
   // 선택된 월의 데이터
-  const currentMonthData = mockMonthlySummary.find(item => item.month === selectedMonth) || mockMonthlySummary[mockMonthlySummary.length - 1]
-  const previousMonthData = mockMonthlySummary[mockMonthlySummary.findIndex(item => item.month === selectedMonth) - 1]
+  const currentMonthData = monthlySummary.find(item => item.month === selectedMonth) || monthlySummary[monthlySummary.length - 1] || {
+    month: selectedMonth,
+    revenue: 0,
+    expenses: 0,
+    net_profit: 0,
+    student_count: 0,
+    revenue_per_student: 0
+  }
+  const previousMonthData = monthlySummary[monthlySummary.findIndex(item => item.month === selectedMonth) - 1]
 
   // 전월 대비 변화율 계산
-  const revenueChange = previousMonthData
+  const revenueChange = previousMonthData && currentMonthData
     ? Math.round(((currentMonthData.revenue - previousMonthData.revenue) / previousMonthData.revenue) * 100)
     : 0
-  const profitChange = previousMonthData
+  const profitChange = previousMonthData && currentMonthData
     ? Math.round(((currentMonthData.net_profit - previousMonthData.net_profit) / previousMonthData.net_profit) * 100)
     : 0
-  const profitMargin = Math.round((currentMonthData.net_profit / currentMonthData.revenue) * 100)
+  const profitMargin = currentMonthData && currentMonthData.revenue > 0
+    ? Math.round((currentMonthData.net_profit / currentMonthData.revenue) * 100)
+    : 0
 
+  // Compute expense categories data from real data
+  const computeExpensesCategoryData = () => {
+    const categoryTotals = new Map<string, { name: string; value: number; color: string }>()
+
+    expenses
+      .filter(exp => exp.expense_date.startsWith(selectedMonth))
+      .forEach((exp) => {
+        const categoryName = exp.category?.name || '기타'
+        const categoryColor = exp.category?.color || '#6b7280'
+        const current = categoryTotals.get(categoryName) || { name: categoryName, value: 0, color: categoryColor }
+        current.value += exp.amount / 100 // Convert cents to won
+        categoryTotals.set(categoryName, current)
+      })
+
+    return Array.from(categoryTotals.values())
+  }
+
+  const realExpensesCategoryData = loading ? expensesCategoryData : computeExpensesCategoryData()
+  const totalExpenses = realExpensesCategoryData.reduce((sum, e) => sum + e.value, 0)
+
+  // For teacher salary - use mock data for now (no teacher_salaries table yet)
   const totalTeacherSalary = teacherSalaryData.reduce((sum, t) => sum + t.salary, 0)
-  const totalExpenses = expensesCategoryData.reduce((sum, e) => sum + e.value, 0)
+
+  // Compute profit margin data for charts
+  const profitMarginData = monthlySummary.map(item => ({
+    month: item.month.split('-')[1] + '월',
+    수익률: item.revenue > 0 ? Math.round((item.net_profit / item.revenue) * 100) : 0,
+    수익: item.revenue,
+    지출: item.expenses,
+  }))
 
   const handleExportReport = () => {
     toast({
       title: '리포트 내보내기',
       description: 'Excel 파일로 내보내기 기능은 구현 예정입니다.',
     })
+  }
+
+  // Loading state
+  if (loading) {
+    return (
+      <div className="space-y-6 p-4 md:p-6">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">데이터를 불러오는 중...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="space-y-6 p-4 md:p-6">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Card className="max-w-md">
+            <CardHeader>
+              <CardTitle>데이터 로딩 실패</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-muted-foreground">{error}</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -223,7 +385,7 @@ export default function BillingPage() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {mockMonthlySummary.map((item) => (
+              {monthlySummary.map((item) => (
                 <SelectItem key={item.month} value={item.month}>
                   {item.month.split('-')[0]}년 {item.month.split('-')[1]}월
                 </SelectItem>
@@ -382,7 +544,7 @@ export default function BillingPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {mockRevenueTransactions
+                      {revenueTransactions
                         .filter(t => t.date.startsWith(selectedMonth))
                         .filter(t => selectedCategory === '전체' || t.category === selectedCategory)
                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -419,7 +581,7 @@ export default function BillingPage() {
                       <tr className="border-t-2 bg-muted/30">
                         <td colSpan={4} className="p-3 text-right font-bold">총 수입</td>
                         <td className="p-3 text-right font-bold text-lg">
-                          ₩{mockRevenueTransactions
+                          ₩{revenueTransactions
                             .filter(t => t.date.startsWith(selectedMonth))
                             .filter(t => selectedCategory === '전체' || t.category === selectedCategory)
                             .reduce((sum, t) => sum + t.amount, 0)
@@ -433,10 +595,10 @@ export default function BillingPage() {
                 {/* Category summary */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
                   {['수강료', '자릿세', '룸이용료', '교재판매'].map((category) => {
-                    const categoryTotal = mockRevenueTransactions
+                    const categoryTotal = revenueTransactions
                       .filter(t => t.date.startsWith(selectedMonth) && t.category === category)
                       .reduce((sum, t) => sum + t.amount, 0)
-                    const categoryCount = mockRevenueTransactions
+                    const categoryCount = revenueTransactions
                       .filter(t => t.date.startsWith(selectedMonth) && t.category === category)
                       .length
 
@@ -478,7 +640,7 @@ export default function BillingPage() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <AreaChart data={mockMonthlySummary}>
+                  <AreaChart data={monthlySummary}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="month"
@@ -509,7 +671,7 @@ export default function BillingPage() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={mockMonthlySummary}>
+                  <LineChart data={monthlySummary}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="month"
@@ -596,7 +758,7 @@ export default function BillingPage() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={mockMonthlySummary}>
+                  <BarChart data={monthlySummary}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis
                       dataKey="month"
@@ -716,7 +878,7 @@ export default function BillingPage() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={mockMonthlySummary}>
+                <LineChart data={monthlySummary}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis
                     dataKey="month"

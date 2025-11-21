@@ -1,4 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient } from '@/lib/supabase/client-edge'
 import { loginSchema } from '@/lib/validations/auth'
 import { ZodError } from 'zod'
 
@@ -20,14 +20,18 @@ export const revalidate = 0
  */
 export async function POST(request: Request) {
   try {
+    // DEBUG: 환경 변수 확인
+    console.log('[Auth Login] SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log('[Auth Login] SUPABASE_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.substring(0, 30) + '...')
+
     // 1. 요청 body 파싱
     const body = await request.json()
 
     // 2. Zod 검증
     const validated = loginSchema.parse(body)
 
-    // 3. Supabase 클라이언트 생성
-    const supabase = await createAuthenticatedClient(request)
+    // 3. Supabase 클라이언트 생성 (로그인 시에는 토큰 없음)
+    const supabase = createClient()
 
     // 4. Supabase Auth로 로그인
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({

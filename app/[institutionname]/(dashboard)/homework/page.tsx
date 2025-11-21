@@ -10,7 +10,7 @@
  * - 향후: 로그인한 강사 본인이 담당하는 학생의 과제만 필터링
  */
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -38,85 +38,34 @@ import {
 import type { Homework, HomeworkSubmission } from '@/lib/types/database'
 import { format } from 'date-fns'
 
-// Mock data
-const mockHomework: Homework[] = [
-  {
-    id: '1',
-    created_at: '2025-06-01',
-    updated_at: '2025-06-01',
-    org_id: 'org-1',
-    title: '수학 문제집 1단원',
-    description: '1단원 연습문제 1-50번',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    due_date: '2025-06-20',
-    status: 'active',
-    total_students: 15,
-    submitted_count: 12,
-  },
-  {
-    id: '2',
-    created_at: '2025-06-05',
-    updated_at: '2025-06-05',
-    org_id: 'org-1',
-    title: '영어 에세이 작성',
-    description: '주제: My Future Dream',
-    class_id: 'class-2',
-    class_name: '영어 회화반',
-    due_date: '2025-06-25',
-    status: 'active',
-    total_students: 18,
-    submitted_count: 8,
-  },
-  {
-    id: '3',
-    created_at: '2025-05-20',
-    updated_at: '2025-05-20',
-    org_id: 'org-1',
-    title: '국어 독서 감상문',
-    description: '지정 도서 읽고 감상문 작성',
-    class_id: 'class-3',
-    class_name: '국어 독해반',
-    due_date: '2025-06-10',
-    status: 'completed',
-    total_students: 12,
-    submitted_count: 12,
-  },
-  {
-    id: '4',
-    created_at: '2025-05-15',
-    updated_at: '2025-05-15',
-    org_id: 'org-1',
-    title: '과학 실험 보고서',
-    description: '화학 실험 결과 정리',
-    class_id: 'class-4',
-    class_name: '과학 실험반',
-    due_date: '2025-05-30',
-    status: 'overdue',
-    total_students: 10,
-    submitted_count: 7,
-  },
-]
-
-const mockSubmissions: Record<string, HomeworkSubmission[]> = {
-  '1': [
-    { id: 's1', homework_id: '1', student_id: 'st1', student_name: '김민준', submitted_at: '2025-06-18', status: 'submitted', score: 95, feedback: '매우 잘했습니다' },
-    { id: 's2', homework_id: '1', student_id: 'st2', student_name: '이서연', submitted_at: '2025-06-19', status: 'submitted', score: 88 },
-    { id: 's3', homework_id: '1', student_id: 'st3', student_name: '박준호', status: 'not_submitted' },
-    { id: 's4', homework_id: '1', student_id: 'st4', student_name: '최지우', submitted_at: '2025-06-21', status: 'late', score: 85 },
-    { id: 's5', homework_id: '1', student_id: 'st5', student_name: '정하은', submitted_at: '2025-06-17', status: 'submitted', score: 92 },
-  ],
-  '3': [
-    { id: 's6', homework_id: '3', student_id: 'st1', student_name: '김민준', submitted_at: '2025-06-08', status: 'submitted', score: 90 },
-    { id: 's7', homework_id: '3', student_id: 'st2', student_name: '이서연', submitted_at: '2025-06-09', status: 'submitted', score: 95 },
-  ],
-}
 
 export default function HomeworkPage() {
   usePageAccess('homework')
 
   const { toast } = useToast()
-  const [homework, setHomework] = useState<Homework[]>(mockHomework)
+  const [homework, setHomework] = useState<Homework[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [submissions, setSubmissions] = useState<Record<string, HomeworkSubmission[]>>({})
+
+  useEffect(() => {
+    const fetchHomework = async () => {
+      setIsLoading(true)
+      try {
+        const response = await fetch('/api/homework', { credentials: 'include' })
+        const data = await response.json() as { homework?: Homework[]; error?: string }
+        if (response.ok) {
+          setHomework(data.homework || [])
+        } else {
+          toast({ title: '과제 데이터 로드 실패', variant: 'destructive' })
+        }
+      } catch {
+        toast({ title: '오류 발생', variant: 'destructive' })
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    fetchHomework()
+  }, [toast])
   const [selectedHomework, setSelectedHomework] = useState<Homework | null>(null)
   const [isSubmissionsDialogOpen, setIsSubmissionsDialogOpen] = useState(false)
   const [viewMode, setViewMode] = useState<'student' | 'class'>('student')
@@ -216,47 +165,17 @@ export default function HomeworkPage() {
     setIsClassDetailDialogOpen(true)
   }
 
-  // 선택된 반의 학생 목록 가져오기
-  const getClassStudents = (className: string) => {
-    return mockStudentHomeworkStatus.filter((s) => s.class_name === className)
-  }
-
   // 학생별 데이터: 각 학생의 최근 과제 제출 여부
   interface StudentHomeworkStatus {
     student_id: string
     student_name: string
     class_name: string
-    teacher_name: string // 강사 이름
+    teacher_name: string
     last_homework: string | null
-    last_homework_text: string | null // 수업일지에서 작성된 과제 내용
-    submitted: boolean | null // null = 과제 없음
-    submission_rate: number // 전체 과제 제출률 (%)
+    last_homework_text: string | null
+    submitted: boolean | null
+    submission_rate: number
   }
-
-  // Mock 학생별 과제 상태 (실제로는 수업일지의 homework_submitted 데이터 사용)
-  const mockStudentHomeworkStatus: StudentHomeworkStatus[] = [
-    // 그룹 수업 학생들
-    { student_id: 'st1', student_name: '김민준', class_name: '수학 특강반', teacher_name: '김선생', last_homework: '수학 문제집 1단원', last_homework_text: '1단원 연습문제 1-50번 풀이 완료하기', submitted: true, submission_rate: 95 },
-    { student_id: 'st2', student_name: '이서연', class_name: '수학 특강반', teacher_name: '김선생', last_homework: '수학 문제집 1단원', last_homework_text: '1단원 연습문제 1-50번 풀이 완료하기', submitted: true, submission_rate: 100 },
-    { student_id: 'st3', student_name: '박준호', class_name: '수학 특강반', teacher_name: '김선생', last_homework: '수학 문제집 1단원', last_homework_text: '1단원 연습문제 1-50번 풀이 완료하기', submitted: false, submission_rate: 75 },
-    { student_id: 'st4', student_name: '최지우', class_name: '영어 회화반', teacher_name: '이선생', last_homework: '영어 에세이 작성', last_homework_text: '주제: My Future Dream (300단어 이상)', submitted: false, submission_rate: 60 },
-    { student_id: 'st5', student_name: '정하은', class_name: '영어 회화반', teacher_name: '이선생', last_homework: '영어 에세이 작성', last_homework_text: '주제: My Future Dream (300단어 이상)', submitted: true, submission_rate: 90 },
-    { student_id: 'st6', student_name: '강서준', class_name: '국어 독해반', teacher_name: '박선생', last_homework: '국어 독서 감상문', last_homework_text: '지정 도서 읽고 감상문 1000자 작성', submitted: true, submission_rate: 85 },
-    { student_id: 'st7', student_name: '윤지호', class_name: '국어 독해반', teacher_name: '박선생', last_homework: '국어 독서 감상문', last_homework_text: '지정 도서 읽고 감상문 1000자 작성', submitted: true, submission_rate: 92 },
-    { student_id: 'st8', student_name: '신예은', class_name: '과학 실험반', teacher_name: '최선생', last_homework: '과학 실험 보고서', last_homework_text: '화학 실험 결과 정리 및 고찰 작성', submitted: false, submission_rate: 70 },
-    { student_id: 'st9', student_name: '조민서', class_name: '과학 실험반', teacher_name: '최선생', last_homework: '과학 실험 보고서', last_homework_text: '화학 실험 결과 정리 및 고찰 작성', submitted: true, submission_rate: 88 },
-    { student_id: 'st10', student_name: '한도윤', class_name: '수학 특강반', teacher_name: '김선생', last_homework: '수학 문제집 1단원', last_homework_text: '1단원 연습문제 1-50번 풀이 완료하기', submitted: true, submission_rate: 80 },
-
-    // 1:1 강습 학생들
-    { student_id: 'st11', student_name: '장서윤', class_name: '김선생 1:1', teacher_name: '김선생', last_homework: '영어 문법 정리', last_homework_text: '현재완료 시제 문법 정리 및 예문 10개 작성', submitted: true, submission_rate: 100 },
-    { student_id: 'st12', student_name: '임하준', class_name: '이선생 1:1', teacher_name: '이선생', last_homework: '수학 심화 문제', last_homework_text: '고등 수학 미적분 심화 문제 10문제 풀이', submitted: false, submission_rate: 65 },
-    { student_id: 'st13', student_name: '오지안', class_name: '박선생 1:1', teacher_name: '박선생', last_homework: '논술 에세이', last_homework_text: '시사 이슈 논술 에세이 1500자 작성', submitted: true, submission_rate: 95 },
-    { student_id: 'st14', student_name: '송시우', class_name: '김선생 1:1', teacher_name: '김선생', last_homework: '영어 독해 연습', last_homework_text: '토플 리딩 지문 5개 풀이 및 오답 정리', submitted: true, submission_rate: 90 },
-    { student_id: 'st15', student_name: '배은우', class_name: '최선생 1:1', teacher_name: '최선생', last_homework: '물리 문제 풀이', last_homework_text: '역학 단원 심화 문제 15문제 풀이', submitted: false, submission_rate: 55 },
-    { student_id: 'st16', student_name: '양준서', class_name: '정선생 1:1', teacher_name: '정선생', last_homework: '화학 실험 리포트', last_homework_text: '산화환원 반응 실험 결과 분석 보고서 작성', submitted: true, submission_rate: 85 },
-    { student_id: 'st17', student_name: '홍수아', class_name: '이선생 1:1', teacher_name: '이선생', last_homework: '수학 경시 대비', last_homework_text: '수학 경시대회 기출문제 20문제 풀이', submitted: true, submission_rate: 92 },
-    { student_id: 'st18', student_name: '구민준', class_name: '박선생 1:1', teacher_name: '박선생', last_homework: '국어 고전 해석', last_homework_text: '고전 문학 작품 해석 및 감상문 작성', submitted: false, submission_rate: 68 },
-  ]
 
   // 반별 데이터: 각 반의 과제 제출률
   interface ClassHomeworkStats {
@@ -268,19 +187,21 @@ export default function HomeworkPage() {
     last_homework: string | null
   }
 
-  const mockClassHomeworkStats: ClassHomeworkStats[] = [
-    { class_id: 'class-1', class_name: '수학 특강반', total_students: 15, submitted_count: 12, submission_rate: 80, last_homework: '수학 문제집 1단원' },
-    { class_id: 'class-2', class_name: '영어 회화반', total_students: 18, submitted_count: 9, submission_rate: 50, last_homework: '영어 에세이 작성' },
-    { class_id: 'class-3', class_name: '국어 독해반', total_students: 12, submitted_count: 12, submission_rate: 100, last_homework: '국어 독서 감상문' },
-  ]
+  const [studentHomeworkStatus, setStudentHomeworkStatus] = useState<StudentHomeworkStatus[]>([])
+  const [classHomeworkStats, setClassHomeworkStats] = useState<ClassHomeworkStats[]>([])
+
+  // 선택된 반의 학생 목록 가져오기
+  const getClassStudents = (className: string) => {
+    return studentHomeworkStatus.filter((s) => s.class_name === className)
+  }
 
   // 강사 목록 추출 (중복 제거)
-  const teachers = Array.from(new Set(mockStudentHomeworkStatus.map((s) => s.teacher_name)))
+  const teachers = Array.from(new Set(studentHomeworkStatus.map((s) => s.teacher_name)))
 
   // 강사별 필터링된 학생 목록
   const filteredStudents = selectedTeacher === 'all'
-    ? mockStudentHomeworkStatus
-    : mockStudentHomeworkStatus.filter((s) => s.teacher_name === selectedTeacher)
+    ? studentHomeworkStatus
+    : studentHomeworkStatus.filter((s) => s.teacher_name === selectedTeacher)
 
   const totalHomework = homework.length
   const activeHomework = homework.filter((hw) => hw.status === 'active').length
@@ -367,10 +288,10 @@ export default function HomeworkPage() {
                   size="sm"
                   onClick={() => setSelectedTeacher('all')}
                 >
-                  전체 ({mockStudentHomeworkStatus.length})
+                  전체 ({studentHomeworkStatus.length})
                 </Button>
                 {teachers.map((teacher) => {
-                  const count = mockStudentHomeworkStatus.filter((s) => s.teacher_name === teacher).length
+                  const count = studentHomeworkStatus.filter((s) => s.teacher_name === teacher).length
                   return (
                     <Button
                       key={teacher}
@@ -450,7 +371,7 @@ export default function HomeworkPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {mockClassHomeworkStats.map((classStats) => (
+                {classHomeworkStats.map((classStats) => (
                   <div
                     key={classStats.class_id}
                     className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
@@ -570,7 +491,7 @@ export default function HomeworkPage() {
             <DialogDescription>학생별 과제 제출 상태</DialogDescription>
           </DialogHeader>
 
-          {selectedHomework && mockSubmissions[selectedHomework.id] && (
+          {selectedHomework && submissions[selectedHomework.id] && (
             <div className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
                 <Card>
@@ -579,7 +500,7 @@ export default function HomeworkPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-green-600">
-                      {mockSubmissions[selectedHomework.id].filter((s) => s.status === 'submitted').length}명
+                      {submissions[selectedHomework.id].filter((s) => s.status === 'submitted').length}명
                     </div>
                   </CardContent>
                 </Card>
@@ -589,7 +510,7 @@ export default function HomeworkPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-orange-600">
-                      {mockSubmissions[selectedHomework.id].filter((s) => s.status === 'late').length}명
+                      {submissions[selectedHomework.id].filter((s) => s.status === 'late').length}명
                     </div>
                   </CardContent>
                 </Card>
@@ -599,7 +520,7 @@ export default function HomeworkPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold text-red-600">
-                      {mockSubmissions[selectedHomework.id].filter((s) => s.status === 'not_submitted').length}명
+                      {submissions[selectedHomework.id].filter((s) => s.status === 'not_submitted').length}명
                     </div>
                   </CardContent>
                 </Card>
@@ -616,7 +537,7 @@ export default function HomeworkPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mockSubmissions[selectedHomework.id].map((submission) => (
+                    {submissions[selectedHomework.id].map((submission) => (
                       <tr key={submission.id} className="border-b">
                         <td className="p-2">{submission.student_name}</td>
                         <td className="p-2 text-center">

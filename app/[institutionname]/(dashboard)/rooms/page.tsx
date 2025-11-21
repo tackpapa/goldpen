@@ -1,14 +1,13 @@
 'use client'
 
-
-
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { getInstitutionHref } from '@/lib/utils/route'
 import Link from 'next/link'
-import { Grid3x3 } from 'lucide-react'
+import { Grid3x3, Loader2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -19,9 +18,8 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { DoorOpen, Users, Calendar, Clock } from 'lucide-react'
+import { DoorOpen, Users, Calendar } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -29,213 +27,41 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { Room, RoomSchedule } from '@/lib/types/database'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
-// Mock data - Rooms
-const mockRooms: Room[] = [
-  { id: 'room-1', created_at: '2025-01-01', org_id: 'org-1', name: '201호', capacity: 15, status: 'active' },
-  { id: 'room-2', created_at: '2025-01-01', org_id: 'org-1', name: '202호', capacity: 20, status: 'active' },
-  { id: 'room-3', created_at: '2025-01-01', org_id: 'org-1', name: '203호', capacity: 15, status: 'active' },
-  { id: 'room-4', created_at: '2025-01-01', org_id: 'org-1', name: '실험실', capacity: 10, status: 'active' },
-  { id: 'room-5', created_at: '2025-01-01', org_id: 'org-1', name: '특강실', capacity: 30, status: 'active' },
-]
+interface ScheduleData {
+  id: string
+  org_id: string
+  class_id: string
+  teacher_id: string | null
+  room_id: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+  status: string
+  classes?: { name: string; teacher_id?: string | null } | null
+  rooms?: { name: string } | null
+  teacher?: { name: string } | null
+}
 
-// Mock data - Teachers
-const mockTeachers = [
-  { id: 'teacher-1', name: '김선생' },
-  { id: 'teacher-2', name: '박선생' },
-  { id: 'teacher-3', name: '이선생' },
-  { id: 'teacher-4', name: '최선생' },
-  { id: 'teacher-5', name: '정선생' },
-]
+interface Room {
+  id: string
+  name: string
+  capacity: number
+  status: string
+}
 
-// Mock data - Students
-const mockStudents = [
-  { id: 'student-1', name: '김민준', grade: 3 },
-  { id: 'student-2', name: '이서연', grade: 4 },
-  { id: 'student-3', name: '박준호', grade: 2 },
-  { id: 'student-4', name: '최지우', grade: 5 },
-  { id: 'student-5', name: '정하은', grade: 3 },
-  { id: 'student-6', name: '강도윤', grade: 6 },
-  { id: 'student-7', name: '조시우', grade: 1 },
-  { id: 'student-8', name: '윤서준', grade: 4 },
-  { id: 'student-9', name: '장서아', grade: 2 },
-  { id: 'student-10', name: '임지호', grade: 5 },
-]
+interface Teacher {
+  id: string
+  name: string
+}
 
-// Mock data - Room Schedules
-const initialSchedules: RoomSchedule[] = [
-  {
-    id: '1',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'monday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-1',
-    student_name: '김민준',
-    student_grade: 3,
-  },
-  {
-    id: '2',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'wednesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-2',
-    student_name: '이서연',
-    student_grade: 4,
-  },
-  {
-    id: '3',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'monday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-3',
-    student_name: '박준호',
-    student_grade: 2,
-  },
-  {
-    id: '4',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'friday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-4',
-    student_name: '최지우',
-    student_grade: 5,
-  },
-  {
-    id: '5',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'tuesday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-5',
-    student_name: '정하은',
-    student_grade: 3,
-  },
-  {
-    id: '6',
-    created_at: '2025-01-01',
-    room_id: 'room-3',
-    room_name: '203호',
-    day_of_week: 'thursday',
-    start_time: '15:00',
-    end_time: '17:00',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    student_id: 'student-6',
-    student_name: '강도윤',
-    student_grade: 6,
-  },
-  {
-    id: '7',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'wednesday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-7',
-    student_name: '조시우',
-    student_grade: 1,
-  },
-  {
-    id: '8',
-    created_at: '2025-01-01',
-    room_id: 'room-4',
-    room_name: '실험실',
-    day_of_week: 'saturday',
-    start_time: '11:00',
-    end_time: '13:00',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    student_id: 'student-8',
-    student_name: '윤서준',
-    student_grade: 4,
-  },
-  {
-    id: '9',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'tuesday',
-    start_time: '14:00',
-    end_time: '16:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-9',
-    student_name: '장서아',
-    student_grade: 2,
-  },
-  {
-    id: '10',
-    created_at: '2025-01-01',
-    room_id: 'room-5',
-    room_name: '특강실',
-    day_of_week: 'friday',
-    start_time: '16:00',
-    end_time: '18:00',
-    teacher_id: 'teacher-5',
-    teacher_name: '정선생',
-    student_id: 'student-10',
-    student_name: '임지호',
-    student_grade: 5,
-  },
-  {
-    id: '11',
-    created_at: '2025-01-01',
-    room_id: 'room-1',
-    room_name: '201호',
-    day_of_week: 'friday',
-    start_time: '10:00',
-    end_time: '12:00',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    student_id: 'student-6',
-    student_name: '강도윤',
-    student_grade: 6,
-  },
-  {
-    id: '12',
-    created_at: '2025-01-01',
-    room_id: 'room-2',
-    room_name: '202호',
-    day_of_week: 'thursday',
-    start_time: '09:00',
-    end_time: '11:00',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    student_id: 'student-7',
-    student_name: '조시우',
-    student_grade: 1,
-  },
-]
+interface Student {
+  id: string
+  name: string
+  grade?: number | string
+}
 
 const dayOfWeekMap = {
   monday: { label: '월', index: 0 },
@@ -253,20 +79,32 @@ const timeSlots = [
   '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'
 ]
 
-// Teacher color mapping
-const teacherColors: Record<string, { bg: string; text: string; border: string }> = {
-  'teacher-1': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  'teacher-2': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
-  'teacher-3': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
-  'teacher-4': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
-  'teacher-5': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
-}
+// Teacher color palette
+const colorPalette = [
+  { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+  { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+  { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
+  { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border-cyan-200' },
+  { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' },
+  { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' },
+]
 
 export default function RoomsPage() {
   usePageAccess('rooms')
 
+  const params = useParams()
+  const institutionName = params.institutionname as string
   const { toast } = useToast()
-  const [schedules, setSchedules] = useState<RoomSchedule[]>(initialSchedules)
+
+  const [schedules, setSchedules] = useState<ScheduleData[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [students, setStudents] = useState<Student[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedTab, setSelectedTab] = useState<string>('')
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [selectedCell, setSelectedCell] = useState<{
     roomId: string
@@ -293,6 +131,51 @@ export default function RoomsPage() {
   const [dragEnd, setDragEnd] = useState<{
     timeIndex: number
   } | null>(null)
+
+  // Teacher color mapping
+  const [teacherColorMap, setTeacherColorMap] = useState<Record<string, { bg: string; text: string; border: string }>>({})
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true)
+        const [schedulesRes, roomsRes, teachersRes, studentsRes] = await Promise.all([
+          fetch('/api/schedules', { credentials: 'include' }),
+          fetch('/api/rooms', { credentials: 'include' }),
+          fetch('/api/teachers', { credentials: 'include' }),
+          fetch('/api/students', { credentials: 'include' }),
+        ])
+
+        const schedulesData = await schedulesRes.json()
+        const roomsData = await roomsRes.json()
+        const teachersData = await teachersRes.json()
+        const studentsData = await studentsRes.json()
+
+        if (schedulesData.schedules) setSchedules(schedulesData.schedules)
+        if (roomsData.rooms) {
+          setRooms(roomsData.rooms)
+          if (roomsData.rooms.length > 0) {
+            setSelectedTab(roomsData.rooms[0].id)
+          }
+        }
+        if (teachersData.teachers) {
+          setTeachers(teachersData.teachers)
+          // Build teacher color map
+          const colorMap: Record<string, { bg: string; text: string; border: string }> = {}
+          teachersData.teachers.forEach((teacher: Teacher, index: number) => {
+            colorMap[teacher.id] = colorPalette[index % colorPalette.length]
+          })
+          setTeacherColorMap(colorMap)
+        }
+        if (studentsData.students) setStudents(studentsData.students)
+      } catch (error) {
+        console.error('Failed to fetch data:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
 
   // Global mouseup handler for drag
   useEffect(() => {
@@ -334,8 +217,9 @@ export default function RoomsPage() {
     }
   }, [isDragging, dragStart, dragEnd])
 
-  const getTeacherColor = (teacherId: string) => {
-    return teacherColors[teacherId] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
+  const getTeacherColor = (tid: string | null) => {
+    if (!tid) return { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
+    return teacherColorMap[tid] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
   }
 
   const handleMouseDown = (
@@ -356,10 +240,7 @@ export default function RoomsPage() {
     time: string
   ) => {
     if (!isDragging || !dragStart) return
-
-    // Only allow dragging within same room and same day
     if (dragStart.roomId !== roomId || dragStart.dayOfWeek !== dayOfWeek) return
-
     const timeIndex = timeSlots.indexOf(time)
     setDragEnd({ timeIndex })
   }
@@ -416,13 +297,11 @@ export default function RoomsPage() {
     dayOfWeek: keyof typeof dayOfWeekMap,
     time: string
   ) => {
-    // If was dragging, ignore click
     if (isDragging) return
 
     setSelectedCell({ roomId, roomName, dayOfWeek, startTime: time })
     setStartTime(time)
 
-    // Calculate end time (2 hours later)
     const timeIndex = timeSlots.indexOf(time)
     const endTimeIndex = Math.min(timeIndex + 2, timeSlots.length - 1)
     setEndTime(timeSlots[endTimeIndex])
@@ -433,107 +312,122 @@ export default function RoomsPage() {
     setIsDialogOpen(true)
   }
 
-  const handleSaveSchedule = () => {
-    if (!teacherId || !studentId || !selectedCell) {
+  const handleSaveSchedule = async () => {
+    if (!teacherId || !selectedCell) {
       toast({
         title: '필수 정보 누락',
-        description: '선생님과 학생을 모두 선택해주세요.',
+        description: '선생님을 선택해주세요.',
         variant: 'destructive',
       })
       return
     }
 
-    const teacher = mockTeachers.find(t => t.id === teacherId)
-    const student = mockStudents.find(s => s.id === studentId)
+    try {
+      const response = await fetch('/api/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          room_id: selectedCell.roomId,
+          teacher_id: teacherId,
+          day_of_week: selectedCell.dayOfWeek,
+          start_time: startTime,
+          end_time: endTime,
+          status: 'active',
+        }),
+      })
 
-    if (!teacher || !student) return
+      const data = await response.json()
 
-    const newSchedule: RoomSchedule = {
-      id: `schedule-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      room_id: selectedCell.roomId,
-      room_name: selectedCell.roomName,
-      day_of_week: selectedCell.dayOfWeek,
-      start_time: startTime,
-      end_time: endTime,
-      teacher_id: teacherId,
-      teacher_name: teacher.name,
-      student_id: studentId,
-      student_name: student.name,
-      student_grade: student.grade,
+      if (!response.ok) {
+        toast({
+          title: '등록 실패',
+          description: data.error || '스케줄 등록에 실패했습니다.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      toast({
+        title: '스케줄 등록 완료',
+        description: `${selectedCell.roomName}에 수업이 등록되었습니다.`,
+      })
+
+      // Refresh schedules
+      const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
+      const refreshData = await refreshRes.json()
+      if (refreshData.schedules) {
+        setSchedules(refreshData.schedules)
+      }
+
+      setIsDialogOpen(false)
+    } catch (error) {
+      console.error('Schedule creation error:', error)
+      toast({
+        title: '오류 발생',
+        description: '스케줄 등록 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
     }
+  }
 
-    setSchedules([...schedules, newSchedule])
+  // Get schedules for specific room and day (시작 셀)
+  const getSchedulesForCell = (roomId: string, dayOfWeek: keyof typeof dayOfWeekMap, time: string) => {
+    return schedules.filter(s => {
+      const scheduleTime = s.start_time.substring(0, 5)
+      return s.room_id === roomId && s.day_of_week === dayOfWeek && scheduleTime === time
+    })
+  }
 
-    toast({
-      title: '스케줄 등록 완료',
-      description: `${selectedCell.roomName}에 수업이 등록되었습니다.`,
+  // 시간이 겹치는 스케줄들에 column 할당 (greedy 알고리즘)
+  const assignColumns = (daySchedules: ScheduleData[]) => {
+    if (daySchedules.length === 0) return { columns: new Map<string, number>(), maxColumns: 1 }
+
+    const sorted = [...daySchedules].sort((a, b) => {
+      const aStart = timeSlots.indexOf(a.start_time.substring(0, 5))
+      const bStart = timeSlots.indexOf(b.start_time.substring(0, 5))
+      return aStart - bStart
     })
 
-    setIsDialogOpen(false)
-  }
+    const columns = new Map<string, number>()
+    const columnEndTimes: number[] = []
 
-  // Get schedules for specific room and day
-  const getSchedulesForCell = (roomId: string, dayOfWeek: keyof typeof dayOfWeekMap, time: string) => {
-    return schedules.filter(
-      s => s.room_id === roomId && s.day_of_week === dayOfWeek && s.start_time === time
-    )
-  }
+    for (const schedule of sorted) {
+      const startIdx = timeSlots.indexOf(schedule.start_time.substring(0, 5))
+      let endIdx = timeSlots.indexOf(schedule.end_time.substring(0, 5))
+      if (endIdx === -1) endIdx = timeSlots.length
 
-  // Check if this cell is occupied by a schedule (but not the starting cell)
-  const isCellOccupied = (roomId: string, dayOfWeek: keyof typeof dayOfWeekMap, time: string): RoomSchedule | null => {
-    const timeIndex = timeSlots.indexOf(time)
-
-    for (const schedule of schedules) {
-      if (schedule.room_id === roomId && schedule.day_of_week === dayOfWeek) {
-        const startIndex = timeSlots.indexOf(schedule.start_time)
-        const endIndex = timeSlots.indexOf(schedule.end_time)
-
-        // This cell is in the middle of a schedule (not the start)
-        if (timeIndex > startIndex && timeIndex < endIndex) {
-          return schedule
-        }
+      let col = 0
+      while (col < columnEndTimes.length && columnEndTimes[col] > startIdx) {
+        col++
       }
+
+      columns.set(schedule.id, col)
+      columnEndTimes[col] = endIdx
     }
-    return null
-  }
 
-  // Check if cell should be hidden (merged into previous cell)
-  const isCellMerged = (roomId: string, dayOfWeek: keyof typeof dayOfWeekMap, time: string): boolean => {
-    const timeIndex = timeSlots.indexOf(time)
-
-    for (const schedule of schedules) {
-      if (schedule.room_id === roomId && schedule.day_of_week === dayOfWeek) {
-        const startIndex = timeSlots.indexOf(schedule.start_time)
-        const endIndex = timeSlots.indexOf(schedule.end_time)
-
-        // This cell is merged (not the starting cell)
-        if (timeIndex > startIndex && timeIndex < endIndex) {
-          return true
-        }
-      }
-    }
-    return false
-  }
-
-  // Calculate how many rows a schedule spans
-  const getScheduleRowSpan = (schedule: RoomSchedule): number => {
-    const startIndex = timeSlots.indexOf(schedule.start_time)
-    const endIndex = timeSlots.indexOf(schedule.end_time)
-    return endIndex - startIndex
+    return { columns, maxColumns: Math.max(1, columnEndTimes.length) }
   }
 
   // Filter students by search query
-  const filteredStudents = mockStudents.filter(student =>
+  const filteredStudents = students.filter(student =>
     studentSearchQuery === '' ||
     student.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
-    `${student.grade}학년`.includes(studentSearchQuery)
+    (student.grade && `${student.grade}학년`.includes(studentSearchQuery))
   )
 
   // Statistics
   const totalSchedules = schedules.length
-  const activeRooms = mockRooms.filter(r => r.status === 'active').length
-  const totalCapacity = mockRooms.reduce((sum, r) => sum + r.capacity, 0)
+  const activeRooms = rooms.filter(r => r.status === 'available' || r.status === 'active').length
+  const totalCapacity = rooms.reduce((sum, r) => sum + r.capacity, 0)
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
@@ -545,7 +439,7 @@ export default function RoomsPage() {
             교실별 스케줄을 확인하고 관리합니다
           </p>
         </div>
-        <Link href={getInstitutionHref('/all-schedules')}>
+        <Link href={getInstitutionHref('/all-schedules', institutionName)}>
           <Button variant="outline" className="w-full sm:w-auto">
             <Grid3x3 className="mr-2 h-4 w-4" />
             전체 스케줄 보기
@@ -583,7 +477,7 @@ export default function RoomsPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{mockTeachers.length}명</div>
+            <div className="text-2xl font-bold">{teachers.length}명</div>
             <p className="text-xs text-muted-foreground">전체 강사</p>
           </CardContent>
         </Card>
@@ -598,142 +492,138 @@ export default function RoomsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue={mockRooms[0].id} className="space-y-4">
-            <TabsList>
-              {mockRooms.map((room) => (
-                <TabsTrigger key={room.id} value={room.id}>
-                  {room.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+          {rooms.length > 0 && (
+            <Tabs value={selectedTab} onValueChange={setSelectedTab} className="space-y-4">
+              <TabsList>
+                {rooms.map((room) => (
+                  <TabsTrigger key={room.id} value={room.id}>
+                    {room.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-            {mockRooms.map((room) => (
-              <TabsContent key={room.id} value={room.id}>
-                <div className="overflow-x-auto">
-                  <div className="grid grid-cols-[auto_repeat(7,1fr)] auto-rows-[50px] gap-2 min-w-[900px]">
-                    {/* Header */}
-                    <div className="font-medium text-sm text-muted-foreground p-2">시간</div>
-                    {Object.keys(dayOfWeekMap).map((dayKey) => {
-                      const day = dayOfWeekMap[dayKey as keyof typeof dayOfWeekMap]
-                      return (
-                        <div key={dayKey} className="text-center p-2 font-medium">
-                          {day.label}
+              {rooms.map((room) => {
+                const CELL_HEIGHT = 50
+                const dayKeys = Object.keys(dayOfWeekMap)
+
+                return (
+                  <TabsContent key={room.id} value={room.id}>
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[900px] flex">
+                        {/* 시간 컬럼 */}
+                        <div className="w-14 flex-shrink-0">
+                          <div className="h-10 p-2 text-sm font-medium text-muted-foreground">시간</div>
+                          {timeSlots.map(time => (
+                            <div
+                              key={time}
+                              className="text-xs text-muted-foreground px-2 border-t flex items-start pt-1"
+                              style={{ height: `${CELL_HEIGHT}px` }}
+                            >
+                              {time}
+                            </div>
+                          ))}
                         </div>
-                      )
-                    })}
 
-                    {/* Time slots and cells */}
-                    {timeSlots.flatMap((time, timeIdx) => {
-                      const cells = []
+                        {/* 각 요일 컬럼 */}
+                        {dayKeys.map(dayKey => {
+                          const day = dayOfWeekMap[dayKey as keyof typeof dayOfWeekMap]
+                          const daySchedules = schedules.filter(s => s.room_id === room.id && s.day_of_week === dayKey)
+                          const { columns, maxColumns } = assignColumns(daySchedules)
 
-                      // Time label cell
-                      cells.push(
-                        <div key={`time-${time}`} className="text-sm text-muted-foreground p-2 flex items-center">
-                          {time}
-                        </div>
-                      )
+                          return (
+                            <div key={dayKey} className="border-l" style={{ width: `${maxColumns * 83}px`, flexShrink: 0 }}>
+                              {/* 요일 헤더 */}
+                              <div className="h-10 p-2 text-center font-medium text-sm">
+                                {day.label}
+                              </div>
 
-                      // Day cells
-                      Object.keys(dayOfWeekMap).forEach((dayKey) => {
-                        const schedulesInCell = getSchedulesForCell(
-                          room.id,
-                          dayKey as keyof typeof dayOfWeekMap,
-                          time
-                        )
+                              {/* 스케줄 영역 */}
+                              <div
+                                className="relative"
+                                style={{ height: `${timeSlots.length * CELL_HEIGHT}px` }}
+                              >
+                                {/* 시간 그리드 라인 + 드래그/클릭 영역 */}
+                                {timeSlots.map((time, idx) => {
+                                  const timeIndex = timeSlots.indexOf(time)
+                                  const isInDragRange = isCellInDragRange(room.id, dayKey, timeIndex)
 
-                        const timeIndex = timeSlots.indexOf(time)
-                        const isInDragRange = isCellInDragRange(room.id, dayKey, timeIndex)
-                        const isMerged = isCellMerged(room.id, dayKey as keyof typeof dayOfWeekMap, time)
+                                  return (
+                                    <div
+                                      key={time}
+                                      className={cn(
+                                        "absolute w-full border-t cursor-pointer hover:bg-muted/30 transition-colors",
+                                        isInDragRange && "bg-blue-100"
+                                      )}
+                                      style={{ top: `${idx * CELL_HEIGHT}px`, height: `${CELL_HEIGHT}px` }}
+                                      onMouseDown={() => handleMouseDown(room.id, room.name, dayKey as keyof typeof dayOfWeekMap, time)}
+                                      onMouseEnter={() => handleMouseEnter(room.id, dayKey as keyof typeof dayOfWeekMap, time)}
+                                      onMouseUp={handleMouseUp}
+                                      onClick={() => handleCellClick(room.id, room.name, dayKey as keyof typeof dayOfWeekMap, time)}
+                                    />
+                                  )
+                                })}
 
-                        // Skip rendering if this cell is merged into a previous cell
-                        if (isMerged) {
-                          return
-                        }
+                                {/* 스케줄 카드들 */}
+                                {daySchedules.map(schedule => {
+                                  const startTime = schedule.start_time.substring(0, 5)
+                                  const endTime = schedule.end_time.substring(0, 5)
+                                  const startIdx = timeSlots.indexOf(startTime)
+                                  let endIdx = timeSlots.indexOf(endTime)
 
-                        const schedule = schedulesInCell[0]
-                        const rowSpan = schedule ? getScheduleRowSpan(schedule) : 1
+                                  if (startIdx === -1) return null
+                                  if (endIdx === -1) endIdx = timeSlots.length
 
-                        cells.push(
-                          <div
-                            key={`${time}-${dayKey}`}
-                            onMouseDown={() =>
-                              handleMouseDown(
-                                room.id,
-                                room.name,
-                                dayKey as keyof typeof dayOfWeekMap,
-                                time
-                              )
-                            }
-                            onMouseEnter={() =>
-                              handleMouseEnter(
-                                room.id,
-                                dayKey as keyof typeof dayOfWeekMap,
-                                time
-                              )
-                            }
-                            onMouseUp={handleMouseUp}
-                            onClick={() =>
-                              handleCellClick(
-                                room.id,
-                                room.name,
-                                dayKey as keyof typeof dayOfWeekMap,
-                                time
-                              )
-                            }
-                            style={
-                              rowSpan > 1
-                                ? {
-                                    gridRow: `span ${rowSpan}`,
-                                  }
-                                : undefined
-                            }
-                            className={cn(
-                              "border rounded-lg p-1 hover:bg-muted/50 transition-colors cursor-pointer select-none overflow-hidden",
-                              isInDragRange && "bg-blue-100 border-blue-400 border-2"
-                            )}
-                          >
-                            {schedulesInCell.length > 0 ? (
-                              <div className="pointer-events-none h-full">
-                                {schedulesInCell.map((schedule) => {
-                                  const teacherColor = getTeacherColor(schedule.teacher_id || '')
+                                  const top = startIdx * CELL_HEIGHT
+                                  const height = Math.max(1, endIdx - startIdx) * CELL_HEIGHT
+
+                                  const col = columns.get(schedule.id) ?? 0
+                                  const widthPercent = 100 / maxColumns
+                                  const leftPercent = col * widthPercent
+
+                                  const teacherColor = getTeacherColor(schedule.teacher_id)
+                                  const teacherName = schedule.teacher?.name || ''
+                                  const className = schedule.classes?.name || '수업'
+
                                   return (
                                     <div
                                       key={schedule.id}
-                                      className={cn(
-                                        "text-[10px] px-1.5 py-1 rounded border-l-2 h-full flex flex-col justify-center gap-0.5",
+                                      className="absolute p-0.5 pointer-events-none"
+                                      style={{
+                                        top: `${top}px`,
+                                        height: `${height}px`,
+                                        left: `${leftPercent}%`,
+                                        width: `${widthPercent}%`
+                                      }}
+                                    >
+                                      <div className={cn(
+                                        "h-full p-2 rounded flex flex-col justify-center overflow-hidden",
                                         teacherColor.bg,
                                         teacherColor.border
-                                      )}
-                                    >
-                                      <div className={cn("font-medium leading-tight", teacherColor.text)}>
-                                        {schedule.teacher_name}
-                                      </div>
-                                      <div className="text-muted-foreground text-[9px] leading-tight">
-                                        {schedule.student_grade}학년 {schedule.student_name}
-                                      </div>
-                                      <div className="text-muted-foreground text-[9px] leading-tight">
-                                        {schedule.start_time}-{schedule.end_time}
+                                      )}>
+                                        <div className={cn("font-bold text-sm leading-tight", teacherColor.text)}>
+                                          {teacherName}
+                                        </div>
+                                        <div className={cn("text-xs leading-tight", teacherColor.text)}>
+                                          {className}
+                                        </div>
+                                        <div className="text-muted-foreground text-xs leading-tight">
+                                          {startTime}-{endTime}
+                                        </div>
                                       </div>
                                     </div>
                                   )
                                 })}
                               </div>
-                            ) : (
-                              <div className="h-full flex items-center justify-center text-muted-foreground text-[10px] pointer-events-none">
-                                {isInDragRange ? '드래그 중...' : '클릭하여 등록'}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })
-
-                      return cells
-                    })}
-                  </div>
-                </div>
-              </TabsContent>
-            ))}
-          </Tabs>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </TabsContent>
+                )
+              })}
+            </Tabs>
+          )}
         </CardContent>
       </Card>
 
@@ -759,7 +649,7 @@ export default function RoomsPage() {
                   <SelectValue placeholder="선생님을 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  {mockTeachers.map((teacher) => (
+                  {teachers.map((teacher) => (
                     <SelectItem key={teacher.id} value={teacher.id}>
                       {teacher.name}
                     </SelectItem>
@@ -769,7 +659,7 @@ export default function RoomsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="student-search">학생 검색 *</Label>
+              <Label htmlFor="student-search">학생 검색</Label>
               <Input
                 id="student-search"
                 placeholder="이름 또는 학년으로 검색..."
@@ -787,7 +677,7 @@ export default function RoomsPage() {
                       key={student.id}
                       onClick={() => {
                         setStudentId(student.id)
-                        setStudentSearchQuery(`${student.grade}학년 ${student.name}`)
+                        setStudentSearchQuery(`${student.grade || ''}학년 ${student.name}`)
                       }}
                       className={cn(
                         "p-2 rounded cursor-pointer hover:bg-muted transition-colors text-sm",

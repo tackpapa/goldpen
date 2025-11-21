@@ -80,37 +80,56 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
     loadData()
   }, [studentId])
 
-  const loadData = () => {
-    // Load subjects
-    const savedSubjects = localStorage.getItem(`subjects-${studentId}`)
-    if (savedSubjects) {
-      setSubjects(JSON.parse(savedSubjects))
-    }
+  const loadData = async () => {
+    if (!studentId) return
 
     const today = new Date().toISOString().split('T')[0]
 
-    // Load today's statistics
-    const savedStats = localStorage.getItem(`subject-stats-${studentId}-${today}`)
-    if (savedStats) {
-      const stats = JSON.parse(savedStats)
-      setTodayStats(stats)
-      const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-      setTotalSeconds(total)
+    // Fetch today's statistics from DB
+    try {
+      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${today}`, {
+        credentials: 'include',
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const stats = data.stats || []
+        setTodayStats(stats)
+        const total = stats.reduce((sum: number, stat: any) => sum + stat.total_seconds, 0)
+        setTotalSeconds(total)
+      }
+    } catch (error) {
+      console.error('Failed to fetch today stats:', error)
+      // Fallback to localStorage
+      const savedStats = localStorage.getItem(`subject-stats-${studentId}-${today}`)
+      if (savedStats) {
+        const stats = JSON.parse(savedStats)
+        setTodayStats(stats)
+        const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
+        setTotalSeconds(total)
+      }
     }
 
-    // Load yesterday's statistics
+    // Fetch yesterday's statistics
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const yesterdayStr = yesterday.toISOString().split('T')[0]
-    const savedYesterday = localStorage.getItem(`subject-stats-${studentId}-${yesterdayStr}`)
-    if (savedYesterday) {
-      const stats = JSON.parse(savedYesterday)
-      setYesterdayStats(stats)
-      const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-      setYesterdayTotal(total)
+
+    try {
+      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${yesterdayStr}`, {
+        credentials: 'include',
+      })
+      if (response.ok) {
+        const data = await response.json()
+        const stats = data.stats || []
+        setYesterdayStats(stats)
+        const total = stats.reduce((sum: number, stat: any) => sum + stat.total_seconds, 0)
+        setYesterdayTotal(total)
+      }
+    } catch (error) {
+      console.error('Failed to fetch yesterday stats:', error)
     }
 
-    // Load weekly data (last 7 days)
+    // Load weekly data (last 7 days) - keep localStorage for now as fallback
     const weekData: DailyRecord[] = []
     for (let i = 6; i >= 0; i--) {
       const date = new Date()
@@ -263,15 +282,13 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
   }
 
   const getTimeSlotData = (): TimeSlotData[] => {
-    // Mock data for now - will be replaced with actual session data
-    const mockDistribution = [0.1, 0.15, 0.1, 0.2, 0.25, 0.2]
+    // 오전 (00:00~12:00), 오후 (12:01~18:00), 밤 (18:01~24:00)
+    // TODO: Replace with actual session data from DB
+    const mockDistribution = [0.35, 0.40, 0.25]
     return [
-      { slot: '06-09', label: '아침', totalSeconds: totalSeconds * mockDistribution[0], icon: Sun },
-      { slot: '09-12', label: '오전', totalSeconds: totalSeconds * mockDistribution[1], icon: Coffee },
-      { slot: '12-15', label: '점심', totalSeconds: totalSeconds * mockDistribution[2], icon: Sun },
-      { slot: '15-18', label: '오후', totalSeconds: totalSeconds * mockDistribution[3], icon: Sun },
-      { slot: '18-21', label: '저녁', totalSeconds: totalSeconds * mockDistribution[4], icon: Sun },
-      { slot: '21-24', label: '밤', totalSeconds: totalSeconds * mockDistribution[5], icon: Moon },
+      { slot: '00-12', label: '오전', totalSeconds: totalSeconds * mockDistribution[0], icon: Sun },
+      { slot: '12-18', label: '오후', totalSeconds: totalSeconds * mockDistribution[1], icon: Coffee },
+      { slot: '18-24', label: '밤', totalSeconds: totalSeconds * mockDistribution[2], icon: Moon },
     ]
   }
 
@@ -575,6 +592,60 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* 과목별 시간통계 */}
+      {sortedStats.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3 px-5 pt-4">
+            <CardTitle className="text-2xl font-semibold">과목별 학습시간</CardTitle>
+          </CardHeader>
+          <CardContent className="px-5 pb-4">
+            <div className="space-y-3">
+              {sortedStats.map((stat, index) => {
+                const maxSeconds = sortedStats[0]?.total_seconds || 1
+                const percentage = (stat.total_seconds / maxSeconds) * 100
+
+                return (
+                  <div key={stat.subject_id || index} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="w-3 h-3 rounded-full"
+                          style={{ backgroundColor: stat.subject_color || '#4A90E2' }}
+                        />
+                        <span className="font-medium text-gray-700">{stat.subject_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">{stat.session_count}회</span>
+                        <span className="font-bold text-gray-800">
+                          {formatTimeString(stat.total_seconds)}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${percentage}%`,
+                          backgroundColor: stat.subject_color || '#4A90E2',
+                        }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* 총계 */}
+            <div className="mt-4 pt-4 border-t flex items-center justify-between">
+              <span className="font-semibold text-gray-600">총 학습시간</span>
+              <span className="text-xl font-bold text-blue-600">
+                {formatTimeString(totalSeconds)}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 업적 & 목표 */}
       <Card>

@@ -29,6 +29,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{
+          __html: `
+            // Suppress Recharts defaultProps warnings
+            if (typeof window !== 'undefined') {
+              const originalError = console.error;
+              console.error = (...args) => {
+                if (
+                  typeof args[0] === 'string' &&
+                  args[0].includes('Support for defaultProps will be removed')
+                ) {
+                  return;
+                }
+                originalError.apply(console, args);
+              };
+            }
+          `
+        }} />
+      </head>
       <body className={inter.className}>
         <AuthProvider>
           {children}

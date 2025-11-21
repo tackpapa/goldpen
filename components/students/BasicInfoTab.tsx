@@ -24,11 +24,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Building2, GraduationCap, BookOpen, Plus, X, User } from 'lucide-react'
+import { Building2, GraduationCap, BookOpen, Plus, X, User, Loader2 } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
 
 interface BasicInfoTabProps {
   student: Student
   onUpdate?: (student: Student) => void
+  services?: any[]
+  enrollments?: any[]
+  loading?: boolean
+  onRefresh?: () => void
 }
 
 const SERVICE_TYPES = [
@@ -51,9 +56,18 @@ const GRADE_OPTIONS = [
   { value: 'N수', label: 'N수' },
 ]
 
-export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
+export function BasicInfoTab({
+  student,
+  onUpdate,
+  services = [],
+  enrollments = [],
+  loading = false,
+  onRefresh
+}: BasicInfoTabProps) {
+  const { toast } = useToast()
   const [serviceEnrollments, setServiceEnrollments] = useState<ServiceEnrollment[]>([])
   const [localStudent, setLocalStudent] = useState(student)
+  const [saving, setSaving] = useState(false)
   const [enrolledClasses, setEnrolledClasses] = useState<Array<Class & { enrollment_id: string }>>([])
   const [assignedTeachers, setAssignedTeachers] = useState<Teacher[]>([]) // 1:1 배정된 강사들
   const [availableClasses, setAvailableClasses] = useState<Class[]>([])
@@ -414,14 +428,47 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
     }
   }
 
-  const handleSave = () => {
-    // Save to localStorage
-    const stored = localStorage.getItem('students')
-    if (stored) {
-      const students = JSON.parse(stored) as Student[]
-      const updated = students.map(s => s.id === localStudent.id ? localStudent : s)
-      localStorage.setItem('students', JSON.stringify(updated))
-      onUpdate?.(localStudent)
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      // Only send columns that exist in DB schema
+      const response = await fetch(`/api/students/${localStudent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: localStudent.name,
+          phone: localStudent.phone,
+          grade: localStudent.grade,
+          school: localStudent.school,
+          parent_name: localStudent.parent_name,
+          parent_phone: localStudent.parent_phone,
+          student_code: localStudent.student_code,
+          notes: localStudent.notes,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || '저장에 실패했습니다.')
+      }
+
+      toast({
+        title: '저장 완료',
+        description: '학생 정보가 저장되었습니다.',
+      })
+
+      onUpdate?.(result.student || localStudent)
+      onRefresh?.()
+    } catch (error) {
+      console.error('Save error:', error)
+      toast({
+        title: '저장 오류',
+        description: error instanceof Error ? error.message : '저장에 실패했습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -604,7 +651,7 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="name">이름</Label>
               <Input
                 id="name"
-                value={localStudent.name}
+                value={localStudent.name || ''}
                 onChange={(e) => handleFieldChange('name', e.target.value)}
               />
             </div>
@@ -613,7 +660,7 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="phone">연락처</Label>
               <Input
                 id="phone"
-                value={localStudent.phone}
+                value={localStudent.phone || ''}
                 onChange={(e) => handlePhoneChange('phone', e.target.value)}
                 placeholder="01012345678"
               />
@@ -623,10 +670,10 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="attendance_code">출결 코드 (4자리)</Label>
               <Input
                 id="attendance_code"
-                value={localStudent.attendance_code || ''}
+                value={localStudent.student_code || ''}
                 onChange={(e) => {
                   const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4)
-                  handleFieldChange('attendance_code', value)
+                  handleFieldChange('student_code', value)
                 }}
                 placeholder="1234"
                 maxLength={4}
@@ -639,7 +686,7 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
             <div>
               <Label htmlFor="grade">학년</Label>
               <Select
-                value={localStudent.grade}
+                value={localStudent.grade || ''}
                 onValueChange={(value) => handleFieldChange('grade', value)}
               >
                 <SelectTrigger id="grade">
@@ -659,7 +706,7 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="school">학교</Label>
               <Input
                 id="school"
-                value={localStudent.school}
+                value={localStudent.school || ''}
                 onChange={(e) => handleFieldChange('school', e.target.value)}
               />
             </div>
@@ -668,7 +715,7 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="parent_name">학부모 이름</Label>
               <Input
                 id="parent_name"
-                value={localStudent.parent_name}
+                value={localStudent.parent_name || ''}
                 onChange={(e) => handleFieldChange('parent_name', e.target.value)}
               />
             </div>
@@ -677,9 +724,20 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="parent_phone">학부모 연락처</Label>
               <Input
                 id="parent_phone"
-                value={localStudent.parent_phone}
+                value={localStudent.parent_phone || ''}
                 onChange={(e) => handlePhoneChange('parent_phone', e.target.value)}
                 placeholder="01012345678"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="email">학생 이메일</Label>
+              <Input
+                id="email"
+                type="email"
+                value={localStudent.email || ''}
+                onChange={(e) => handleFieldChange('email', e.target.value)}
+                placeholder="student@example.com"
               />
             </div>
           </div>
@@ -698,7 +756,10 @@ export function BasicInfoTab({ student, onUpdate }: BasicInfoTabProps) {
 
       {/* 저장 버튼 */}
       <div className="flex justify-end">
-        <Button onClick={handleSave}>변경사항 저장</Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {saving ? '저장 중...' : '변경사항 저장'}
+        </Button>
       </div>
 
       {/* 수업 추가 다이얼로그 */}

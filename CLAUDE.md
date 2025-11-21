@@ -5,6 +5,20 @@
 
 ---
 
+## 🔄 세션 시작 시 필수 작업
+
+**CRITICAL**: 세션 시작 또는 Auto Compact 후 반드시 실행!
+
+```bash
+# 1. 작업 컨텍스트 복원
+Read: TASKS.md (최근 200줄)
+
+# 2. 프로젝트 규칙 확인
+Read: CLAUDE.md
+```
+
+---
+
 ## 📌 프로젝트 개요
 
 **프로젝트명**: GoldPen
@@ -368,13 +382,74 @@ test('상담 신청부터 등록까지 플로우', async ({ page }) => {
 
 ---
 
-## 🚀 배포 전략
+## 🚀 배포 & 인프라 가이드
+
+### 아키텍처 구성
+```
+┌─────────────────────────────────────────────────────────┐
+│  Cloudflare Pages (Frontend)                            │
+│  - Next.js App (SSR/SSG)                               │
+│  - @cloudflare/next-on-pages 빌드                       │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  Cloudflare Workers (BFF/API)                          │
+│  - Hono 프레임워크                                      │
+│  - Edge Runtime                                         │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  Supabase (Database + Auth)                            │
+│  - PostgreSQL                                           │
+│  - Row Level Security                                   │
+└─────────────────────────────────────────────────────────┘
+```
 
 ### 환경 구분
 ```yaml
 Development: localhost:3000
 Staging: staging.goldpen.kr (Cloudflare Pages)
 Production: goldpen.kr (Cloudflare Pages)
+```
+
+### Cloudflare Pages 배포
+
+```bash
+# 1. 빌드 (next-on-pages 사용)
+pnpm pages:build
+
+# 2. 배포
+wrangler pages deploy .vercel/output/static --project-name=goldpen
+
+# 3. 환경 변수 설정 (Cloudflare Dashboard 또는 CLI)
+wrangler pages secret put SUPABASE_URL
+wrangler pages secret put SUPABASE_ANON_KEY
+wrangler pages secret put SUPABASE_SERVICE_ROLE_KEY
+```
+
+### Cloudflare Workers 배포 (BFF)
+
+```bash
+# workers/ 디렉토리에서
+cd workers/api
+wrangler deploy
+```
+
+### Git 워크플로우
+
+```bash
+# 커밋 전 필수 확인
+pnpm build  # 빌드 성공 확인
+pnpm lint   # 린트 통과 확인
+
+# 커밋 메시지 규칙
+feat: 새 기능 추가
+fix: 버그 수정
+docs: 문서 수정
+refactor: 리팩토링
+chore: 기타 작업
 ```
 
 ### CI/CD 파이프라인
@@ -389,6 +464,66 @@ steps:
   5. Deploy to Cloudflare Pages
   6. Run DB Migrations (Supabase)
 ```
+
+---
+
+## 🗄️ Supabase SQL 마이그레이션 가이드
+
+### Direct URL로 SQL 실행하기
+
+**방법 1: psql 직접 연결**
+```bash
+# Direct URL 형식 (pooler 아님!)
+# postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres
+
+# 연결
+psql "postgresql://postgres.ipqhhqduppzvsqwwzjkp:[PASSWORD]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres"
+
+# SQL 파일 실행
+psql "CONNECTION_STRING" -f supabase/migrations/20251121_migration.sql
+```
+
+**방법 2: Node.js 스크립트 (pg 라이브러리)**
+```javascript
+// scripts/run-migration.mjs
+import pg from 'pg'
+import fs from 'fs'
+
+const client = new pg.Client({
+  connectionString: process.env.DATABASE_URL  // Direct URL
+})
+
+await client.connect()
+const sql = fs.readFileSync('./supabase/migrations/xxx.sql', 'utf8')
+await client.query(sql)
+await client.end()
+```
+
+**방법 3: Supabase MCP 사용 (권장)**
+```
+MCP 서버가 설정되어 있으면 직접 SQL 실행 가능
+- mcp__supabase__query 도구 사용
+```
+
+### 마이그레이션 파일 위치
+```
+supabase/migrations/
+├── 20251120_create_audit_logs.sql
+├── 20251121_add_classes_columns.sql
+└── ...
+```
+
+### Supabase 연결 정보
+```
+Project Ref: ipqhhqduppzvsqwwzjkp
+Region: ap-northeast-2 (Seoul)
+API URL: https://ipqhhqduppzvsqwwzjkp.supabase.co
+```
+
+### 주의사항
+- ⚠️ Service Role Key는 절대 클라이언트에 노출 금지
+- ⚠️ Direct URL은 .env에만 저장, 커밋 금지
+- ✅ RLS 정책 반드시 설정 후 테이블 생성
 
 ---
 
@@ -442,29 +577,6 @@ export default {
 
 ---
 
-## 🔄 Git 워크플로우
-
-### 브랜치 전략
-```
-main (production)
-  └── develop (staging)
-       └── feature/상담-자동화
-       └── feature/출결-관리
-       └── fix/버그-수정
-```
-
-### 커밋 메시지 규칙
-```
-feat: 상담 신청 폼 구현
-fix: 출결 체크 버그 수정
-docs: API 문서 업데이트
-refactor: 학생 조회 로직 개선
-test: 상담 플로우 E2E 테스트 추가
-chore: dependencies 업데이트
-```
-
----
-
 ## 📚 참고 문서
 
 - [PRD.md](./PRD.md) - 제품 요구사항 정의서
@@ -500,5 +612,5 @@ chore: dependencies 업데이트
 
 ---
 
-**마지막 업데이트**: 2025-11-18
-**버전**: 0.1.0 (초기 설정)
+**마지막 업데이트**: 2025-11-21
+**버전**: 0.2.0 (배포/인프라 가이드 추가)

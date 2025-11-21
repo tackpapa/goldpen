@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('schedules')
-      .select('*, classes(name), rooms(name)')
+      .select('*, classes(name, teacher_id), rooms(name), teacher:users!schedules_teacher_id_fkey(name)')
       .eq('org_id', userProfile.org_id)
       .order('day_of_week', { ascending: true })
 

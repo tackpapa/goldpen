@@ -57,6 +57,7 @@ export function getAuthToken(request: Request): string | null {
 
   // Cookie에서 세션 토큰 추출 (Supabase SSR 호환)
   const cookieHeader = request.headers.get('Cookie')
+
   if (cookieHeader) {
     const cookies = parseCookies(cookieHeader)
 
@@ -73,7 +74,32 @@ export function getAuthToken(request: Request): string | null {
     // Supabase SSR cookie 패턴 (sb-<project-ref>-auth-token)
     for (const [key, value] of Object.entries(cookies)) {
       if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
-        return value
+        try {
+          // Supabase SSR prefixes base64-encoded values with "base64-"
+          let decodedValue = value
+          if (value.startsWith('base64-')) {
+            const base64String = value.substring(7) // Remove "base64-" prefix
+            decodedValue = Buffer.from(base64String, 'base64').toString('utf-8')
+          }
+
+          // Try to parse as JSON
+          const decoded = JSON.parse(decodedValue)
+          if (decoded && typeof decoded === 'object') {
+            // Handle object format - return the whole decoded object for setSession
+            if (decoded.access_token) {
+              return JSON.stringify(decoded)  // Return JSON string containing both tokens
+            }
+            // Handle array format (Supabase SSR stores as [access_token, refresh_token])
+            if (Array.isArray(decoded) && decoded.length > 0) {
+              return decoded[0] // access_token is first element
+            }
+          }
+          // If not JSON, return as-is
+          return value
+        } catch (e) {
+          // Not JSON, return as-is (might be raw JWT)
+          return value
+        }
       }
     }
   }
@@ -107,14 +133,31 @@ export async function createAuthenticatedClient(request: Request) {
   const token = getAuthToken(request)
 
   if (token) {
-    // 세션 설정
-    const { error } = await supabase.auth.setSession({
-      access_token: token,
-      refresh_token: ''
-    })
+    try {
+      // Try to parse as JSON (contains both access_token and refresh_token)
+      const tokenData = JSON.parse(token)
+      if (tokenData.access_token && tokenData.refresh_token) {
+        const { error } = await supabase.auth.setSession({
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token
+        })
 
-    if (error) {
-      throw new Error(`[Supabase Edge] Auth error: ${error.message}`)
+        if (error) {
+          throw new Error(`[Supabase Edge] Auth error: ${error.message}`)
+        }
+      } else {
+        throw new Error('[Supabase Edge] Invalid token format')
+      }
+    } catch (e) {
+      // If not JSON, assume it's a raw access_token
+      const { error } = await supabase.auth.setSession({
+        access_token: token,
+        refresh_token: ''
+      })
+
+      if (error) {
+        throw new Error(`[Supabase Edge] Auth error: ${error.message}`)
+      }
     }
   }
 

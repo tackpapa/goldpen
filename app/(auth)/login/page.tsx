@@ -54,8 +54,15 @@ export default function LoginPage() {
         description: '환영합니다!',
       })
 
-      router.push('/overview')
-      router.refresh()
+      // Check if user is super_admin and redirect
+      if (result.user?.role === 'super_admin') {
+        window.location.href = '/admin/dashboard'
+      } else {
+        // Get org name from result and construct proper URL
+        const orgName = result.org?.name || 'goldpen'
+        const sanitizedOrgName = orgName.toLowerCase().replace(/\s+/g, '-')
+        window.location.href = `/${sanitizedOrgName}/overview`
+      }
     } catch (error) {
       toast({
         title: '오류 발생',

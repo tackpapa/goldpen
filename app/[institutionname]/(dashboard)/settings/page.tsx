@@ -45,98 +45,21 @@ import { expenseCategoryManager } from '@/lib/utils/expense-categories'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 
-// Mock data
-const mockOrganization: Organization = {
-  id: 'org-1',
-  name: '서울 학원',
-  owner_name: '김원장', // 원장 이름 추가
-  address: '서울시 강남구 테헤란로 123',
-  phone: '02-1234-5678',
-  email: 'contact@seoulhakwon.com',
+// Default empty states
+const defaultOrganization: Organization = {
+  id: '',
+  name: '',
+  owner_name: '',
+  address: '',
+  phone: '',
+  email: '',
   logo_url: '',
   settings: {
-    auto_sms: true,
+    auto_sms: false,
     auto_email: false,
-    notification_enabled: true,
+    notification_enabled: false,
   },
 }
-
-const mockBranches: Branch[] = [
-  {
-    id: '1',
-    org_id: 'org-1',
-    name: '강남점',
-    address: '서울시 강남구 강남대로 456',
-    phone: '02-2345-6789',
-    manager_name: '김지점',
-    status: 'active',
-  },
-  {
-    id: '2',
-    org_id: 'org-1',
-    name: '서초점',
-    address: '서울시 서초구 서초대로 789',
-    phone: '02-3456-7890',
-    manager_name: '이지점',
-    status: 'active',
-  },
-  {
-    id: '3',
-    org_id: 'org-1',
-    name: '송파점',
-    address: '서울시 송파구 송파대로 321',
-    phone: '02-4567-8901',
-    manager_name: '박지점',
-    status: 'inactive',
-  },
-]
-
-const mockRooms: Room[] = [
-  {
-    id: 'room-1',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    name: '201호',
-    capacity: 15,
-    status: 'active',
-    notes: '일반 강의실',
-  },
-  {
-    id: 'room-2',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    name: '202호',
-    capacity: 20,
-    status: 'active',
-    notes: '대형 강의실',
-  },
-  {
-    id: 'room-3',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    name: '203호',
-    capacity: 15,
-    status: 'active',
-  },
-  {
-    id: 'room-4',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    name: '실험실',
-    capacity: 10,
-    status: 'active',
-    notes: '과학 실험실',
-  },
-  {
-    id: 'room-5',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    name: '특강실',
-    capacity: 30,
-    status: 'active',
-    notes: '대형 특강실',
-  },
-]
 
 // Service Usage Data Types
 interface KakaoTalkUsage {
@@ -157,51 +80,41 @@ interface ServiceUsage {
   cost: number
 }
 
-// Mock KakaoTalk Usage Data
-const mockKakaoTalkUsages: KakaoTalkUsage[] = [
-  // 출결 알림 (학원/공부방)
-  { id: 'kt1', date: '2025-01-19 09:15', type: '지각 안내', studentName: '김민준', message: '학생이 등록한 스케줄에 맞게 등원하지 않았습니다', cost: 15, status: 'success' },
-  { id: 'kt2', date: '2025-01-19 09:30', type: '등원 알림', studentName: '이서연', message: '학생이 등원했습니다', cost: 15, status: 'success' },
-  { id: 'kt3', date: '2025-01-19 10:00', type: '등원 알림', studentName: '박준호', message: '학생이 등원했습니다', cost: 15, status: 'success' },
-  { id: 'kt4', date: '2025-01-19 17:30', type: '하원 알림', studentName: '최지우', message: '학생이 하원했습니다', cost: 15, status: 'success' },
-  { id: 'kt5', date: '2025-01-19 18:00', type: '하원 알림', studentName: '정하은', message: '학생이 하원했습니다', cost: 15, status: 'success' },
-
-  // 출결 알림 (독서실)
-  { id: 'kt6', date: '2025-01-18 09:05', type: '지각 안내 (독서실)', studentName: '강민서', message: '학생이 등록한 스케줄에 맞게 입실하지 않았습니다', cost: 15, status: 'success' },
-  { id: 'kt7', date: '2025-01-18 09:30', type: '입실 알림', studentName: '윤서준', message: '학생이 독서실에 입실했습니다', cost: 15, status: 'success' },
-  { id: 'kt8', date: '2025-01-18 12:00', type: '외출 알림', studentName: '장서연', message: '학생이 외출했습니다', cost: 15, status: 'success' },
-  { id: 'kt9', date: '2025-01-18 13:00', type: '복귀 알림', studentName: '장서연', message: '학생이 외출 후 복귀했습니다', cost: 15, status: 'success' },
-  { id: 'kt10', date: '2025-01-18 18:00', type: '퇴실 알림', studentName: '임도윤', message: '학생이 독서실에서 퇴실했습니다', cost: 15, status: 'success' },
-
-  // 학습 알림 (독서실)
-  { id: 'kt11', date: '2025-01-17 22:00', type: '당일 학습 진행 결과', studentName: '한지우', message: '오늘의 플래너 완료: 수학 문제집 50p, 영어 단어 30개', cost: 20, status: 'success' },
-  { id: 'kt12', date: '2025-01-17 22:00', type: '당일 학습 진행 결과', studentName: '송민재', message: '오늘의 플래너 완료: 국어 독해 20p, 과학 요약 정리', cost: 20, status: 'success' },
-  { id: 'kt13', date: '2025-01-16 22:00', type: '당일 학습 진행 결과', studentName: '김서윤', message: '오늘의 플래너 완료: 수학 심화 30p, 영어 독해 15p', cost: 20, status: 'success' },
-
-  // 수업일지 알림 (학원/공부방)
-  { id: 'kt14', date: '2025-01-17 19:00', type: '수업일지 전송', studentName: '이준혁', message: '[수학] 오늘 배운 내용: 이차방정식 풀이법, 숙제: 문제집 45-50p', cost: 20, status: 'success' },
-  { id: 'kt15', date: '2025-01-17 19:30', type: '수업일지 전송', studentName: '박지은', message: '[영어] 오늘 배운 내용: 현재완료 문법, 숙제: 워크북 23-25p', cost: 20, status: 'success' },
-  { id: 'kt16', date: '2025-01-16 19:00', type: '수업일지 전송', studentName: '최수민', message: '[국어] 오늘 배운 내용: 논설문 쓰기, 숙제: 논설문 초안 작성', cost: 20, status: 'success' },
-
-  // 시험 관리 알림 (학원/공부방)
-  { id: 'kt17', date: '2025-01-16 18:00', type: '시험 결과 전송', studentName: '정예준', message: '[중간고사] 수학: 95점, 영어: 88점, 국어: 92점', cost: 20, status: 'success' },
-  { id: 'kt18', date: '2025-01-15 18:00', type: '시험 결과 전송', studentName: '강하린', message: '[중간고사] 수학: 87점, 영어: 91점, 과학: 89점', cost: 20, status: 'success' },
-
-  // 과제 관리 알림 (학원/공부방)
-  { id: 'kt19', date: '2025-01-15 17:00', type: '과제 전송', studentName: '김영수', message: '[수학] 새 과제: 함수 그래프 그리기, 제출 마감: 1월 20일', cost: 20, status: 'success' },
-  { id: 'kt20', date: '2025-01-14 17:00', type: '과제 전송', studentName: '이철민', message: '[영어] 새 과제: 에세이 작성 (500자), 제출 마감: 1월 18일', cost: 20, status: 'success' },
-]
-
-// Mock Service Usage Data
-const mockServiceUsages: ServiceUsage[] = [
-  { id: 'su1', date: '2025-01-01', type: '서버비', description: 'GoldPen 서버 이용료 (월간)', cost: 50000 },
-]
 
 export default function SettingsPage() {
   const { toast } = useToast()
-  const [organization, setOrganization] = useState<Organization>(mockOrganization)
+  const [organization, setOrganization] = useState<Organization>(defaultOrganization)
   const [institutionName, setInstitutionName] = useState<string>('')
-  const [branches, setBranches] = useState<Branch[]>(mockBranches)
+  const [branches, setBranches] = useState<Branch[]>([])
+  const [kakaoTalkUsages, setKakaoTalkUsages] = useState<KakaoTalkUsage[]>([])
+  const [serviceUsages, setServiceUsages] = useState<ServiceUsage[]>([])
+
+  // Fetch settings data from API
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch('/api/settings', { credentials: 'include' })
+        const data = await response.json() as {
+          organization?: Organization
+          branches?: Branch[]
+          rooms?: Room[]
+          kakaoTalkUsages?: KakaoTalkUsage[]
+          serviceUsages?: ServiceUsage[]
+          error?: string
+        }
+        if (response.ok) {
+          if (data.organization) setOrganization(data.organization)
+          if (data.branches) setBranches(data.branches)
+          if (data.rooms) setRooms(data.rooms)
+          if (data.kakaoTalkUsages) setKakaoTalkUsages(data.kakaoTalkUsages)
+          if (data.serviceUsages) setServiceUsages(data.serviceUsages)
+        }
+      } catch {
+        console.error('Failed to fetch settings')
+      }
+    }
+    fetchSettings()
+  }, [])
   const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
   const [branchForm, setBranchForm] = useState({
@@ -213,7 +126,7 @@ export default function SettingsPage() {
   })
 
   // Room management state
-  const [rooms, setRooms] = useState<Room[]>(mockRooms)
+  const [rooms, setRooms] = useState<Room[]>([])
   const [isRoomDialogOpen, setIsRoomDialogOpen] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [roomForm, setRoomForm] = useState({
@@ -2365,9 +2278,9 @@ export default function SettingsPage() {
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">₩{(mockKakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0) + mockServiceUsages.reduce((sum, item) => sum + item.cost, 0)).toLocaleString()}</div>
+                <div className="text-2xl font-bold">₩{(kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0) + serviceUsages.reduce((sum, item) => sum + item.cost, 0)).toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  알림톡: ₩{mockKakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()} / 서비스: ₩{mockServiceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                  알림톡: ₩{kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()} / 서비스: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                 </p>
               </CardContent>
             </Card>
@@ -2634,7 +2547,7 @@ export default function SettingsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {mockKakaoTalkUsages.map((usage) => (
+                          {kakaoTalkUsages.map((usage) => (
                             <tr key={usage.id} className="border-b hover:bg-muted/50">
                               <td className="p-4 align-middle">{usage.date}</td>
                               <td className="p-4 align-middle">
@@ -2658,7 +2571,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      총 {mockKakaoTalkUsages.length}건 · 합계: ₩{mockKakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      총 {kakaoTalkUsages.length}건 · 합계: ₩{kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                     </p>
                   </div>
                 </TabsContent>
@@ -2677,7 +2590,7 @@ export default function SettingsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {mockServiceUsages.map((usage) => (
+                          {serviceUsages.map((usage) => (
                             <tr key={usage.id} className="border-b hover:bg-muted/50">
                               <td className="p-4 align-middle">{usage.date}</td>
                               <td className="p-4 align-middle">
@@ -2693,7 +2606,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      총 {mockServiceUsages.length}건 · 합계: ₩{mockServiceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      총 {serviceUsages.length}건 · 합계: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                     </p>
                   </div>
                 </TabsContent>

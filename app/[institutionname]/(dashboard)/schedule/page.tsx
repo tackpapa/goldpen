@@ -2,7 +2,7 @@
 
 
 
-import { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,171 +17,72 @@ import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Calendar, Clock, BookOpen, Users, MapPin, ChevronLeft, ChevronRight } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import type { Schedule } from '@/lib/types/database'
 import { format, startOfWeek, addDays, addWeeks, subWeeks, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay } from 'date-fns'
 import { ko } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 
-// Mock schedule data
-const mockSchedules: Schedule[] = [
-  {
-    id: '1',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    subject: '수학',
-    day_of_week: 'monday',
-    start_time: '09:00',
-    end_time: '11:00',
-    room: '201호',
-  },
-  {
-    id: '2',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-2',
-    class_name: '영어 회화반',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    subject: '영어',
-    day_of_week: 'monday',
-    start_time: '13:00',
-    end_time: '15:00',
-    room: '202호',
-  },
-  {
-    id: '3',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-3',
-    class_name: '국어 독해반',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    subject: '국어',
-    day_of_week: 'tuesday',
-    start_time: '10:00',
-    end_time: '12:00',
-    room: '203호',
-  },
-  {
-    id: '4',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    subject: '수학',
-    day_of_week: 'wednesday',
-    start_time: '09:00',
-    end_time: '11:00',
-    room: '201호',
-  },
-  {
-    id: '5',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-2',
-    class_name: '영어 회화반',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    subject: '영어',
-    day_of_week: 'wednesday',
-    start_time: '13:00',
-    end_time: '15:00',
-    room: '202호',
-  },
-  {
-    id: '6',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-4',
-    class_name: '과학 실험반',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    subject: '과학',
-    day_of_week: 'thursday',
-    start_time: '14:00',
-    end_time: '16:00',
-    room: '실험실',
-  },
-  {
-    id: '7',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-1',
-    class_name: '수학 특강반',
-    teacher_id: 'teacher-1',
-    teacher_name: '김선생',
-    subject: '수학',
-    day_of_week: 'friday',
-    start_time: '09:00',
-    end_time: '11:00',
-    room: '201호',
-  },
-  {
-    id: '8',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-3',
-    class_name: '국어 독해반',
-    teacher_id: 'teacher-3',
-    teacher_name: '이선생',
-    subject: '국어',
-    day_of_week: 'friday',
-    start_time: '14:00',
-    end_time: '16:00',
-    room: '203호',
-  },
-  {
-    id: '9',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-5',
-    class_name: '영어 문법반',
-    teacher_id: 'teacher-2',
-    teacher_name: '박선생',
-    subject: '영어',
-    day_of_week: 'saturday',
-    start_time: '10:00',
-    end_time: '12:00',
-    room: '202호',
-  },
-  {
-    id: '10',
-    created_at: '2025-01-01',
-    org_id: 'org-1',
-    class_id: 'class-6',
-    class_name: '물리 심화반',
-    teacher_id: 'teacher-4',
-    teacher_name: '최선생',
-    subject: '물리',
-    day_of_week: 'saturday',
-    start_time: '14:00',
-    end_time: '16:00',
-    room: '204호',
-  },
-]
+// API 응답 타입 (Supabase join 결과)
+interface ScheduleApiResponse {
+  id: string
+  org_id: string
+  class_id: string
+  teacher_id: string | null
+  room_id: string
+  day_of_week: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+  start_time: string
+  end_time: string
+  status: string
+  notes?: string
+  classes?: { name: string; teacher_id?: string | null } | null
+  rooms?: { name: string } | null
+  teacher?: { name: string } | null
+}
 
-// Subject color mapping
-const subjectColors: Record<string, { bg: string; text: string; border: string }> = {
-  '수학': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
-  '영어': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
-  '국어': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
-  '과학': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
-  '물리': { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' },
-  '화학': { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200' },
-  '생물': { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200' },
+// 컴포넌트 내부에서 사용할 정규화된 타입
+interface Schedule {
+  id: string
+  org_id: string
+  class_id: string
+  teacher_id: string | null
+  room_id: string
+  day_of_week: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+  start_time: string
+  end_time: string
+  status: string
+  notes?: string
+  class_name: string
+  teacher_name: string
+  room: string
+  subject: string
+}
+
+// API 응답을 정규화된 Schedule로 변환
+function normalizeSchedule(raw: ScheduleApiResponse): Schedule {
+  return {
+    id: raw.id,
+    org_id: raw.org_id,
+    class_id: raw.class_id,
+    teacher_id: raw.teacher_id,
+    room_id: raw.room_id,
+    day_of_week: raw.day_of_week,
+    start_time: raw.start_time.substring(0, 5), // HH:MM 형식으로 정규화
+    end_time: raw.end_time.substring(0, 5),
+    status: raw.status,
+    notes: raw.notes,
+    class_name: raw.classes?.name || '미지정',
+    teacher_name: raw.teacher?.name || '미지정',
+    room: raw.rooms?.name || '미지정',
+    subject: raw.classes?.name?.split(' ')[0] || '기타', // 클래스명 첫 단어를 과목으로 사용
+  }
+}
+
+// Room color mapping
+const roomColors: Record<string, { bg: string; text: string; border: string }> = {
+  '201호': { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' },
+  '202호': { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200' },
+  '203호': { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200' },
+  '실험실': { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
+  '특강실': { bg: 'bg-pink-50', text: 'text-pink-700', border: 'border-pink-200' },
 }
 
 const dayOfWeekMap = {
@@ -195,7 +96,9 @@ const dayOfWeekMap = {
 }
 
 const timeSlots = [
-  '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00'
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
+  '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30',
+  '17:00', '17:30', '18:00', '18:30', '19:00', '19:30', '20:00', '20:30'
 ]
 
 export default function SchedulePage() {
@@ -203,32 +106,51 @@ export default function SchedulePage() {
 
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [filterType, setFilterType] = useState<'all' | 'teacher' | 'class'>('all')
-  const [selectedFilter, setSelectedFilter] = useState<string>('all')
+  const [filterTeacher, setFilterTeacher] = useState<string>('all')
+  const [filterClass, setFilterClass] = useState<string>('all')
   const [currentWeek, setCurrentWeek] = useState(new Date())
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [schedules, setSchedules] = useState<Schedule[]>([])
+
+  // Fetch schedules from API
+  useEffect(() => {
+    const fetchSchedules = async () => {
+      try {
+        const response = await fetch('/api/schedules', { credentials: 'include' })
+        const data = await response.json() as { schedules?: ScheduleApiResponse[]; error?: string }
+        if (response.ok && data.schedules) {
+          const normalized = data.schedules.map(normalizeSchedule)
+          setSchedules(normalized)
+        }
+      } catch {
+        console.error('Failed to fetch schedules')
+      }
+    }
+    fetchSchedules()
+  }, [])
 
   const handleScheduleClick = (schedule: Schedule) => {
     setSelectedSchedule(schedule)
     setIsDialogOpen(true)
   }
 
-  const getSubjectColor = (subject: string) => {
-    return subjectColors[subject] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
+  const getRoomColor = (roomName: string) => {
+    return roomColors[roomName] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200' }
   }
 
-  // Filter schedules based on selected filter
+  // Filter schedules based on selected filters
   const getFilteredSchedules = () => {
-    if (filterType === 'all' || selectedFilter === 'all') {
-      return mockSchedules
+    let filtered = schedules
+
+    if (filterTeacher !== 'all') {
+      filtered = filtered.filter(s => s.teacher_id === filterTeacher)
     }
-    if (filterType === 'teacher') {
-      return mockSchedules.filter(s => s.teacher_id === selectedFilter)
+
+    if (filterClass !== 'all') {
+      filtered = filtered.filter(s => s.class_id === filterClass)
     }
-    if (filterType === 'class') {
-      return mockSchedules.filter(s => s.class_id === selectedFilter)
-    }
-    return mockSchedules
+
+    return filtered
   }
 
   const filteredSchedules = getFilteredSchedules()
@@ -236,6 +158,36 @@ export default function SchedulePage() {
   // Get schedules for a specific day
   const getSchedulesForDay = (dayOfWeek: keyof typeof dayOfWeekMap) => {
     return filteredSchedules.filter(s => s.day_of_week === dayOfWeek)
+  }
+
+  // 시간이 겹치는 스케줄들에 column 할당 (greedy 알고리즘)
+  const assignColumns = (daySchedules: Schedule[]) => {
+    if (daySchedules.length === 0) return { columns: new Map<string, number>(), maxColumns: 1 }
+
+    const sorted = [...daySchedules].sort((a, b) => {
+      const aStart = timeSlots.indexOf(a.start_time)
+      const bStart = timeSlots.indexOf(b.start_time)
+      return aStart - bStart
+    })
+
+    const columns = new Map<string, number>()
+    const columnEndTimes: number[] = []
+
+    for (const schedule of sorted) {
+      const startIdx = timeSlots.indexOf(schedule.start_time)
+      let endIdx = timeSlots.indexOf(schedule.end_time)
+      if (endIdx === -1) endIdx = timeSlots.length
+
+      let col = 0
+      while (col < columnEndTimes.length && columnEndTimes[col] > startIdx) {
+        col++
+      }
+
+      columns.set(schedule.id, col)
+      columnEndTimes[col] = endIdx
+    }
+
+    return { columns, maxColumns: Math.max(1, columnEndTimes.length) }
   }
 
   // Weekly timetable navigation
@@ -266,72 +218,35 @@ export default function SchedulePage() {
     return filteredSchedules.filter(s => s.day_of_week === dayKey)
   }
 
-  // Teachers and classes for filters
-  const teachers = Array.from(new Set(mockSchedules.map(s => ({ id: s.teacher_id, name: s.teacher_name }))))
-  const classes = Array.from(new Set(mockSchedules.map(s => ({ id: s.class_id, name: s.class_name }))))
+  // Teachers and classes for filters (unique by id)
+  const teacherMap = new Map<string, { id: string; name: string }>()
+  const classMap = new Map<string, { id: string; name: string }>()
 
-  // Statistics
-  const totalSchedules = filteredSchedules.length
-  const totalTeachers = new Set(filteredSchedules.map(s => s.teacher_id)).size
-  const totalClasses = new Set(filteredSchedules.map(s => s.class_id)).size
+  schedules.forEach(s => {
+    if (s.teacher_id && !teacherMap.has(s.teacher_id)) {
+      teacherMap.set(s.teacher_id, { id: s.teacher_id, name: s.teacher_name })
+    }
+    if (s.class_id && !classMap.has(s.class_id)) {
+      classMap.set(s.class_id, { id: s.class_id, name: s.class_name })
+    }
+  })
+
+  const teachers = Array.from(teacherMap.values())
+  const classes = Array.from(classMap.values())
+
+  // Statistics (전체 기준, 필터와 무관, null 제외)
+  const totalSchedules = schedules.length
+  const totalTeachers = new Set(schedules.map(s => s.teacher_id).filter(Boolean)).size
+  const totalClasses = new Set(schedules.map(s => s.class_id).filter(Boolean)).size
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">강사 시간표</h1>
-          <p className="text-sm md:text-base text-muted-foreground">
-            주간 시간표와 월간 일정을 확인합니다
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Select value={filterType} onValueChange={(value: 'all' | 'teacher' | 'class') => {
-            setFilterType(value)
-            setSelectedFilter('all')
-          }}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              <SelectItem value="teacher">강사별</SelectItem>
-              <SelectItem value="class">반별</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {filterType === 'teacher' && (
-            <Select value={selectedFilter} onValueChange={setSelectedFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="강사 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체 강사</SelectItem>
-                {teachers.map(teacher => (
-                  <SelectItem key={teacher.id} value={teacher.id}>
-                    {teacher.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          {filterType === 'class' && (
-            <Select value={selectedFilter} onValueChange={setSelectedFilter}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="반 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체 반</SelectItem>
-                {classes.map(cls => (
-                  <SelectItem key={cls.id} value={cls.id}>
-                    {cls.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+      <div>
+        <h1 className="text-2xl md:text-3xl font-bold tracking-tight">강사 시간표</h1>
+        <p className="text-sm md:text-base text-muted-foreground">
+          주간 시간표와 월간 일정을 확인합니다
+        </p>
       </div>
 
       {/* Stats Cards */}
@@ -372,14 +287,38 @@ export default function SchedulePage() {
 
       {/* Tabs */}
       <Tabs defaultValue="weekly" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="weekly">주간 시간표</TabsTrigger>
-          <TabsTrigger value="monthly">월간 캘린더</TabsTrigger>
-          <TabsTrigger value="teacher">강사별 시간표</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <TabsList>
+            <TabsTrigger value="weekly">주간 시간표</TabsTrigger>
+            <TabsTrigger value="monthly">월간 캘린더</TabsTrigger>
+            <TabsTrigger value="teacher">강사별 시간표</TabsTrigger>
+          </TabsList>
+
+        </div>
 
         {/* Weekly Timetable Tab */}
         <TabsContent value="weekly" className="space-y-4">
+          {/* 반 선택 버튼들 */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={filterClass === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterClass('all')}
+            >
+              전체
+            </Button>
+            {classes.map((cls) => (
+              <Button
+                key={cls.id}
+                variant={filterClass === cls.id ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterClass(filterClass === cls.id ? 'all' : cls.id)}
+              >
+                {cls.name}
+              </Button>
+            ))}
+          </div>
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -404,80 +343,112 @@ export default function SchedulePage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <div className="grid grid-cols-8 gap-2 min-w-[900px]">
-                  {/* Header */}
-                  <div className="font-medium text-sm text-muted-foreground p-2">시간</div>
-                  {weekDays.map((day, index) => {
-                    const dayKey = Object.keys(dayOfWeekMap).find(
-                      key => dayOfWeekMap[key as keyof typeof dayOfWeekMap].index === day.getDay() - 1 ||
-                             (day.getDay() === 0 && key === 'sunday')
-                    ) as keyof typeof dayOfWeekMap
-                    const isToday = isSameDay(day, new Date())
+                {(() => {
+                  const CELL_HEIGHT = 50
 
-                    return (
-                      <div
-                        key={index}
-                        className={cn(
-                          "text-center p-2 rounded-lg",
-                          isToday && "bg-primary text-primary-foreground font-medium"
-                        )}
-                      >
-                        <div className="text-sm">
-                          {dayKey && dayOfWeekMap[dayKey].label}
-                        </div>
-                        <div className="text-xs">
-                          {format(day, 'd', { locale: ko })}
-                        </div>
+                  return (
+                    <div className="min-w-[900px] flex">
+                      {/* 시간 컬럼 */}
+                      <div className="w-14 flex-shrink-0">
+                        <div className="h-10 p-2 text-sm font-medium text-muted-foreground">시간</div>
+                        {timeSlots.map(time => (
+                          <div
+                            key={time}
+                            className="text-xs text-muted-foreground px-2 border-t flex items-start pt-1"
+                            style={{ height: `${CELL_HEIGHT}px` }}
+                          >
+                            {time}
+                          </div>
+                        ))}
                       </div>
-                    )
-                  })}
 
-                  {/* Time slots */}
-                  {timeSlots.map((time) => (
-                    <>
-                      <div key={`time-${time}`} className="text-sm text-muted-foreground p-2 flex items-center">
-                        {time}
-                      </div>
-                      {weekDays.map((day, dayIndex) => {
+                      {/* 각 요일 컬럼 */}
+                      {weekDays.map((day, index) => {
                         const dayKey = Object.keys(dayOfWeekMap).find(
                           key => dayOfWeekMap[key as keyof typeof dayOfWeekMap].index === day.getDay() - 1 ||
                                  (day.getDay() === 0 && key === 'sunday')
                         ) as keyof typeof dayOfWeekMap
 
-                        const schedulesForDay = dayKey ? getSchedulesForDay(dayKey) : []
-                        const scheduleInSlot = schedulesForDay.find(s => s.start_time === time)
+                        const isToday = isSameDay(day, new Date())
+                        const daySchedules = dayKey ? getSchedulesForDay(dayKey) : []
+                        const { columns, maxColumns } = assignColumns(daySchedules)
 
                         return (
-                          <div
-                            key={`${time}-${dayIndex}`}
-                            className="min-h-[80px] border rounded-lg p-1 hover:bg-muted/50 transition-colors"
-                          >
-                            {scheduleInSlot && (
-                              <div
-                                onClick={() => handleScheduleClick(scheduleInSlot)}
-                                className={cn(
-                                  "h-full rounded border-l-4 p-2 cursor-pointer hover:shadow-md transition-shadow",
-                                  getSubjectColor(scheduleInSlot.subject).bg,
-                                  getSubjectColor(scheduleInSlot.subject).border
-                                )}
-                              >
-                                <div className={cn("font-medium text-xs", getSubjectColor(scheduleInSlot.subject).text)}>
-                                  {scheduleInSlot.class_name}
-                                </div>
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {scheduleInSlot.teacher_name}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {scheduleInSlot.room}
-                                </div>
-                              </div>
-                            )}
+                          <div key={index} className="border-l" style={{ width: `${maxColumns * 83}px`, flexShrink: 0 }}>
+                            {/* 요일 헤더 */}
+                            <div className={cn(
+                              "h-10 p-2 text-center font-medium text-sm",
+                              isToday && "bg-primary text-primary-foreground rounded-lg"
+                            )}>
+                              {dayKey && dayOfWeekMap[dayKey].label} {format(day, 'd', { locale: ko })}
+                            </div>
+
+                            {/* 스케줄 영역 */}
+                            <div
+                              className="relative"
+                              style={{ height: `${timeSlots.length * CELL_HEIGHT}px` }}
+                            >
+                              {/* 시간 그리드 라인 */}
+                              {timeSlots.map((time, idx) => (
+                                <div
+                                  key={time}
+                                  className="absolute w-full border-t"
+                                  style={{ top: `${idx * CELL_HEIGHT}px`, height: `${CELL_HEIGHT}px` }}
+                                />
+                              ))}
+
+                              {/* 스케줄 카드들 */}
+                              {daySchedules.map(schedule => {
+                                const startIdx = timeSlots.indexOf(schedule.start_time)
+                                let endIdx = timeSlots.indexOf(schedule.end_time)
+
+                                if (startIdx === -1) return null
+                                if (endIdx === -1) endIdx = timeSlots.length
+
+                                const top = startIdx * CELL_HEIGHT
+                                const height = Math.max(1, endIdx - startIdx) * CELL_HEIGHT
+
+                                const col = columns.get(schedule.id) ?? 0
+                                const widthPercent = 100 / maxColumns
+                                const leftPercent = col * widthPercent
+
+                                return (
+                                  <div
+                                    key={schedule.id}
+                                    className="absolute p-0.5 cursor-pointer"
+                                    style={{
+                                      top: `${top}px`,
+                                      height: `${height}px`,
+                                      left: `${leftPercent}%`,
+                                      width: `${widthPercent}%`
+                                    }}
+                                    onClick={() => handleScheduleClick(schedule)}
+                                  >
+                                    <div className={cn(
+                                      "h-full p-2 rounded flex flex-col justify-center overflow-hidden hover:shadow-md transition-shadow",
+                                      getRoomColor(schedule.room).bg,
+                                      getRoomColor(schedule.room).border
+                                    )}>
+                                      <div className={cn("font-bold text-sm leading-tight", getRoomColor(schedule.room).text)}>
+                                        {schedule.class_name}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground leading-tight">
+                                        {schedule.teacher_name}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground leading-tight">
+                                        {schedule.room}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
                           </div>
                         )
                       })}
-                    </>
-                  ))}
-                </div>
+                    </div>
+                  )
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -485,6 +456,27 @@ export default function SchedulePage() {
 
         {/* Monthly Calendar Tab */}
         <TabsContent value="monthly" className="space-y-4">
+          {/* 반 선택 버튼들 */}
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={filterClass === 'all' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterClass('all')}
+            >
+              전체
+            </Button>
+            {classes.map((cls) => (
+              <Button
+                key={cls.id}
+                variant={filterClass === cls.id ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterClass(filterClass === cls.id ? 'all' : cls.id)}
+              >
+                {cls.name}
+              </Button>
+            ))}
+          </div>
+
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -539,24 +531,19 @@ export default function SchedulePage() {
                         {format(day, 'd')}
                       </div>
                       <div className="space-y-1">
-                        {schedulesForDay.slice(0, 3).map((schedule) => (
+                        {[...schedulesForDay].sort((a, b) => a.start_time.localeCompare(b.start_time)).map((schedule) => (
                           <div
                             key={schedule.id}
                             onClick={() => handleScheduleClick(schedule)}
                             className={cn(
                               "text-xs p-1 rounded cursor-pointer hover:shadow-sm transition-shadow truncate",
-                              getSubjectColor(schedule.subject).bg,
-                              getSubjectColor(schedule.subject).text
+                              getRoomColor(schedule.room).bg,
+                              getRoomColor(schedule.room).text
                             )}
                           >
                             {schedule.start_time} {schedule.class_name}
                           </div>
                         ))}
-                        {schedulesForDay.length > 3 && (
-                          <div className="text-xs text-muted-foreground">
-                            +{schedulesForDay.length - 3}개 더
-                          </div>
-                        )}
                       </div>
                     </div>
                   )
@@ -568,24 +555,40 @@ export default function SchedulePage() {
 
         {/* Teacher Schedule Tab */}
         <TabsContent value="teacher" className="space-y-4">
-          {teachers.map((teacher) => {
-            const teacherSchedules = mockSchedules.filter(s => s.teacher_id === teacher.id)
-            const schedulesByDay = Object.keys(dayOfWeekMap).map((dayKey) => ({
-              day: dayKey as keyof typeof dayOfWeekMap,
-              schedules: teacherSchedules.filter(s => s.day_of_week === dayKey)
-            }))
+          {/* 강사 선택 버튼들 */}
+          <div className="flex flex-wrap gap-2">
+            {teachers.map((teacher) => (
+              <Button
+                key={teacher.id}
+                variant={filterTeacher === teacher.id ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterTeacher(filterTeacher === teacher.id ? 'all' : teacher.id)}
+              >
+                {teacher.name}
+              </Button>
+            ))}
+          </div>
+
+          {/* 선택된 강사의 시간표 */}
+          {filterTeacher !== 'all' && (() => {
+            const selectedTeacher = teachers.find(t => t.id === filterTeacher)
+            const teacherSchedules = schedules.filter(s => s.teacher_id === filterTeacher)
+            const CELL_HEIGHT = 50
+            const dayKeys = Object.keys(dayOfWeekMap)
+
+            if (!selectedTeacher) return null
 
             return (
-              <Card key={teacher.id}>
+              <Card>
                 <CardHeader>
                   <div className="flex items-center gap-3">
                     <Avatar>
                       <AvatarFallback>
-                        {teacher.name.split('').slice(0, 2).join('')}
+                        {(selectedTeacher.name || '').split('').slice(0, 2).join('')}
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <CardTitle>{teacher.name}</CardTitle>
+                      <CardTitle>{selectedTeacher.name || '미지정'}</CardTitle>
                       <CardDescription>
                         주간 {teacherSchedules.length}개 수업
                       </CardDescription>
@@ -593,42 +596,109 @@ export default function SchedulePage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-7 gap-2">
-                    {schedulesByDay.map(({ day, schedules }) => (
-                      <div key={day} className="space-y-2">
-                        <div className="text-sm font-medium text-center">
-                          {dayOfWeekMap[day].label}
-                        </div>
-                        <div className="space-y-1 min-h-[100px]">
-                          {schedules.map((schedule) => (
-                            <div
-                              key={schedule.id}
-                              onClick={() => handleScheduleClick(schedule)}
-                              className={cn(
-                                "text-xs p-2 rounded border-l-4 cursor-pointer hover:shadow-md transition-shadow",
-                                getSubjectColor(schedule.subject).bg,
-                                getSubjectColor(schedule.subject).border
-                              )}
-                            >
-                              <div className={cn("font-medium", getSubjectColor(schedule.subject).text)}>
-                                {schedule.start_time}-{schedule.end_time}
-                              </div>
-                              <div className="text-muted-foreground mt-1">
-                                {schedule.class_name}
-                              </div>
-                              <div className="text-muted-foreground">
-                                {schedule.room}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[700px] flex">
+                      {/* 시간 컬럼 */}
+                      <div className="w-14 flex-shrink-0">
+                        <div className="h-10 p-2 text-sm font-medium text-muted-foreground">시간</div>
+                        {timeSlots.map(time => (
+                          <div
+                            key={time}
+                            className="text-xs text-muted-foreground px-2 border-t flex items-start pt-1"
+                            style={{ height: `${CELL_HEIGHT}px` }}
+                          >
+                            {time}
+                          </div>
+                        ))}
                       </div>
-                    ))}
+
+                      {/* 각 요일 컬럼 */}
+                      {dayKeys.map(dayKey => {
+                        const day = dayOfWeekMap[dayKey as keyof typeof dayOfWeekMap]
+                        const daySchedules = teacherSchedules.filter(s => s.day_of_week === dayKey)
+                        const { columns, maxColumns } = assignColumns(daySchedules)
+
+                        return (
+                          <div key={dayKey} className="border-l" style={{ width: `${maxColumns * 83}px`, flexShrink: 0 }}>
+                            <div className="h-10 p-2 text-center font-medium text-sm">
+                              {day.label}
+                            </div>
+
+                            <div
+                              className="relative"
+                              style={{ height: `${timeSlots.length * CELL_HEIGHT}px` }}
+                            >
+                              {timeSlots.map((time, idx) => (
+                                <div
+                                  key={time}
+                                  className="absolute w-full border-t"
+                                  style={{ top: `${idx * CELL_HEIGHT}px`, height: `${CELL_HEIGHT}px` }}
+                                />
+                              ))}
+
+                              {daySchedules.map(schedule => {
+                                const startIdx = timeSlots.indexOf(schedule.start_time)
+                                let endIdx = timeSlots.indexOf(schedule.end_time)
+
+                                if (startIdx === -1) return null
+                                if (endIdx === -1) endIdx = timeSlots.length
+
+                                const top = startIdx * CELL_HEIGHT
+                                const height = Math.max(1, endIdx - startIdx) * CELL_HEIGHT
+
+                                const col = columns.get(schedule.id) ?? 0
+                                const widthPercent = 100 / maxColumns
+                                const leftPercent = col * widthPercent
+
+                                return (
+                                  <div
+                                    key={schedule.id}
+                                    className="absolute p-0.5 cursor-pointer"
+                                    style={{
+                                      top: `${top}px`,
+                                      height: `${height}px`,
+                                      left: `${leftPercent}%`,
+                                      width: `${widthPercent}%`
+                                    }}
+                                    onClick={() => handleScheduleClick(schedule)}
+                                  >
+                                    <div className={cn(
+                                      "h-full p-2 rounded flex flex-col justify-center overflow-hidden hover:shadow-md transition-shadow",
+                                      getRoomColor(schedule.room).bg,
+                                      getRoomColor(schedule.room).border
+                                    )}>
+                                      <div className={cn("font-bold text-sm leading-tight", getRoomColor(schedule.room).text)}>
+                                        {schedule.class_name}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground leading-tight">
+                                        {schedule.room}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground leading-tight">
+                                        {schedule.start_time}-{schedule.end_time}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
             )
-          })}
+          })()}
+
+          {/* 강사 선택 안내 */}
+          {filterTeacher === 'all' && (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">
+                위에서 강사를 선택하면 해당 강사의 시간표가 표시됩니다.
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -646,10 +716,10 @@ export default function SchedulePage() {
             <div className="space-y-4">
               <div className="flex items-start gap-3">
                 <Badge className={cn(
-                  getSubjectColor(selectedSchedule.subject).bg,
-                  getSubjectColor(selectedSchedule.subject).text,
+                  getRoomColor(selectedSchedule.room).bg,
+                  getRoomColor(selectedSchedule.room).text,
                   "border",
-                  getSubjectColor(selectedSchedule.subject).border
+                  getRoomColor(selectedSchedule.room).border
                 )}>
                   {selectedSchedule.subject}
                 </Badge>
