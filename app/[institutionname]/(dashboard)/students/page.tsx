@@ -309,34 +309,32 @@ export default function StudentsPage() {
         }
       }
 
-      // API call
       const payload = { ...data, attendance_code: attendanceCode }
 
-      // Create new student
-      const response = await fetch('/api/students', { credentials: 'include',
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
+      const response = await fetch('/api/students', {
+        credentials: 'include',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
 
-        if (response.ok) {
-          const data = await response.json() as { student: Student }
-          setStudents([...students, data.student])
-          toast({
-            title: '등록 완료',
-            description: `학생이 등록되었습니다. 출결코드: ${attendanceCode}`,
-          })
-          setIsDialogOpen(false)
-          reset()
-          setAttendanceCodeError('')
-        } else {
-          const data = await response.json() as { error?: string }
-          toast({
-            title: '등록 실패',
-            description: data.error || '학생 등록에 실패했습니다.',
-            variant: 'destructive',
-          })
-        }
+      if (response.ok) {
+        const { student } = (await response.json()) as { student: Student }
+        setStudents([...students, student])
+        toast({
+          title: '등록 완료',
+          description: `학생이 등록되었습니다. 출결코드: ${attendanceCode}`,
+        })
+        setIsDialogOpen(false)
+        reset()
+        setAttendanceCodeError('')
+      } else {
+        const { error } = (await response.json()) as { error?: string }
+        toast({
+          title: '등록 실패',
+          description: error || '학생 등록에 실패했습니다.',
+          variant: 'destructive',
+        })
       }
     } catch (error) {
       toast({
