@@ -1,5 +1,6 @@
 'use client'
 
+export const runtime = 'edge'
 
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'

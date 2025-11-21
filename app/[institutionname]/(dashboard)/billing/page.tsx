@@ -1,5 +1,6 @@
 'use client'
 
+export const runtime = 'edge'
 import { useState, useEffect } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { createClient } from '@/lib/supabase/client'
