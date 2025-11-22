@@ -19,18 +19,27 @@ export async function GET(request: Request) {
       .single()
     if (profileError || !profile) return Response.json({ error: '프로필 없음' }, { status: 404 })
 
-    const { data: students, error } = await supabase
+    const { searchParams } = new URL(request.url)
+    const attendanceCode = searchParams.get('attendance_code') || undefined
+
+    let query = supabase
       .from('students')
-      .select('*')
+      .select('*', { count: 'exact' })
       .eq('org_id', profile.org_id)
       .order('created_at', { ascending: false })
+
+    if (attendanceCode) {
+      query = query.eq('attendance_code', attendanceCode)
+    }
+
+    const { data: students, error, count } = await query
 
     if (error) {
       console.error('Error fetching students:', error)
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    return Response.json({ students })
+    return Response.json({ students, count })
   } catch (error: any) {
     console.error('Unexpected error:', error)
     return Response.json({ error: 'Internal server error', details: error.message }, { status: 500 })
