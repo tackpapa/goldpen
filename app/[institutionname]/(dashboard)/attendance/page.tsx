@@ -77,7 +77,7 @@ export default function AttendancePage() {
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  const [historySentinel, setHistorySentinel] = useState<HTMLDivElement | null>(null)
   const HISTORY_PAGE_SIZE = 20
   const TODAY_PAGE_SIZE = 15
   const [todayPage, setTodayPage] = useState(1)
@@ -144,6 +144,8 @@ export default function AttendancePage() {
       throw new Error(data?.error || '출결 데이터 로드 실패')
     }
 
+    const fetchedCount = data.attendance?.length || 0
+    console.log('[history] page', pageToLoad, 'fetched', fetchedCount, 'hasMore?', fetchedCount === HISTORY_PAGE_SIZE)
     setAttendanceHistory(prev => pageToLoad === 0 ? (data.attendance || []) : [...prev, ...(data.attendance || [])])
 
     // 첫 페이지에서만 오늘/통계 세트업
@@ -160,8 +162,7 @@ export default function AttendancePage() {
     }
 
     // hasMore 판단
-    const fetched = data.attendance?.length || 0
-    setHasMore(fetched === HISTORY_PAGE_SIZE)
+    setHasMore(fetchedCount === HISTORY_PAGE_SIZE)
   }, [HISTORY_PAGE_SIZE])
 
   useEffect(() => {
@@ -182,7 +183,7 @@ export default function AttendancePage() {
 
   // Infinite scroll observer
   useEffect(() => {
-    if (!hasMore || isLoadingMore) return
+    if (!hasMore || isLoadingMore || !historySentinel) return
     const observer = new IntersectionObserver(
       async (entries) => {
         if (entries[0].isIntersecting) {
@@ -201,9 +202,9 @@ export default function AttendancePage() {
       },
       { rootMargin: '800px' }
     )
-    if (loadMoreRef.current) observer.observe(loadMoreRef.current)
+    observer.observe(historySentinel)
     return () => observer.disconnect()
-  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast])
+  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel])
 
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -620,7 +621,7 @@ export default function AttendancePage() {
                 </table>
                 {hasMore && (
                   <>
-                    <div ref={loadMoreRef} className="h-6" />
+                    <div ref={setHistorySentinel} className="h-6" />
                     <div className="text-center text-muted-foreground text-xs py-2">
                       {isLoadingMore ? '불러오는 중...' : ''}
                     </div>
