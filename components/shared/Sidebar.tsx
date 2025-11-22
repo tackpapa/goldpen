@@ -280,7 +280,9 @@ export function Sidebar() {
             strategy={verticalListSortingStrategy}
           >
             {navigation.map((item) => {
-              const isActive = pathname?.startsWith(item.href)
+              const isActive =
+                pathname === item.href ||
+                pathname?.startsWith(`${item.href}/`)
               return <SortableNavItem key={item.id} item={item} isActive={isActive} />
             })}
           </SortableContext>
