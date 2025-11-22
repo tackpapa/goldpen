@@ -38,8 +38,7 @@ export async function GET(request: Request) {
       .from('attendance')
       .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
       .eq('org_id', userProfile.org_id)
-      .eq('date', todayStr) // 오늘 데이터만
-      .order('updated_at', { ascending: false })
+      .order('date', { ascending: false })
 
     if (student_id) query = query.eq('student_id', student_id)
     if (class_id) query = query.eq('class_id', class_id)
@@ -112,7 +111,7 @@ export async function GET(request: Request) {
         const att = attendanceMap.get(key)
         const status = att?.status || 'scheduled'
         return {
-          id: att?.id || `${en.student_id}-${en.class_id}-${todayStr}`,
+          id: att?.id || null,
           student_id: en.student_id,
           student_name: att?.student?.name || en.student_id,
           class_id: en.class_id,
@@ -125,13 +124,50 @@ export async function GET(request: Request) {
         }
       })
       .filter(Boolean)
+      .reduce((acc: any[], cur: any) => {
+        const found = acc.find((s) => s.student_id === cur.student_id)
+        if (found) {
+          found.classes.push({
+            id: cur.id,
+            class_id: cur.class_id,
+            class_name: cur.class_name,
+            teacher_name: cur.teacher_name,
+            scheduled_time: cur.scheduled_time,
+            status: cur.status,
+          })
+          return acc
+        }
+        acc.push({
+          student_id: cur.student_id,
+          student_name: cur.student_name,
+          classes: [{
+            id: cur.id,
+            class_id: cur.class_id,
+            class_name: cur.class_name,
+            teacher_name: cur.teacher_name,
+            scheduled_time: cur.scheduled_time,
+            status: cur.status,
+          }],
+          status: cur.status,
+        })
+        return acc
+      }, [])
+      .map((s: any) => {
+        // aggregate status (worst first)
+        const priority: Record<string, number> = { absent: 0, late: 1, present: 2, excused: 3, scheduled: 4 }
+        const aggStatus = s.classes.reduce((min: {status: string, p: number}, c: any) => {
+          const p = priority[c.status] ?? 99
+          return p < min.p ? { status: c.status, p } : min
+        }, { status: 'present', p: 99 }).status
+        return { ...s, status: aggStatus }
+      })
 
     return Response.json({
       attendance,
       count: attendance?.length || 0,
       todayStudents,
-      weeklyStats: await buildWeeklyStats(supabase, userProfile.org_id, todayStr, todayStr), // 오늘만
-      studentRates: await buildStudentRates(supabase, userProfile.org_id, todayStr, todayStr), // 오늘만
+      weeklyStats: await buildWeeklyStats(supabase, userProfile.org_id, weekStartStr, todayStr), // 이번 주
+      studentRates: await buildStudentRates(supabase, userProfile.org_id, monthStartStr, todayStr), // 이번 달
       nextOffset: offset + (attendance?.length || 0),
     })
   } catch (error: any) {

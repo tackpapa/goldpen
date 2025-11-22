@@ -29,6 +29,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[]
   searchKey?: string
   searchPlaceholder?: string
+  disablePagination?: boolean
 }
 
 export function DataTable<TData, TValue>({
@@ -36,6 +37,7 @@ export function DataTable<TData, TValue>({
   data,
   searchKey,
   searchPlaceholder = "검색...",
+  disablePagination = false,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -46,7 +48,7 @@ export function DataTable<TData, TValue>({
     data,
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    getPaginationRowModel: disablePagination ? undefined : getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     onSortingChange: setSorting,
@@ -127,32 +129,34 @@ export function DataTable<TData, TValue>({
           </Table>
         </div>
       </div>
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-2">
-        <div className="flex-1 text-xs md:text-sm text-muted-foreground order-2 sm:order-1">
-          {table.getFilteredRowModel().rows.length}개 중{" "}
-          {table.getFilteredSelectedRowModel().rows.length}개 선택됨
+      {!disablePagination && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-2">
+          <div className="flex-1 text-xs md:text-sm text-muted-foreground order-2 sm:order-1">
+            {table.getFilteredRowModel().rows.length}개 중{" "}
+            {table.getFilteredSelectedRowModel().rows.length}개 선택됨
+          </div>
+          <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+              className="flex-1 sm:flex-none text-xs md:text-sm"
+            >
+              이전
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+              className="flex-1 sm:flex-none text-xs md:text-sm"
+            >
+              다음
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto order-1 sm:order-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-            className="flex-1 sm:flex-none text-xs md:text-sm"
-          >
-            이전
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-            className="flex-1 sm:flex-none text-xs md:text-sm"
-          >
-            다음
-          </Button>
-        </div>
-      </div>
+      )}
     </div>
   )
 }
