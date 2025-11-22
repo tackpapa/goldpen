@@ -140,13 +140,16 @@ export function AttendanceHistoryTab({
                       <div className="flex items-center gap-2 mb-1">
                         <Icon className={`h-4 w-4 ${config.color}`} />
                         <span className="font-medium">
-                          {new Date(record.attendance_date).toLocaleDateString('ko-KR', {
+                          {new Date(record.date || record.attendance_date).toLocaleDateString('ko-KR', {
                             year: 'numeric',
                             month: 'long',
                             day: 'numeric',
                             weekday: 'short',
                           })}
                         </span>
+                        {record.class?.name && (
+                          <span className="text-xs text-muted-foreground">· {record.class.name}</span>
+                        )}
                       </div>
 
                       {record.notes && (
