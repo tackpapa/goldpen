@@ -5,6 +5,7 @@ export const runtime = 'edge'
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
+import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
@@ -466,6 +467,9 @@ export default function StudentsPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="attendance_code">출결코드 (4자리)</Label>
+                {attendanceCodeError && (
+                  <p className="text-sm text-destructive">중복 코드는 사용할 수 없습니다.</p>
+                )}
                 <div className="flex gap-2">
                   <Input
                     id="attendance_code"
@@ -490,12 +494,9 @@ export default function StudentsPage() {
                     <RefreshCw className="h-4 w-4" />
                   </Button>
                 </div>
-                {attendanceCodeError && (
-                  <p className="text-sm text-destructive">{attendanceCodeError}</p>
-                )}
-                {errors.attendance_code && !attendanceCodeError && (
-                  <p className="text-sm text-destructive">{errors.attendance_code.message}</p>
-                )}
+                    {errors.attendance_code && !attendanceCodeError && (
+                      <p className="text-sm text-destructive">{errors.attendance_code.message}</p>
+                    )}
                 <p className="text-xs text-muted-foreground">
                   학생이 출결 체크 시 사용하는 고유 번호입니다
                 </p>
@@ -522,24 +523,30 @@ export default function StudentsPage() {
 
               <div className="space-y-2">
                 <Label>소속(필수) *</Label>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
                   {campusOptions.map((option) => {
                     const checked = selectedCampuses.includes(option.id)
                     return (
-                      <label key={option.id} className="flex items-center gap-2 text-sm">
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(val) => {
-                            setSelectedCampuses((prev) =>
-                              val
-                                ? [...prev, option.id]
-                                : prev.filter((id) => id !== option.id)
-                            )
-                          }}
-                          disabled={isLoading}
-                        />
-                        <span>{option.label}</span>
-                      </label>
+                      <Button
+                        key={option.id}
+                        type="button"
+                        variant={checked ? 'default' : 'outline'}
+                        size="sm"
+                        className={cn(
+                          'px-3',
+                          checked ? '' : 'bg-transparent'
+                        )}
+                        onClick={() => {
+                          setSelectedCampuses((prev) =>
+                            checked
+                              ? prev.filter((id) => id !== option.id)
+                              : [...prev, option.id]
+                          )
+                        }}
+                        disabled={isLoading}
+                      >
+                        {option.label}
+                      </Button>
                     )
                   })}
                 </div>
