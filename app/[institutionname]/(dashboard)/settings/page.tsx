@@ -104,7 +104,17 @@ export default function SettingsPage() {
           error?: string
         }
         if (response.ok) {
-          if (data.organization) setOrganization(data.organization)
+          if (data.organization) {
+            const org = data.organization as Organization
+            setOrganization({
+              ...defaultOrganization,
+              ...org,
+              settings: {
+                ...defaultOrganization.settings,
+                ...(org.settings || {}),
+              },
+            })
+          }
           if (data.branches) setBranches(data.branches)
           if (data.rooms) setRooms(data.rooms)
           if (data.kakaoTalkUsages) setKakaoTalkUsages(data.kakaoTalkUsages)
