@@ -74,9 +74,6 @@ const GRADE_OPTIONS = [
   { value: '고2', label: '고2' },
   { value: '고3', label: '고3' },
   { value: '재수', label: '재수' },
-  { value: '삼수', label: '삼수' },
-  { value: '사수', label: '사수' },
-  { value: 'N수', label: 'N수' },
 ]
 
 export function BasicInfoTab({
