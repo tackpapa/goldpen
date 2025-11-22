@@ -63,12 +63,12 @@ export async function GET(
         .eq('student_id', studentId)
         .order('day_of_week', { ascending: true }),
 
-      // 출석 기록 (최근 100건)
+      // 출결 기록 (최근 100건) - attendance 테이블 사용
       supabase
-        .from('attendance_records')
-        .select('*')
+        .from('attendance')
+        .select('id, student_id, class_id, status, notes, date, class:class_id(name)')
         .eq('student_id', studentId)
-        .order('attendance_date', { ascending: false })
+        .order('date', { ascending: false })
         .limit(100),
 
       // 결제 기록
