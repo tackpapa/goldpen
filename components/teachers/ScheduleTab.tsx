@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import type { Teacher } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -8,30 +7,37 @@ import { Calendar, Clock } from 'lucide-react'
 
 interface ScheduleTabProps {
   teacher: Teacher
+  classes?: Array<{
+    id: string
+    name?: string
+    subject?: string
+    student_count?: number
+    day_of_week?: string | null
+    start_time?: string | null
+    end_time?: string | null
+  }> | null
 }
 
-// Mock schedule data
-const generateDummySchedule = () => {
-  const days = ['월', '화', '수', '목', '금', '토', '일']
-  const classes = ['수학 특강반', '과학 실험반', '영어 회화반', '국어 독해반']
-  const times = ['09:00-11:00', '11:00-13:00', '14:00-16:00', '16:00-18:00', '18:00-20:00']
-
-  return days.map((day) => ({
-    day,
-    sessions: Array.from({ length: Math.floor(Math.random() * 3) + 1 }, (_, i) => ({
-      id: `${day}-${i}`,
-      time: times[Math.floor(Math.random() * times.length)],
-      className: classes[Math.floor(Math.random() * classes.length)],
-      students: Math.floor(Math.random() * 15) + 5,
-    })),
-  }))
+const dayLabels: Record<string, string> = {
+  monday: '월요일',
+  tuesday: '화요일',
+  wednesday: '수요일',
+  thursday: '목요일',
+  friday: '금요일',
+  saturday: '토요일',
+  sunday: '일요일',
 }
 
-export function ScheduleTab({ teacher }: ScheduleTabProps) {
-  const [schedule] = useState(generateDummySchedule())
+export function ScheduleTab({ classes }: ScheduleTabProps) {
+  const grouped = (classes || []).reduce<Record<string, any[]>>((acc, c) => {
+    const key = c.day_of_week || 'unscheduled'
+    acc[key] = acc[key] || []
+    acc[key].push(c)
+    return acc
+  }, {})
 
-  const totalClasses = schedule.reduce((sum, day) => sum + day.sessions.length, 0)
-  const totalHoursPerWeek = totalClasses * 2 // Assuming 2 hours per class
+  const totalClasses = classes?.length || 0
+  const totalHoursPerWeek = Math.max(totalClasses, 0) * 2 // rough fallback
 
   return (
     <div className="space-y-6">
@@ -64,33 +70,36 @@ export function ScheduleTab({ teacher }: ScheduleTabProps) {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {schedule.map((daySchedule) => (
-              <div key={daySchedule.day} className="border rounded-lg p-4">
+            {Object.entries(grouped).length === 0 && (
+              <p className="text-sm text-muted-foreground">등록된 수업이 없습니다.</p>
+            )}
+            {Object.entries(grouped).map(([day, dayClasses]) => (
+              <div key={day} className="border rounded-lg p-4">
                 <div className="flex items-center gap-2 mb-3">
                   <Calendar className="h-4 w-4 text-primary" />
-                  <h3 className="font-semibold">{daySchedule.day}요일</h3>
-                  <Badge variant="secondary">{daySchedule.sessions.length}개 수업</Badge>
+                  <h3 className="font-semibold">{dayLabels[day] || '요일 미지정'}</h3>
+                  <Badge variant="secondary">{dayClasses.length}개 수업</Badge>
                 </div>
 
-                {daySchedule.sessions.length > 0 ? (
-                  <div className="space-y-2 ml-6">
-                    {daySchedule.sessions.map((session) => (
-                      <div
-                        key={session.id}
-                        className="flex items-center justify-between p-2 bg-muted/50 rounded"
-                      >
-                        <div className="flex items-center gap-3">
-                          <Clock className="h-3 w-3 text-muted-foreground" />
-                          <span className="text-sm font-medium">{session.time}</span>
-                          <span className="text-sm text-muted-foreground">{session.className}</span>
-                        </div>
-                        <Badge variant="outline">{session.students}명</Badge>
+                <div className="space-y-2 ml-6">
+                  {dayClasses.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between p-2 bg-muted/50 rounded"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Clock className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-sm font-medium">
+                          {c.start_time && c.end_time ? `${c.start_time}-${c.end_time}` : '시간 미지정'}
+                        </span>
+                        <span className="text-sm text-muted-foreground">
+                          {c.name || c.subject || '반 이름 없음'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground ml-6">수업 없음</p>
-                )}
+                      <Badge variant="outline">{c.student_count ?? 0}명</Badge>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

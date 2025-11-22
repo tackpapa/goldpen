@@ -8,8 +8,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { readFileSync } from 'fs'
 
-const SUPABASE_URL = 'https://ipqhhqduppzvsqwwzjkp.supabase.co'
-const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlwcWhocWR1cHB6dnNxd3d6amtwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzYzNjYzOCwiZXhwIjoyMDc5MjEyNjM4fQ.bedodvDtJ9WkJblh7wITNTkSXk8DyjCjIkjAIxSl8qc'
+const SUPABASE_URL = process.env.SUPABASE_URL
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 console.log('🚀 프로덕션 마이그레이션 시작...\n')
 console.log('Target:', SUPABASE_URL)

@@ -4,6 +4,7 @@ export const runtime = 'edge'
 
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Button } from '@/components/ui/button'
@@ -43,7 +44,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { TeacherDetailModal } from '@/components/teachers/TeacherDetailModal'
+
+const TeacherDetailModal = dynamic(
+  () => import('@/components/teachers/TeacherDetailModal').then((m) => m.TeacherDetailModal),
+  { ssr: false }
+)
 
 interface StudentForAssignment {
   id: string
@@ -54,10 +59,10 @@ interface StudentForAssignment {
 
 const COLORS = ['#3b82f6', '#22c55e', '#eab308']
 
-const statusMap = {
-  active: { label: '재직', variant: 'default' as const },
-  inactive: { label: '휴직', variant: 'secondary' as const },
-}
+  const statusMap = {
+    active: { label: '재직', variant: 'default' as const },
+    inactive: { label: '휴직', variant: 'secondary' as const },
+  }
 
 const employmentTypeMap = {
   full_time: '정규직',
@@ -70,11 +75,45 @@ const salaryTypeMap = {
   hourly: '시급',
 }
 
+const normalizeStatusValue = (status?: string): 'active' | 'inactive' => {
+  const s = (status || '').toString().trim().toLowerCase()
+  if (['inactive', '휴직', 'leave', '휴무'].includes(s)) return 'inactive'
+  return 'active'
+}
+
+const normalizeTeacher = (t: any): Teacher => ({
+  id: t.id,
+  created_at: t.created_at ?? '',
+  updated_at: t.updated_at ?? t.created_at ?? '',
+  org_id: t.org_id ?? '',
+  name: t.name ?? '이름없음',
+  email: t.email ?? '',
+  phone: t.phone ?? '',
+  subjects: Array.isArray(t.subjects)
+    ? t.subjects.filter((s: any): s is string => Boolean(s))
+    : typeof t.subjects === 'string'
+      ? t.subjects.split(',').map((s: string) => s.trim()).filter(Boolean)
+      : [],
+  status: normalizeStatusValue(t.status),
+  employment_type: ['full_time', 'part_time', 'contract'].includes(t.employment_type)
+    ? t.employment_type
+    : 'full_time',
+  salary_type: ['monthly', 'hourly'].includes(t.salary_type) ? t.salary_type : 'monthly',
+  salary_amount: Number(t.salary_amount ?? 0),
+  hire_date: t.hire_date ?? '',
+  lesson_note_token: t.lesson_note_token,
+  assigned_students: t.assigned_students ?? [],
+  total_hours_worked: Number(t.total_hours_worked ?? 0),
+  earned_salary: Number(t.earned_salary ?? 0),
+  notes: t.notes ?? '',
+})
+
 export default function TeachersPage() {
   usePageAccess('teachers')
 
   const { toast } = useToast()
   const [teachers, setTeachers] = useState<Teacher[]>([])
+  const [rawTeachers, setRawTeachers] = useState<Teacher[]>([])
   const [allStudents, setAllStudents] = useState<StudentForAssignment[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null)
@@ -88,6 +127,44 @@ export default function TeachersPage() {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
   const [isTeacherDetailModalOpen, setIsTeacherDetailModalOpen] = useState(false)
   const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<Teacher | null>(null)
+  const [classes, setClasses] = useState<any[]>([])
+
+  const normalizeStatus = (status?: string) => normalizeStatusValue(status)
+
+  // Chart data (fallback-safe)
+  const teacherHoursData = teachers.map((t) => ({
+    name: t.name || '미등록',
+    hours: (t as any).weekly_hours ?? (t as any).hours ?? t.total_hours_worked ?? 0,
+  }))
+
+  const teacherStudentsData = teachers.map((t) => ({
+    name: t.name || '미등록',
+    students:
+      (t as any).student_count ??
+      (t as any).students ??
+      (t.assigned_students ? t.assigned_students.length : 0),
+  }))
+
+  const employmentCounts = teachers.reduce(
+    (acc, t) => {
+      const key = (t.employment_type as keyof typeof employmentTypeMap) || 'full_time'
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    },
+    { full_time: 0, part_time: 0, contract: 0 } as Record<string, number>
+  )
+
+  const employmentTypeData = Object.entries(employmentTypeMap).map(([key, label]) => ({
+    name: label,
+    value: employmentCounts[key] ?? 0,
+  }))
+  const employmentPieData = employmentTypeData.filter((d) => d.value > 0)
+
+  const getSalaryAmount = (t: Teacher | any) => Number(t?.salary_amount ?? 0)
+  const getSalaryType = (t: Teacher | any) => (t?.salary_type === 'hourly' ? 'hourly' : 'monthly')
+  const getEmploymentType = (t: Teacher | any) =>
+    employmentTypeMap[(t?.employment_type as keyof typeof employmentTypeMap) ?? 'full_time'] ||
+    '형태 미정'
 
   // Form state
   const [formData, setFormData] = useState<Partial<Teacher>>({
@@ -110,11 +187,13 @@ export default function TeachersPage() {
     const fetchTeachers = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch('/api/teachers', { credentials: 'include', credentials: 'include' })
-        const data = await response.json() as { teachers?: Teacher[]; error?: string }
+        const response = await fetch('/api/teachers/overview', { credentials: 'include' })
+        const data = await response.json() as { teachers?: (Teacher & { assigned_students_count?: number; assigned_classes_count?: number })[]; error?: string }
 
         if (response.ok) {
-          setTeachers(data.teachers || [])
+          const normalized = (data.teachers || []).map(normalizeTeacher)
+          setRawTeachers(normalized)
+          setTeachers(normalized)
         } else {
           toast({
             title: '데이터 로드 실패',
@@ -135,7 +214,7 @@ export default function TeachersPage() {
 
     const fetchStudents = async () => {
       try {
-        const response = await fetch('/api/students', { credentials: 'include', credentials: 'include' })
+        const response = await fetch('/api/students', { credentials: 'include' })
         const data = await response.json() as { students?: any[]; error?: string }
 
         if (response.ok) {
@@ -146,9 +225,34 @@ export default function TeachersPage() {
       }
     }
 
+    const fetchClasses = async () => {
+      try {
+        const response = await fetch('/api/classes', { credentials: 'include' })
+        const data = await response.json() as { classes?: any[]; error?: string }
+        if (response.ok) {
+          setClasses(data.classes || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch classes:', error)
+      }
+    }
+
     fetchTeachers()
     fetchStudents()
+    fetchClasses()
   }, [toast])
+
+  // Derive assigned_students from student.teacher_id whenever teachers or students change
+  useEffect(() => {
+    if (!rawTeachers.length) return
+    const updated = rawTeachers.map((t) => {
+      const assignedIds = allStudents
+        .filter((s: any) => s.teacher_id === t.id)
+        .map((s: any) => s.id)
+      return { ...t, assigned_students: assignedIds }
+    })
+    setTeachers(updated)
+  }, [rawTeachers, allStudents])
 
   const handleCreateTeacher = () => {
     setIsEditing(false)
@@ -169,13 +273,14 @@ export default function TeachersPage() {
 
   const handleEditTeacher = (teacher: Teacher) => {
     setIsEditing(true)
-    setSelectedTeacher(teacher)
-    setFormData(teacher)
+    const norm = normalizeTeacher(teacher)
+    setSelectedTeacher(norm)
+    setFormData(norm)
     setIsDialogOpen(true)
   }
 
   const handleDeleteTeacher = (teacher: Teacher) => {
-    setSelectedTeacher(teacher)
+    setSelectedTeacher(normalizeTeacher(teacher))
     setIsDeleteDialogOpen(true)
   }
 
@@ -183,13 +288,14 @@ export default function TeachersPage() {
     if (!selectedTeacher) return
 
     setIsLoading(true)
+    const prevTeachers = teachers
+    setTeachers(teachers.filter((t) => t.id !== selectedTeacher.id))
     try {
       const response = await fetch(`/api/teachers/${selectedTeacher.id}`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
-        setTeachers(teachers.filter((t) => t.id !== selectedTeacher.id))
         toast({
           title: '강사 삭제 완료',
           description: `${selectedTeacher.name} 강사가 삭제되었습니다.`,
@@ -198,6 +304,7 @@ export default function TeachersPage() {
         setSelectedTeacher(null)
       } else {
         const data = await response.json() as { error?: string }
+        setTeachers(prevTeachers)
         toast({
           title: '삭제 실패',
           description: data.error || '강사 삭제에 실패했습니다.',
@@ -205,6 +312,7 @@ export default function TeachersPage() {
         })
       }
     } catch (error) {
+      setTeachers(prevTeachers)
       toast({
         title: '오류 발생',
         description: '서버와 통신할 수 없습니다.',
@@ -216,8 +324,11 @@ export default function TeachersPage() {
   }
 
   const handleOpenAssignStudentDialog = (teacher: Teacher) => {
-    setSelectedTeacher(teacher)
-    setSelectedStudents(teacher.assigned_students || [])
+    const norm = normalizeTeacher(teacher)
+    setSelectedTeacher(norm)
+    // 최신 학생 목록 기준 재계산
+    const assignedIds = allStudents.filter((s: any) => s.teacher_id === norm.id).map((s: any) => s.id)
+    setSelectedStudents(assignedIds)
     setStudentSearchQuery('') // 검색어 초기화
     setIsAssignStudentDialogOpen(true)
   }
@@ -240,24 +351,55 @@ export default function TeachersPage() {
     )
   }
 
-  const handleSaveStudentAssignment = () => {
+  const handleSaveStudentAssignment = async () => {
     if (!selectedTeacher) return
 
-    const updatedTeachers = teachers.map((teacher) =>
-      teacher.id === selectedTeacher.id
-        ? { ...teacher, assigned_students: selectedStudents, updated_at: new Date().toISOString() }
-        : teacher
-    )
-    setTeachers(updatedTeachers)
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/teachers/${selectedTeacher.id}/assign-students`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ studentIds: selectedStudents }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || '배정 저장에 실패했습니다.')
 
-    toast({
-      title: '학생 배정 완료',
-      description: `${selectedTeacher.name} 강사에게 ${selectedStudents.length}명의 학생이 배정되었습니다.`,
-    })
+      const updatedTeachers = teachers.map((teacher) =>
+        teacher.id === selectedTeacher.id
+          ? { ...teacher, assigned_students: selectedStudents, updated_at: new Date().toISOString() }
+          : teacher
+      )
+      setTeachers(updatedTeachers)
 
-    setIsAssignStudentDialogOpen(false)
-    setSelectedTeacher(null)
-    setSelectedStudents([])
+      // 로컬 학생 목록에도 teacher_id 반영 (선택된 학생들은 지정, 나머지는 해제)
+      setAllStudents((prev: any[]) =>
+        prev.map((s) => {
+          if (selectedStudents.includes(s.id)) {
+            return { ...s, teacher_id: selectedTeacher.id }
+          }
+          if (s.teacher_id === selectedTeacher.id) {
+            return { ...s, teacher_id: null }
+          }
+          return s
+        })
+      )
+
+      toast({
+        title: '학생 배정 완료',
+        description: `${selectedTeacher.name} 강사에게 ${selectedStudents.length}명의 학생이 배정되었습니다.`,
+      })
+      setIsAssignStudentDialogOpen(false)
+      setSelectedTeacher(null)
+      setSelectedStudents([])
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: error instanceof Error ? error.message : '배정 저장 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleViewDetail = (teacher: Teacher) => {
@@ -293,9 +435,14 @@ export default function TeachersPage() {
     }
 
     setIsLoading(true)
+    const prevTeachers = teachers
     try {
       if (isEditing && selectedTeacher) {
         // Update existing teacher
+        const optimistic = teachers.map((t) =>
+          t.id === selectedTeacher.id ? normalizeTeacher({ ...t, ...formData, id: selectedTeacher.id }) : t
+        )
+        setTeachers(optimistic)
         const response = await fetch(`/api/teachers/${selectedTeacher.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -306,7 +453,7 @@ export default function TeachersPage() {
           const result = await response.json() as { teacher: Teacher }
           setTeachers(
             teachers.map((teacher) =>
-              teacher.id === selectedTeacher.id ? result.teacher : teacher
+              teacher.id === selectedTeacher.id ? normalizeTeacher(result.teacher) : teacher
             )
           )
           toast({
@@ -317,6 +464,7 @@ export default function TeachersPage() {
           setSelectedTeacher(null)
         } else {
           const error = await response.json() as { error?: string }
+          setTeachers(prevTeachers)
           toast({
             title: '수정 실패',
             description: error.error || '강사 정보 수정에 실패했습니다.',
@@ -325,22 +473,28 @@ export default function TeachersPage() {
         }
       } else {
         // Create new teacher
+        const tempId = crypto.randomUUID()
+        const optimisticTeacher = normalizeTeacher({ ...formData, id: tempId })
+        setTeachers([optimisticTeacher, ...teachers])
         const response = await fetch('/api/teachers', { credentials: 'include',
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formData),
         })
 
-        if (response.ok) {
-          const result = await response.json() as { teacher: Teacher }
-          setTeachers([result.teacher, ...teachers])
-          toast({
-            title: '강사 등록 완료',
-            description: '새로운 강사가 등록되었습니다.',
-          })
-          setIsDialogOpen(false)
+      if (response.ok) {
+        const result = await response.json() as { teacher: Teacher }
+        setTeachers((prev) =>
+          prev.map((t) => (t.id === tempId ? normalizeTeacher(result.teacher) : t))
+        )
+        toast({
+          title: '강사 등록 완료',
+          description: '새로운 강사가 등록되었습니다.',
+        })
+        setIsDialogOpen(false)
         } else {
           const error = await response.json() as { error?: string }
+          setTeachers((prev) => prev.filter((t) => t.id !== tempId))
           toast({
             title: '등록 실패',
             description: error.error || '강사 등록에 실패했습니다.',
@@ -349,6 +503,7 @@ export default function TeachersPage() {
         }
       }
     } catch (error) {
+      setTeachers(prevTeachers)
       toast({
         title: '오류 발생',
         description: '서버와 통신할 수 없습니다.',
@@ -360,7 +515,8 @@ export default function TeachersPage() {
   }
 
   const handleOpenTeacherDetail = (teacher: Teacher) => {
-    setSelectedTeacherForDetail(teacher)
+    const norm = normalizeTeacher(teacher)
+    setSelectedTeacherForDetail(norm)
     setIsTeacherDetailModalOpen(true)
   }
 
@@ -397,7 +553,7 @@ export default function TeachersPage() {
         const subjects = row.getValue('subjects') as string[]
         return (
           <div className="flex flex-wrap gap-1">
-            {subjects.map((subject) => (
+            {(subjects || []).map((subject) => (
               <Badge key={subject} variant="outline">
                 {subject}
               </Badge>
@@ -415,8 +571,9 @@ export default function TeachersPage() {
       header: '급여',
       cell: ({ row }) => {
         const teacher = row.original
-        const amount = teacher.salary_amount.toLocaleString()
-        const unit = teacher.salary_type === 'monthly' ? '원/월' : '원/시간'
+        const amount = getSalaryAmount(teacher).toLocaleString()
+        const salaryType = getSalaryType(teacher)
+        const unit = salaryType === 'monthly' ? '원/월' : '원/시간'
         return <span>{amount}{unit}</span>
       },
     },
@@ -424,8 +581,8 @@ export default function TeachersPage() {
       accessorKey: 'status',
       header: '상태',
       cell: ({ row }) => {
-        const status = row.getValue('status') as keyof typeof statusMap
-        const { label, variant } = statusMap[status]
+        const statusKey = normalizeStatus(row.getValue('status') as string) as keyof typeof statusMap
+        const { label, variant } = statusMap[statusKey]
         return <Badge variant={variant}>{label}</Badge>
       },
     },
@@ -490,12 +647,15 @@ export default function TeachersPage() {
     {
       accessorKey: 'class_name',
       header: '반 이름',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium">{row.getValue('class_name')}</span>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const className = row.getValue('class_name') as string
+        return (
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">{className || '미정'}</span>
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'subject',
@@ -515,8 +675,8 @@ export default function TeachersPage() {
 
   // Statistics (now using DB data - currently empty until we add teacher-class relationship)
   const totalTeachers = teachers.length
-  const activeTeachers = teachers.filter((t) => t.status === 'active').length
-  const totalClasses = 0 // TODO: Get from teacher-class relationship table
+  const activeTeachers = teachers.filter((t) => normalizeStatus(t.status) === 'active').length
+  const totalClasses = classes.length
   const totalStudents = allStudents.length
 
   return (
@@ -611,6 +771,12 @@ export default function TeachersPage() {
             {teachers
               .filter((t) => t.status === 'active')
               .map((teacher) => {
+                const teacherClasses = classes.filter((c) => c.teacher_id === teacher.id)
+                const classCount = teacherClasses.length
+                const studentCount = teacherClasses.reduce(
+                  (sum, c) => sum + (c.student_count ?? 0),
+                  0
+                )
                 return (
                   <Card key={teacher.id}>
                     <CardHeader>
@@ -624,7 +790,9 @@ export default function TeachersPage() {
                           <div>
                             <CardTitle>{teacher.name}</CardTitle>
                             <CardDescription>
-                              {teacher.subjects?.join(', ') || ''} · 0개 반 · 0명
+                              {teacher.subjects?.join(', ') || ''}
+                              {' · '}
+                              {classCount}개 반 · {studentCount}명
                             </CardDescription>
                           </div>
                         </div>
@@ -696,22 +864,25 @@ export default function TeachersPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={employmentTypeData}
+                      data={employmentPieData.map((d, idx) => ({ ...d, _id: `${d.name}-${idx}` }))}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      label={({ name, percent, index }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       outerRadius={100}
                       fill="#8884d8"
                       dataKey="value"
                     >
-                      {employmentTypeData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      {employmentPieData.map((entry, index) => (
+                        <Cell key={`cell-${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
                     <Tooltip />
                   </PieChart>
                 </ResponsiveContainer>
+                {employmentPieData.length === 0 && (
+                  <p className="mt-4 text-sm text-muted-foreground text-center">표시할 데이터가 없습니다.</p>
+                )}
               </CardContent>
             </Card>
 
@@ -733,16 +904,16 @@ export default function TeachersPage() {
                         <div>
                           <p className="font-medium">{teacher.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {employmentTypeMap[teacher.employment_type]}
+                            {getEmploymentType(teacher)}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="font-medium">
-                          {teacher.salary_amount.toLocaleString()}원
+                          {getSalaryAmount(teacher).toLocaleString()}원
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {salaryTypeMap[teacher.salary_type]}
+                          {salaryTypeMap[getSalaryType(teacher)] ?? '월급'}
                         </p>
                       </div>
                     </div>
@@ -1049,6 +1220,8 @@ export default function TeachersPage() {
         teacher={selectedTeacherForDetail}
         open={isTeacherDetailModalOpen}
         onOpenChange={setIsTeacherDetailModalOpen}
+        students={allStudents.filter((s: any) => s.teacher_id === selectedTeacherForDetail?.id)}
+        classes={classes.filter((c: any) => c.teacher_id === selectedTeacherForDetail?.id)}
         onUpdate={(updatedTeacher) => {
           setTeachers(teachers.map(t => t.id === updatedTeacher.id ? updatedTeacher : t))
           toast({
@@ -1096,38 +1269,40 @@ export default function TeachersPage() {
                   <div>
                     <Label className="text-muted-foreground">고용 형태</Label>
                     <p className="mt-1 font-medium">
-                      {employmentTypeMap[selectedTeacher.employment_type]}
+                      {getEmploymentType(selectedTeacher)}
                     </p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">급여 유형</Label>
                     <p className="mt-1 font-medium">
-                      {salaryTypeMap[selectedTeacher.salary_type]}
+                      {salaryTypeMap[getSalaryType(selectedTeacher)] ?? '월급'}
                     </p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">급여 금액</Label>
                     <p className="mt-1 font-medium">
-                      {selectedTeacher.salary_amount.toLocaleString()}원
-                      {selectedTeacher.salary_type === 'monthly' ? '/월' : '/시간'}
+                      {getSalaryAmount(selectedTeacher).toLocaleString()}원
+                      {getSalaryType(selectedTeacher) === 'monthly' ? '/월' : '/시간'}
                     </p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">입사일</Label>
                     <p className="mt-1 font-medium">
-                      {format(new Date(selectedTeacher.hire_date), 'yyyy년 MM월 dd일', { locale: ko })}
+                      {selectedTeacher.hire_date
+                        ? format(new Date(selectedTeacher.hire_date), 'yyyy년 MM월 dd일', { locale: ko })
+                        : '미등록'}
                     </p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">상태</Label>
                     <div className="mt-1">
-                      <Badge variant={statusMap[selectedTeacher.status].variant}>
-                        {statusMap[selectedTeacher.status].label}
+                      <Badge variant={statusMap[normalizeStatus(selectedTeacher.status)].variant}>
+                        {statusMap[normalizeStatus(selectedTeacher.status)].label}
                       </Badge>
                     </div>
                   </div>
                   {/* Show salary tracking for hourly teachers */}
-                  {selectedTeacher.salary_type === 'hourly' && (
+                  {getSalaryType(selectedTeacher) === 'hourly' && (
                     <>
                       <div>
                         <Label className="text-muted-foreground">총 근무 시간</Label>
@@ -1150,11 +1325,14 @@ export default function TeachersPage() {
               <div className="space-y-4 border-t pt-4">
                 <h3 className="text-lg font-semibold">담당 과목</h3>
                 <div className="flex flex-wrap gap-2">
-                  {selectedTeacher.subjects.map((subject) => (
+                  {(selectedTeacher.subjects || []).map((subject) => (
                     <Badge key={subject} variant="secondary">
                       {subject}
                     </Badge>
                   ))}
+                  {!selectedTeacher.subjects?.length && (
+                    <span className="text-sm text-muted-foreground">등록된 과목 없음</span>
+                  )}
                 </div>
               </div>
 

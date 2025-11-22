@@ -1,3 +1,4 @@
+import { e2eBypass } from '@/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
 import { createClient } from '@supabase/supabase-js'

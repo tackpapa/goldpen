@@ -120,7 +120,7 @@ export default function ExpensesPage() {
     total_expenses: 0,
     category_expenses: [],
     previous_month_total: 0,
-    change_percentage: 0
+    change_percentage: 0,
   }
   const previousMonth = monthlyExpenses[monthlyExpenses.length - 2] || {
     month: '',
@@ -129,6 +129,11 @@ export default function ExpensesPage() {
     previous_month_total: 0,
     change_percentage: 0
   }
+
+  // Safe top-category accessor to avoid runtime errors when API returns empty arrays
+  const topCategory = latestMonth.category_expenses?.[0]
+    ? latestMonth.category_expenses[0]
+    : { category_name: '지출 없음', amount: 0, percentage: 0 }
 
   // Chart data transformations
   const trendData = monthlyExpenses.map(item => ({
@@ -139,9 +144,11 @@ export default function ExpensesPage() {
 
   const categoryTrendData = monthlyExpenses.map(item => {
     const data: Record<string, string | number> = { month: item.month.slice(5) }
-    item.category_expenses.forEach(cat => {
-      data[cat.category_name] = cat.amount / 10000
-    })
+    item.category_expenses
+      .filter((cat) => cat && cat.category_name)
+      .forEach(cat => {
+        data[cat.category_name] = cat.amount / 10000
+      })
     return data
   })
 
@@ -163,6 +170,51 @@ export default function ExpensesPage() {
       notes: '',
     })
     setIsExpenseDialogOpen(true)
+  }
+
+  // 월별 요약 재계산 (레코드 기반)
+  function recomputeMonthly(records: ExpenseRecord[]): MonthlyExpenseSummary[] {
+    const grouped = new Map<string, { total: number; categories: Map<string, number> }>()
+
+    records.forEach((rec) => {
+      const month = rec.expense_date.slice(0, 7) // YYYY-MM
+      if (!grouped.has(month)) {
+        grouped.set(month, { total: 0, categories: new Map() })
+      }
+      const bucket = grouped.get(month)!
+      bucket.total += rec.amount
+      bucket.categories.set(rec.category_name, (bucket.categories.get(rec.category_name) || 0) + rec.amount)
+    })
+
+    const months = Array.from(grouped.keys()).sort() // asc
+    const summaries: MonthlyExpenseSummary[] = months.map((month) => {
+      const { total, categories } = grouped.get(month)!
+      const category_expenses = Array.from(categories.entries())
+        .map(([category_name, amount]) => ({
+          category_id: '', // 로컬 생성 데이터라 id 없음
+          category_name,
+          amount,
+          percentage: total > 0 ? (amount / total) * 100 : 0,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+
+      return {
+        month,
+        total_expenses: total,
+        category_expenses,
+        previous_month_total: 0,
+        change_percentage: 0,
+      }
+    })
+
+    // change_percentage 계산 (두 번째 패스)
+    summaries.forEach((summary, idx) => {
+      const prevTotal = idx > 0 ? summaries[idx - 1].total_expenses : 0
+      summary.previous_month_total = prevTotal
+      summary.change_percentage = prevTotal > 0 ? ((summary.total_expenses - prevTotal) / prevTotal) * 100 : 0
+    })
+
+    return summaries
   }
 
   // Handle save expense
@@ -193,7 +245,6 @@ export default function ExpensesPage() {
       return
     }
 
-    // TODO: Save to database
     const newExpense: ExpenseRecord = {
       id: `expense-${Date.now()}`,
       created_at: new Date().toISOString(),
@@ -207,7 +258,11 @@ export default function ExpensesPage() {
       notes: expenseForm.notes || undefined,
     }
 
-    console.log('New expense:', newExpense)
+    // Optimistically 반영
+    const updatedRecords = [newExpense, ...expenseRecords]
+    setExpenseRecords(updatedRecords)
+    setMonthlyExpenses(recomputeMonthly(updatedRecords))
+    setSelectedMonth(newExpense.expense_date.slice(0, 7))
 
     toast({
       title: '지출 등록 완료',
@@ -225,6 +280,7 @@ export default function ExpensesPage() {
       recurring_type: value ? '' : '',
     })
   }
+
 
   return (
     <div className="space-y-6">
@@ -300,14 +356,14 @@ export default function ExpensesPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {latestMonth.category_expenses[0].category_name}
+              {topCategory.category_name}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              ₩{latestMonth.category_expenses[0].amount.toLocaleString()}
+              ₩{topCategory.amount.toLocaleString()}
             </p>
             <div className="flex items-center mt-2">
               <Badge variant="secondary">
-                {latestMonth.category_expenses[0].percentage.toFixed(1)}%
+                {topCategory.percentage.toFixed(1)}%
               </Badge>
               <span className="text-xs text-muted-foreground ml-2">전체 지출 대비</span>
             </div>
@@ -564,7 +620,7 @@ export default function ExpensesPage() {
                 <ResponsiveContainer width="100%" height={250}>
                   <PieChart>
                     <Pie
-                      data={latestMonth.category_expenses}
+                      data={latestMonth.category_expenses.filter((c) => c.amount > 0).map((c, idx) => ({ ...c, _id: `${c.category_id}-${idx}` }))}
                       dataKey="amount"
                       nameKey="category_name"
                       cx="50%"
@@ -572,9 +628,11 @@ export default function ExpensesPage() {
                       outerRadius={80}
                       label={(entry) => `${entry.percentage.toFixed(1)}%`}
                     >
-                      {latestMonth.category_expenses.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={getCategoryColor(entry.category_name)} />
-                      ))}
+                      {latestMonth.category_expenses
+                        .filter((c) => c.amount > 0)
+                        .map((entry, index) => (
+                          <Cell key={`cell-${entry.category_id}-${index}`} fill={getCategoryColor(entry.category_name)} />
+                        ))}
                     </Pie>
                     <Tooltip
                       formatter={(value: number) => `₩${value.toLocaleString()}`}
@@ -582,6 +640,9 @@ export default function ExpensesPage() {
                     <Legend />
                   </PieChart>
                 </ResponsiveContainer>
+                {latestMonth.category_expenses.filter((c) => c.amount > 0).length === 0 && (
+                  <p className="mt-2 text-sm text-muted-foreground text-center">표시할 데이터가 없습니다.</p>
+                )}
               </CardContent>
             </Card>
           </div>

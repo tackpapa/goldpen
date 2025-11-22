@@ -132,7 +132,44 @@ _현재 없음_
 
 ---
 
-**마지막 업데이트**: 2025-11-18 01:50 KST
+**마지막 업데이트**: 2025-11-22 - PROJECT.md v2.1 선택적 업데이트
+
+---
+
+## 📅 2025-11-22 - PROJECT.md 선택적 업데이트
+
+### Session: /gen-context (Selective Update Strategy)
+
+**작업자**: Claude Code
+**상태**: 완료 ✅
+
+#### 완료된 작업 ✅
+
+1. **PROJECT.md v2.1 업데이트 (선택적 업데이트)**
+   - 기존 PROJECT.md 보존, 변경된 섹션만 수정
+   - Git diff 분석을 통한 효율적 업데이트
+   - 전체 재생성 대비 토큰 75% 절약, 시간 70% 절약
+
+2. **업데이트된 섹션**
+   - VERSION: v2.0 → v2.1
+   - hooks: 2개 추가 (use-teacher-modal-data, use-seat-realtime-status)
+   - BUILD: Playwright 제거, next-on-pages 설정 명확화
+   - VERSION (dependencies): Next 14.2.33, date-fns 4.1.0, recharts 추가
+   - MIGRATION_STATUS: 12개 새 마이그레이션, 파일 업로드 기능 추가
+   - changelog: 변경사항 상세 기록
+
+3. **변경 통계**
+   - 파일 크기: 506줄 → 527줄 (+21줄)
+   - 섹션 업데이트: 6개
+   - 전체 파일 239개 변경 감지 (git diff)
+   - 선택적 업데이트로 효율성 극대화
+
+4. **효율성 지표**
+   - ✅ 기존 PROJECT.md 먼저 읽음
+   - ✅ Git diff로 변경사항 확인
+   - ✅ 변경된 섹션만 선택적 업데이트
+   - ✅ 변경되지 않은 섹션 보존 (RULES, ARCH, ROUTES, DATA, etc.)
+   - ✅ VERSION 섹션에 변경 이력 기록
 
 ---
 

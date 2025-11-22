@@ -1,0 +1,2 @@
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS capacity integer DEFAULT 20;
+ALTER TABLE classes ADD COLUMN IF NOT EXISTS room text;

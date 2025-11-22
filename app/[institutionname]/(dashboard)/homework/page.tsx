@@ -53,9 +53,28 @@ export default function HomeworkPage() {
       setIsLoading(true)
       try {
         const response = await fetch('/api/homework', { credentials: 'include' })
-        const data = await response.json() as { homework?: Homework[]; error?: string }
+        const data = await response.json() as {
+          homework?: Homework[]
+          submissions?: Record<string, HomeworkSubmission[]>
+          studentHomeworkStatus?: StudentHomeworkStatus[]
+          classHomeworkStats?: ClassHomeworkStats[]
+          teachers?: { id: string; name: string }[]
+          error?: string
+        }
         if (response.ok) {
           setHomework(data.homework || [])
+          setSubmissions(data.submissions || {})
+          setStudentHomeworkStatus(data.studentHomeworkStatus || [])
+          setClassHomeworkStats(data.classHomeworkStats || [])
+          if (data.teachers?.length) {
+            const names = data.teachers.map((t) => t.name).filter(Boolean)
+            setTeachers(names)
+            if (selectedTeacher === 'all' && names.length) {
+              setSelectedTeacher(names[0])
+            }
+          } else {
+            setTeachers([])
+          }
         } else {
           toast({ title: '과제 데이터 로드 실패', variant: 'destructive' })
         }
@@ -69,7 +88,7 @@ export default function HomeworkPage() {
   }, [toast])
   const [selectedHomework, setSelectedHomework] = useState<Homework | null>(null)
   const [isSubmissionsDialogOpen, setIsSubmissionsDialogOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<'student' | 'class'>('student')
+  const [viewMode, setViewMode] = useState<'student' | 'class' | 'teacher'>('student')
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
   const [selectedClass, setSelectedClass] = useState<ClassHomeworkStats | null>(null)
   const [isClassDetailDialogOpen, setIsClassDetailDialogOpen] = useState(false)
@@ -166,12 +185,12 @@ export default function HomeworkPage() {
     setIsClassDetailDialogOpen(true)
   }
 
-  // 학생별 데이터: 각 학생의 최근 과제 제출 여부
+  // 학생별 데이터: 각 학생의 최근 과제 제출 여부 (다중 강사 지원)
   interface StudentHomeworkStatus {
     student_id: string
     student_name: string
     class_name: string
-    teacher_name: string
+    teacher_names: string[]
     last_homework: string | null
     last_homework_text: string | null
     submitted: boolean | null
@@ -196,13 +215,35 @@ export default function HomeworkPage() {
     return studentHomeworkStatus.filter((s) => s.class_name === className)
   }
 
-  // 강사 목록 추출 (중복 제거)
-  const teachers = Array.from(new Set(studentHomeworkStatus.map((s) => s.teacher_name)))
+  // 강사 목록 추출 (중복 제거, 다중 배정 고려)
+  const [teachers, setTeachers] = useState<string[]>([])
+
+  const derivedTeachers = Array.from(
+    new Set(
+      studentHomeworkStatus
+        .flatMap((s) => s.teacher_names || [])
+        .filter(Boolean)
+    )
+  )
+
+  const teacherList = teachers.length ? teachers : derivedTeachers.length ? derivedTeachers : ['미배정']
+
+  const teacherCounts = teacherList.reduce<Record<string, number>>((acc, t) => {
+    acc[t] = studentHomeworkStatus.filter((s) => (s.teacher_names || []).includes(t)).length
+    return acc
+  }, {})
 
   // 강사별 필터링된 학생 목록
   const filteredStudents = selectedTeacher === 'all'
     ? studentHomeworkStatus
-    : studentHomeworkStatus.filter((s) => s.teacher_name === selectedTeacher)
+    : studentHomeworkStatus.filter((s) => (s.teacher_names || []).includes(selectedTeacher))
+
+  // 강사 탭 진입 시 기본 선택값 보정
+  useEffect(() => {
+    if (viewMode === 'teacher' && selectedTeacher === 'all' && teacherList.length) {
+      setSelectedTeacher(teacherList[0])
+    }
+  }, [viewMode, selectedTeacher, teacherList])
 
   const totalHomework = homework.length
   const activeHomework = homework.filter((hw) => hw.status === 'active').length
@@ -272,6 +313,9 @@ export default function HomeworkPage() {
           <TabsTrigger value="class">
             반별
           </TabsTrigger>
+          <TabsTrigger value="teacher">
+            강사별
+          </TabsTrigger>
         </TabsList>
 
         {/* 학생별 뷰 */}
@@ -292,7 +336,7 @@ export default function HomeworkPage() {
                   전체 ({studentHomeworkStatus.length})
                 </Button>
                 {teachers.map((teacher) => {
-                  const count = studentHomeworkStatus.filter((s) => s.teacher_name === teacher).length
+                  const count = teacherCounts[teacher] || 0
                   return (
                     <Button
                       key={teacher}
@@ -316,6 +360,9 @@ export default function HomeworkPage() {
                       <div className="flex items-center gap-3 mb-2">
                         <h4 className="font-semibold">{student.student_name}</h4>
                         <Badge variant="outline">{student.class_name}</Badge>
+                        <Badge variant="secondary">
+                          강사: {(student.teacher_names || []).join(', ')}
+                        </Badge>
                       </div>
                       {student.last_homework && (
                         <div className="space-y-1">
@@ -363,6 +410,95 @@ export default function HomeworkPage() {
           </Card>
         </TabsContent>
 
+        {/* 강사별 뷰 */}
+        <TabsContent value="teacher" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>강사별 과제 제출 현황</CardTitle>
+              <CardDescription>강사별 담당 학생들의 제출 현황을 확인하세요</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 강사 선택 */}
+              <div className="flex flex-wrap gap-2 mb-2">
+                {teacherList.map((teacher) => {
+                  const count = teacherCounts[teacher] || 0
+                  return (
+                    <Button
+                      key={teacher}
+                      variant={selectedTeacher === teacher ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSelectedTeacher(teacher)}
+                    >
+                      {teacher} ({count})
+                    </Button>
+                  )
+                })}
+              </div>
+
+              {/* 강사별 학생 리스트 */}
+              <div className="space-y-3">
+                {teachers.length === 0 && (
+                  <p className="text-sm text-muted-foreground">강사/배정 정보가 없습니다.</p>
+                )}
+                {teachers.length > 0 && filteredStudents.length === 0 && (
+                  <p className="text-sm text-muted-foreground">선택한 강사에게 배정된 학생이 없습니다.</p>
+                )}
+                {filteredStudents.map((student) => (
+                  <div
+                    key={student.student_id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-2">
+                        <h4 className="font-semibold">{student.student_name}</h4>
+                        <Badge variant="outline">{student.class_name}</Badge>
+                        <Badge variant="secondary">
+                          강사: {(student.teacher_names || []).join(', ')}
+                        </Badge>
+                      </div>
+                      {student.last_homework && (
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            최근 과제: {student.last_homework}
+                          </p>
+                          {student.last_homework_text && (
+                            <p className="text-xs text-muted-foreground">
+                              {student.last_homework_text}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 ml-4">
+                      <div className="text-center min-w-[60px]">
+                        <div className="text-2xl font-bold text-primary">
+                          {student.submission_rate}%
+                        </div>
+                        <p className="text-xs text-muted-foreground">전체 제출률</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {student.submitted === null ? (
+                          <Badge variant="secondary">과제 없음</Badge>
+                        ) : student.submitted ? (
+                          <>
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                            <Badge className="bg-green-600 hover:bg-green-700">제출 완료</Badge>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="h-5 w-5 text-red-600" />
+                            <Badge variant="destructive">미제출</Badge>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* 반별 뷰 */}
         <TabsContent value="class" className="space-y-4">
           <Card>
@@ -371,37 +507,41 @@ export default function HomeworkPage() {
               <CardDescription>각 반의 최근 과제 제출 현황 (클릭하여 학생 목록 확인)</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {classHomeworkStats.map((classStats) => (
-                  <div
-                    key={classStats.class_id}
-                    className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
-                    onClick={() => handleViewClassDetail(classStats)}
-                  >
-                    <div className="flex items-center justify-between mb-3">
-                      <div>
-                        <h4 className="font-semibold text-lg hover:text-primary transition-colors">
-                          {classStats.class_name}
-                        </h4>
-                        {classStats.last_homework && (
-                          <p className="text-sm text-muted-foreground">
-                            최근 과제: {classStats.last_homework}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-primary">
-                          {classStats.submission_rate}%
+              {classHomeworkStats.length === 0 ? (
+                <p className="text-sm text-muted-foreground">등록된 반 데이터가 없습니다.</p>
+              ) : (
+                <div className="space-y-4">
+                  {classHomeworkStats.map((classStats) => (
+                    <div
+                      key={classStats.class_id}
+                      className="p-4 border rounded-lg hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => handleViewClassDetail(classStats)}
+                    >
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-lg hover:text-primary transition-colors">
+                            {classStats.class_name}
+                          </h4>
+                          {classStats.last_homework && (
+                            <p className="text-sm text-muted-foreground">
+                              최근 과제: {classStats.last_homework}
+                            </p>
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground">
-                          {classStats.submitted_count}/{classStats.total_students}명 제출
-                        </p>
+                        <div className="text-right">
+                          <div className="text-2xl font-bold text-primary">
+                            {classStats.submission_rate}%
+                          </div>
+                          <p className="text-xs text-muted-foreground">
+                            {classStats.submitted_count}/{classStats.total_students}명 제출
+                          </p>
+                        </div>
                       </div>
+                      <Progress value={classStats.submission_rate} className="h-3" />
                     </div>
-                    <Progress value={classStats.submission_rate} className="h-3" />
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -427,10 +567,12 @@ export default function HomeworkPage() {
                     className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
                   >
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h4 className="font-semibold">{student.student_name}</h4>
-                        <Badge variant="outline">{student.teacher_name}</Badge>
-                      </div>
+                    <div className="flex items-center gap-3 mb-2">
+                      <h4 className="font-semibold">{student.student_name}</h4>
+                      <Badge variant="outline">
+                        {(student.teacher_names || []).join(', ')}
+                      </Badge>
+                    </div>
                       {student.last_homework && (
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-foreground">

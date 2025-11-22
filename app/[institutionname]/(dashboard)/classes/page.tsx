@@ -47,6 +47,29 @@ interface StudentForAssignment {
   name: string
   grade: string
   school: string
+  class_id?: string | null
+}
+
+interface TeacherOption {
+  id: string
+  name: string
+}
+
+interface RoomOption {
+  id: string
+  name: string
+}
+
+interface ScheduleRow {
+  day: string
+  start_time: string
+  end_time: string
+}
+
+interface TeacherScheduleSlot {
+  day_of_week: string
+  start_time: string
+  end_time: string
 }
 
 export default function ClassesPage() {
@@ -55,9 +78,14 @@ export default function ClassesPage() {
   const { toast } = useToast()
   const [classes, setClasses] = useState<Class[]>([])
   const [allStudents, setAllStudents] = useState<StudentForAssignment[]>([])
+  const [teachers, setTeachers] = useState<TeacherOption[]>([])
+  const [rooms, setRooms] = useState<RoomOption[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingClass, setEditingClass] = useState<Class | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([])
+  const [teacherSchedules, setTeacherSchedules] = useState<TeacherScheduleSlot[]>([])
+  const [selectedStudentsDraft, setSelectedStudentsDraft] = useState<string[]>([])
 
   // Student list dialog state
   const [isStudentListOpen, setIsStudentListOpen] = useState(false)
@@ -69,7 +97,29 @@ export default function ClassesPage() {
   const [studentSearchQuery, setStudentSearchQuery] = useState('')
   const [classForAssignment, setClassForAssignment] = useState<Class | null>(null)
 
-  // Fetch classes from API
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+    reset,
+    setValue,
+    watch,
+  } = useForm<ClassInput>({
+    resolver: zodResolver(ClassSchema),
+    defaultValues: {
+      status: 'active',
+      capacity: 20,
+    },
+  })
+
+  const selectedTeacherId = watch('teacher_id')
+
+  // 스케줄 JSON을 UI에서 안전하게 다루기 위해 배열로 정규화
+  const normalizeClassSchedule = (cls: Class): Class => ({
+    ...cls,
+    schedule: Array.isArray(cls.schedule) ? cls.schedule : [],
+  })
+
   useEffect(() => {
     const fetchClasses = async () => {
       setIsLoading(true)
@@ -78,7 +128,8 @@ export default function ClassesPage() {
         const data = await response.json() as { classes?: Class[]; error?: string }
 
         if (response.ok) {
-          setClasses(data.classes || [])
+          const normalized = (data.classes || []).map(normalizeClassSchedule)
+          setClasses(normalized)
         } else {
           toast({
             title: '데이터 로드 실패',
@@ -100,7 +151,7 @@ export default function ClassesPage() {
     const fetchStudents = async () => {
       try {
         const response = await fetch('/api/students', { credentials: 'include', credentials: 'include' })
-        const data = await response.json() as { students?: any[]; error?: string }
+        const data = await response.json() as { students?: StudentForAssignment[]; error?: string }
 
         if (response.ok) {
           setAllStudents(data.students || [])
@@ -110,22 +161,62 @@ export default function ClassesPage() {
       }
     }
 
+    const fetchTeachers = async () => {
+      try {
+        const res = await fetch('/api/teachers/overview', { credentials: 'include' })
+        const data = await res.json() as { teachers?: { id: string; name: string }[] }
+        if (res.ok && data.teachers) {
+          setTeachers(data.teachers.map((t) => ({ id: t.id, name: t.name })))
+        }
+      } catch (e) {
+        console.error('Failed to fetch teachers', e)
+      }
+    }
+
+    const fetchRooms = async () => {
+      try {
+        const res = await fetch('/api/rooms', { credentials: 'include' })
+        const data = await res.json() as { rooms?: { id: string; name: string }[] }
+        if (res.ok && data.rooms) {
+          setRooms(data.rooms.map((r) => ({ id: r.id, name: r.name })))
+        }
+      } catch (e) {
+        console.error('Failed to fetch rooms', e)
+      }
+    }
+
     fetchClasses()
     fetchStudents()
+    fetchTeachers()
+    fetchRooms()
   }, [toast])
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-    reset,
-    setValue,
-  } = useForm<ClassInput>({
-    resolver: zodResolver(ClassSchema),
-    defaultValues: {
-      status: 'active',
-    },
-  })
+  // 선택된 강사의 기존 스케줄 불러오기 (충돌 검사용)
+  useEffect(() => {
+    const fetchTeacherSchedules = async () => {
+      if (!selectedTeacherId) {
+        setTeacherSchedules([])
+        return
+      }
+      try {
+        const res = await fetch(`/api/schedules?teacher_id=${selectedTeacherId}`, { credentials: 'include' })
+        const data = await res.json() as { schedules?: any[] }
+        if (res.ok && data.schedules) {
+          const slots: TeacherScheduleSlot[] = data.schedules.map((s) => ({
+            day_of_week: s.day_of_week,
+            start_time: s.start_time,
+            end_time: s.end_time,
+          }))
+          setTeacherSchedules(slots)
+        } else {
+          setTeacherSchedules([])
+        }
+      } catch {
+        setTeacherSchedules([])
+      }
+    }
+    fetchTeacherSchedules()
+  }, [selectedTeacherId])
 
   const columns: ColumnDef<Class>[] = [
     {
@@ -182,13 +273,36 @@ export default function ClassesPage() {
       header: '수업 시간',
       cell: ({ row }) => {
         const schedule = row.getValue('schedule') as Class['schedule']
+        const safeSchedule = Array.isArray(schedule) ? schedule : []
+
+        const dayMap: Record<string, string> = {
+          monday: '월',
+          tuesday: '화',
+          wednesday: '수',
+          thursday: '목',
+          friday: '금',
+          saturday: '토',
+          sunday: '일',
+          월: '월',
+          화: '화',
+          수: '수',
+          목: '목',
+          금: '금',
+          토: '토',
+          일: '일',
+        }
+
+        const formatDay = (d?: string) => dayMap[d || ''] || d || '미정'
+        const formatTime = (t?: string) => (t ? t.slice(0, 5) : '미정')
+
         return (
           <div className="text-sm">
-            {schedule.map((s, i) => (
-              <div key={i}>
-                {s.day} {s.start_time}-{s.end_time}
+            {safeSchedule.map((s, i) => (
+              <div key={`${s.day}-${s.start_time}-${s.end_time}-${i}`}>
+                {formatDay(s.day)} {formatTime(s.start_time)}-{formatTime(s.end_time)}
               </div>
             ))}
+            {safeSchedule.length === 0 && <div className="text-muted-foreground">미배정</div>}
           </div>
         )
       },
@@ -258,7 +372,10 @@ export default function ClassesPage() {
     setEditingClass(null)
     reset({
       status: 'active',
+      capacity: 20,
     })
+    setScheduleRows([])
+    setSelectedStudentsDraft([])
     setIsDialogOpen(true)
   }
 
@@ -267,22 +384,86 @@ export default function ClassesPage() {
     setIsStudentListOpen(true)
   }
 
-  const handleOpenAssignStudentDialog = (classData: Class) => {
+  const handleOpenAssignStudentDialog = async (classData: Class) => {
+    if (!classData?.id) {
+      toast({
+        title: '반을 먼저 저장하세요',
+        description: '학생을 배정하려면 반을 생성하고 저장한 뒤 다시 시도해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     setClassForAssignment(classData)
-    setSelectedStudents([]) // Reset selection
+
+    // 최신 학생 목록이 없으면 재로드
+    if (allStudents.length === 0) {
+      try {
+        const res = await fetch('/api/students', { credentials: 'include' })
+        const data = await res.json() as { students?: StudentForAssignment[] }
+        if (res.ok && data.students) {
+          setAllStudents(data.students)
+        }
+      } catch {
+        // ignore, fallback below
+      }
+    }
+
+    // 서버에서 최신 배정 정보 가져오기 (class_enrollments 기반)
+    try {
+      const res = await fetch(`/api/classes/${classData.id}/assign-students`, { credentials: 'include' })
+      const data = await res.json() as { student_ids?: string[] }
+      if (res.ok && data.student_ids) {
+        setSelectedStudents(data.student_ids)
+      } else {
+        // fallback: 현재 로컬 students 정보 사용
+        const preselected = allStudents
+          .filter((s) => s.class_id === classData.id)
+          .map((s) => s.id)
+        setSelectedStudents(preselected)
+      }
+    } catch {
+      const preselected = allStudents
+        .filter((s) => s.class_id === classData.id)
+        .map((s) => s.id)
+      setSelectedStudents(preselected)
+    }
+
     setStudentSearchQuery('') // Reset search
     setIsAssignStudentDialogOpen(true)
   }
 
   // Filter students based on search query
-  const filteredStudents = allStudents.filter((student) => {
-    const searchLower = studentSearchQuery.toLowerCase()
-    return (
-      student.name?.toLowerCase().includes(searchLower) ||
-      student.grade?.toLowerCase().includes(searchLower) ||
-      student.school?.toLowerCase().includes(searchLower)
-    )
-  })
+  const filteredStudents = allStudents
+    .filter((student) => {
+      const searchLower = studentSearchQuery.toLowerCase()
+      return (
+        student.name?.toLowerCase().includes(searchLower) ||
+        student.grade?.toLowerCase().includes(searchLower) ||
+        student.school?.toLowerCase().includes(searchLower)
+      )
+    })
+    // 선택된 학생을 위로 정렬 (선택 여부 → 이름순)
+    .sort((a, b) => {
+      const aSelected = selectedStudents.includes(a.id)
+      const bSelected = selectedStudents.includes(b.id)
+      if (aSelected === bSelected) {
+        return (a.name || '').localeCompare(b.name || '')
+      }
+      return aSelected ? -1 : 1
+    })
+
+  const isOverlapping = (aStart: string, aEnd: string, bStart: string, bEnd: string) => {
+    const toMin = (t: string) => {
+      const [h, m] = t.split(':').map(Number)
+      return h * 60 + m
+    }
+    const aS = toMin(aStart)
+    const aE = toMin(aEnd)
+    const bS = toMin(bStart)
+    const bE = toMin(bEnd)
+    return Math.max(aS, bS) < Math.min(aE, bE)
+  }
 
   const handleToggleStudent = (studentId: string) => {
     setSelectedStudents((prev) =>
@@ -293,16 +474,77 @@ export default function ClassesPage() {
   }
 
   const handleSaveStudentAssignment = () => {
-    if (!classForAssignment) return
+    if (!classForAssignment) {
+      setIsAssignStudentDialogOpen(false)
+      return
+    }
+    setIsLoading(true)
+    const classId = classForAssignment.id
 
-    toast({
-      title: '학생 배정 완료',
-      description: `${classForAssignment.name}에 ${selectedStudents.length}명의 학생이 배정되었습니다.`,
+    // 옵티미스틱 상태 백업
+    const prevClasses = classes
+    const prevAllStudents = allStudents
+    const prevDraft = selectedStudentsDraft
+
+    // 옵티미스틱 UI 반영
+    const optimisticClasses = classes.map((c) =>
+      c.id === classId ? { ...c, current_students: selectedStudents.length } : c
+    )
+    const optimisticStudents = allStudents.map((s) => {
+      if (selectedStudents.includes(s.id)) {
+        return { ...s, class_id: classId }
+      }
+      if (s.class_id === classId && !selectedStudents.includes(s.id)) {
+        return { ...s, class_id: null }
+      }
+      return s
     })
-
+    setClasses(optimisticClasses)
+    setAllStudents(optimisticStudents)
+    setSelectedStudentsDraft(selectedStudents)
     setIsAssignStudentDialogOpen(false)
-    setClassForAssignment(null)
-    setSelectedStudents([])
+    setIsDialogOpen(true) // 부모 모달 유지
+
+    fetch(`/api/classes/${classId}/assign-students`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_ids: selectedStudents }),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          toast({
+            title: '학생 배정 완료',
+            description: `${classForAssignment.name}에 ${selectedStudents.length}명의 학생이 배정되었습니다.`,
+          })
+          setClassForAssignment(null)
+          setSelectedStudents([])
+        } else {
+          const err = await res.json()
+          // 롤백
+          setClasses(prevClasses)
+          setAllStudents(prevAllStudents)
+          setSelectedStudentsDraft(prevDraft)
+          setIsAssignStudentDialogOpen(true)
+          toast({
+            title: '배정 실패',
+            description: err.error || '학생 배정에 실패했습니다.',
+            variant: 'destructive',
+          })
+        }
+      })
+      .catch(() => {
+        // 롤백
+        setClasses(prevClasses)
+        setAllStudents(prevAllStudents)
+        setSelectedStudentsDraft(prevDraft)
+        setIsAssignStudentDialogOpen(true)
+        toast({
+          title: '배정 실패',
+          description: '서버와 통신할 수 없습니다.',
+          variant: 'destructive',
+        })
+      })
+      .finally(() => setIsLoading(false))
   }
 
   const handleEdit = (classData: Class) => {
@@ -310,12 +552,15 @@ export default function ClassesPage() {
     reset({
       name: classData.name,
       subject: classData.subject,
-      teacher_name: classData.teacher_name,
+      teacher_id: classData.teacher_id || undefined,
       capacity: classData.capacity,
       room: classData.room || '',
       status: classData.status,
       notes: classData.notes || '',
+      schedule: Array.isArray(classData.schedule) ? classData.schedule : [],
     })
+    setScheduleRows(Array.isArray(classData.schedule) ? classData.schedule : [])
+    setSelectedStudentsDraft([])
     setIsDialogOpen(true)
   }
 
@@ -323,19 +568,23 @@ export default function ClassesPage() {
     if (!confirm('정말로 삭제하시겠습니까?')) return
 
     setIsLoading(true)
+    const prevClasses = classes
+    // Optimistic remove
+    setClasses(classes.filter((c) => c.id !== id))
     try {
       const response = await fetch(`/api/classes/${id}`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
-        setClasses(classes.filter((c) => c.id !== id))
         toast({
           title: '삭제 완료',
           description: '반 정보가 삭제되었습니다.',
         })
       } else {
         const data = await response.json() as { error?: string }
+        // rollback
+        setClasses(prevClasses)
         toast({
           title: '삭제 실패',
           description: data.error || '반 삭제에 실패했습니다.',
@@ -343,6 +592,7 @@ export default function ClassesPage() {
         })
       }
     } catch (error) {
+      setClasses(prevClasses)
       toast({
         title: '오류 발생',
         description: '서버와 통신할 수 없습니다.',
@@ -368,7 +618,7 @@ export default function ClassesPage() {
           const result = await response.json() as { class: Class }
           setClasses(
             classes.map((c) =>
-              c.id === editingClass.id ? result.class : c
+              c.id === editingClass.id ? normalizeClassSchedule(result.class) : c
             )
           )
           toast({
@@ -395,7 +645,7 @@ export default function ClassesPage() {
 
         if (response.ok) {
           const result = await response.json() as { class: Class }
-          setClasses([result.class, ...classes])
+          setClasses([normalizeClassSchedule(result.class), ...classes])
           toast({
             title: '생성 완료',
             description: '반이 생성되었습니다.',
@@ -481,16 +731,24 @@ export default function ClassesPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="teacher_name">강사 이름 *</Label>
-                <Input
-                  id="teacher_name"
-                  {...register('teacher_name')}
-                  disabled={isLoading}
-                />
-                {errors.teacher_name && (
-                  <p className="text-sm text-destructive">
-                    {errors.teacher_name.message}
-                  </p>
+                <Label htmlFor="teacher_id">강사 *</Label>
+                <Select
+                  onValueChange={(value) => setValue('teacher_id', value)}
+                  value={watch('teacher_id') || ''}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="강사를 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teachers.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.teacher_id && (
+                  <p className="text-sm text-destructive">{errors.teacher_id.message}</p>
                 )}
               </div>
 
@@ -510,12 +768,21 @@ export default function ClassesPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="room">강의실</Label>
-                <Input
-                  id="room"
-                  {...register('room')}
-                  placeholder="예: A301"
-                  disabled={isLoading}
-                />
+                <Select
+                  onValueChange={(value) => setValue('room', value)}
+                  value={watch('room') || ''}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="강의실 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {rooms.map((r) => (
+                      <SelectItem key={r.id} value={r.name}>
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="space-y-2">
@@ -547,6 +814,110 @@ export default function ClassesPage() {
               />
             </div>
 
+            {/* 수업 스케줄 입력 */}
+            <div className="space-y-2">
+              <Label>수업 스케줄</Label>
+              <div className="space-y-3">
+                {scheduleRows.map((row, idx) => (
+                  <div key={`${row.day}-${idx}`} className="grid grid-cols-4 gap-2 items-center">
+                    <Select
+                      value={row.day}
+                      onValueChange={(v) => {
+                        const next = [...scheduleRows]
+                        next[idx] = { ...next[idx], day: v }
+                        setScheduleRows(next)
+                        setValue('schedule', next)
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="요일" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monday">월</SelectItem>
+                        <SelectItem value="tuesday">화</SelectItem>
+                        <SelectItem value="wednesday">수</SelectItem>
+                        <SelectItem value="thursday">목</SelectItem>
+                        <SelectItem value="friday">금</SelectItem>
+                        <SelectItem value="saturday">토</SelectItem>
+                        <SelectItem value="sunday">일</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="time"
+                      value={row.start_time}
+                      onChange={(e) => {
+                        const next = [...scheduleRows]
+                        next[idx] = { ...next[idx], start_time: e.target.value }
+                        setScheduleRows(next)
+                        setValue('schedule', next)
+                      }}
+                    />
+                    <Input
+                      type="time"
+                      value={row.end_time}
+                      onChange={(e) => {
+                        const next = [...scheduleRows]
+                        next[idx] = { ...next[idx], end_time: e.target.value }
+                        setScheduleRows(next)
+                        setValue('schedule', next)
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-destructive text-destructive hover:bg-destructive/10"
+                      onClick={() => {
+                        const next = scheduleRows.filter((_, i) => i !== idx)
+                        setScheduleRows(next)
+                        setValue('schedule', next)
+                      }}
+                    >
+                      삭제
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  if (!selectedTeacherId) {
+                    toast({
+                      title: '강사를 먼저 선택하세요',
+                      description: '스케줄을 추가하기 전에 강사를 지정해야 합니다.',
+                      variant: 'destructive',
+                    })
+                    return
+                  }
+
+                  const newRow = { day: 'monday', start_time: '16:00', end_time: '18:00' }
+
+                  // 기존 로컬 스케줄 및 강사 전체 스케줄과 겹치는지 확인
+                  const hasLocalOverlap = scheduleRows.some(
+                    (row) => row.day === newRow.day && isOverlapping(row.start_time, row.end_time, newRow.start_time, newRow.end_time)
+                  )
+                  const hasTeacherOverlap = teacherSchedules.some(
+                    (row) => row.day_of_week === newRow.day && isOverlapping(row.start_time, row.end_time, newRow.start_time, newRow.end_time)
+                  )
+
+                  if (hasLocalOverlap || hasTeacherOverlap) {
+                    toast({
+                      title: '이미 그 시간에 수업이 있습니다.',
+                      description: '겹치지 않는 시간으로 스케줄을 추가해주세요.',
+                      variant: 'destructive',
+                    })
+                    return
+                  }
+
+                  const next = [...scheduleRows, newRow]
+                  setScheduleRows(next)
+                  setValue('schedule', next)
+                }}
+              >
+                스케줄 추가
+              </Button>
+            </div>
+
             <DialogFooter>
               <Button
                 type="button"
@@ -555,6 +926,23 @@ export default function ClassesPage() {
                 disabled={isLoading}
               >
                 취소
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setClassForAssignment(editingClass || null)
+                  setIsAssignStudentDialogOpen(true)
+                }}
+              >
+                <div className="flex items-center gap-2">
+                  학생 배정
+                  {selectedStudentsDraft.length > 0 && (
+                    <Badge variant="secondary" className="rounded-full px-2 py-0">
+                      {selectedStudentsDraft.length}
+                    </Badge>
+                  )}
+                </div>
               </Button>
               <Button type="submit" disabled={isLoading}>
                 {isLoading
@@ -591,7 +979,17 @@ export default function ClassesPage() {
       </Dialog>
 
       {/* Student Assignment Dialog */}
-      <Dialog open={isAssignStudentDialogOpen} onOpenChange={setIsAssignStudentDialogOpen}>
+      <Dialog
+        open={isAssignStudentDialogOpen}
+        onOpenChange={(open) => {
+          setIsAssignStudentDialogOpen(open)
+          if (!open) {
+            setClassForAssignment(null)
+            setSelectedStudents([])
+            setStudentSearchQuery('')
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl w-[95vw] sm:w-full">
           <DialogHeader>
             <DialogTitle>학생 배정</DialogTitle>

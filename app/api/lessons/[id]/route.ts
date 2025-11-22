@@ -15,6 +15,8 @@ const updateLessonSchema = z.object({
   materials: z.array(z.any()).optional(),
   status: z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
   attendance_count: z.number().int().optional(),
+  notification_sent: z.boolean().optional(),
+  notification_sent_at: z.string().optional(),
 })
 
 export async function PUT(

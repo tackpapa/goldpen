@@ -58,10 +58,11 @@ interface Teacher {
   name: string
 }
 
-interface Student {
+interface ClassOption {
   id: string
   name: string
-  grade?: number | string
+  teacher_id?: string | null
+  teacher_name?: string | null
 }
 
 const dayOfWeekMap = {
@@ -102,7 +103,7 @@ export default function RoomsPage() {
   const [schedules, setSchedules] = useState<ScheduleData[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [teachers, setTeachers] = useState<Teacher[]>([])
-  const [students, setStudents] = useState<Student[]>([])
+  const [classes, setClasses] = useState<ClassOption[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedTab, setSelectedTab] = useState<string>('')
 
@@ -113,11 +114,10 @@ export default function RoomsPage() {
     dayOfWeek: keyof typeof dayOfWeekMap
     startTime: string
   } | null>(null)
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
 
   // Form state
-  const [teacherId, setTeacherId] = useState('')
-  const [studentId, setStudentId] = useState('')
-  const [studentSearchQuery, setStudentSearchQuery] = useState('')
+  const [selectedClassId, setSelectedClassId] = useState('')
   const [startTime, setStartTime] = useState('')
   const [endTime, setEndTime] = useState('')
 
@@ -140,17 +140,17 @@ export default function RoomsPage() {
     const fetchData = async () => {
       try {
         setLoading(true)
-        const [schedulesRes, roomsRes, teachersRes, studentsRes] = await Promise.all([
+        const [schedulesRes, roomsRes, teachersRes, classesRes] = await Promise.all([
           fetch('/api/schedules', { credentials: 'include' }),
           fetch('/api/rooms', { credentials: 'include' }),
           fetch('/api/teachers', { credentials: 'include' }),
-          fetch('/api/students', { credentials: 'include' }),
+          fetch('/api/classes', { credentials: 'include' }),
         ])
 
         const schedulesData = await schedulesRes.json()
         const roomsData = await roomsRes.json()
         const teachersData = await teachersRes.json()
-        const studentsData = await studentsRes.json()
+        const classesData = await classesRes.json()
 
         if (schedulesData.schedules) setSchedules(schedulesData.schedules)
         if (roomsData.rooms) {
@@ -168,7 +168,7 @@ export default function RoomsPage() {
           })
           setTeacherColorMap(colorMap)
         }
-        if (studentsData.students) setStudents(studentsData.students)
+        if (classesData.classes) setClasses(classesData.classes)
       } catch (error) {
         console.error('Failed to fetch data:', error)
       } finally {
@@ -185,6 +185,7 @@ export default function RoomsPage() {
         setIsDragging(false)
         setDragStart(null)
         setDragEnd(null)
+        setSelectedScheduleId(null)
         return
       }
 
@@ -202,9 +203,8 @@ export default function RoomsPage() {
       })
       setStartTime(startTimeStr)
       setEndTime(endTimeStr)
-      setTeacherId('')
-      setStudentId('')
-      setStudentSearchQuery('')
+      setSelectedClassId('')
+      setSelectedScheduleId(null)
       setIsDialogOpen(true)
 
       setIsDragging(false)
@@ -260,18 +260,17 @@ export default function RoomsPage() {
     const startTimeStr = timeSlots[minIndex]
     const endTimeStr = timeSlots[Math.min(maxIndex + 1, timeSlots.length - 1)]
 
-    setSelectedCell({
-      roomId: dragStart.roomId,
-      roomName: dragStart.roomName,
-      dayOfWeek: dragStart.dayOfWeek,
-      startTime: startTimeStr
-    })
-    setStartTime(startTimeStr)
-    setEndTime(endTimeStr)
-    setTeacherId('')
-    setStudentId('')
-    setStudentSearchQuery('')
-    setIsDialogOpen(true)
+      setSelectedCell({
+        roomId: dragStart.roomId,
+        roomName: dragStart.roomName,
+        dayOfWeek: dragStart.dayOfWeek,
+        startTime: startTimeStr
+      })
+      setStartTime(startTimeStr)
+      setEndTime(endTimeStr)
+      setSelectedClassId('')
+      setSelectedScheduleId(null)
+      setIsDialogOpen(true)
 
     setIsDragging(false)
     setDragStart(null)
@@ -304,33 +303,76 @@ export default function RoomsPage() {
     setStartTime(time)
 
     const timeIndex = timeSlots.indexOf(time)
-    const endTimeIndex = Math.min(timeIndex + 2, timeSlots.length - 1)
+    // 한 칸(30분) 클릭 시 기본 종료 시간을 +30분으로 설정
+    const endTimeIndex = Math.min(timeIndex + 1, timeSlots.length - 1)
     setEndTime(timeSlots[endTimeIndex])
 
-    setTeacherId('')
-    setStudentId('')
-    setStudentSearchQuery('')
+    // If there is an existing schedule in this cell, prefill class/teacher for edit
+    const existing = getSchedulesForCell(roomId, dayOfWeek, time)?.[0]
+    if (existing) {
+      setSelectedClassId(existing.class_id || '')
+      // ensure start/end time show actual values
+      setStartTime(existing.start_time.substring(0, 5))
+      setEndTime(existing.end_time.substring(0, 5))
+      setSelectedScheduleId(existing.id)
+    } else {
+      setSelectedClassId('')
+      setSelectedScheduleId(null)
+    }
     setIsDialogOpen(true)
   }
 
   const handleSaveSchedule = async () => {
-    if (!teacherId || !selectedCell) {
+    if (!selectedCell || !selectedClassId) {
       toast({
         title: '필수 정보 누락',
-        description: '선생님을 선택해주세요.',
+        description: '반을 선택해주세요.',
         variant: 'destructive',
       })
       return
     }
 
+    const selectedClass = classes.find((c) => c.id === selectedClassId)
+
     try {
+      const isUpdate = Boolean(selectedScheduleId)
+      const prev = schedules
+      const optimisticId = selectedScheduleId || crypto.randomUUID()
+      const optimisticSchedule = {
+        id: optimisticId,
+        room_id: selectedCell.roomId,
+        teacher_id: selectedClass?.teacher_id || null,
+        class_id: selectedClassId,
+        day_of_week: selectedCell.dayOfWeek,
+        start_time: startTime,
+        end_time: endTime,
+        status: 'active',
+        classes: selectedClass ? { name: selectedClass.name, teacher_id: selectedClass.teacher_id } : null,
+        teacher: selectedClass?.teacher_id
+          ? { name: teachers.find((t) => t.id === selectedClass.teacher_id)?.name || '미지정' }
+          : null,
+        rooms: rooms.find((r) => r.id === selectedCell.roomId)
+          ? { name: rooms.find((r) => r.id === selectedCell.roomId)?.name || '' }
+          : null,
+      }
+
+      // Optimistic apply
+      if (isUpdate) {
+        setSchedules(prev.map((s) => (s.id === selectedScheduleId ? { ...s, ...optimisticSchedule } : s)))
+      } else {
+        setSchedules([...prev, optimisticSchedule as any])
+      }
+      setIsDialogOpen(false)
+
       const response = await fetch('/api/schedules', {
-        method: 'POST',
+        method: isUpdate ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
+          id: selectedScheduleId || undefined,
           room_id: selectedCell.roomId,
-          teacher_id: teacherId,
+          teacher_id: selectedClass?.teacher_id || null,
+          class_id: selectedClassId,
           day_of_week: selectedCell.dayOfWeek,
           start_time: startTime,
           end_time: endTime,
@@ -341,6 +383,8 @@ export default function RoomsPage() {
       const data = await response.json()
 
       if (!response.ok) {
+        // rollback
+        setSchedules(prev)
         toast({
           title: '등록 실패',
           description: data.error || '스케줄 등록에 실패했습니다.',
@@ -349,20 +393,24 @@ export default function RoomsPage() {
         return
       }
 
-      toast({
-        title: '스케줄 등록 완료',
-        description: `${selectedCell.roomName}에 수업이 등록되었습니다.`,
-      })
-
-      // Refresh schedules
+      // Sync with server result
       const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
       const refreshData = await refreshRes.json()
       if (refreshData.schedules) {
         setSchedules(refreshData.schedules)
       }
 
-      setIsDialogOpen(false)
+      toast({
+        title: '스케줄 등록 완료',
+        description: `${selectedCell.roomName}에 수업이 등록되었습니다.`,
+      })
+
+      setSelectedScheduleId(null)
     } catch (error) {
+      // rollback
+      const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
+      const refreshData = await refreshRes.json()
+      if (refreshData.schedules) setSchedules(refreshData.schedules)
       console.error('Schedule creation error:', error)
       toast({
         title: '오류 발생',
@@ -411,12 +459,6 @@ export default function RoomsPage() {
   }
 
   // Filter students by search query
-  const filteredStudents = students.filter(student =>
-    studentSearchQuery === '' ||
-    student.name.toLowerCase().includes(studentSearchQuery.toLowerCase()) ||
-    (student.grade && `${student.grade}학년`.includes(studentSearchQuery))
-  )
-
   // Statistics
   const totalSchedules = schedules.length
   const activeRooms = rooms.filter(r => r.status === 'available' || r.status === 'active').length
@@ -588,12 +630,26 @@ export default function RoomsPage() {
                                   return (
                                     <div
                                       key={schedule.id}
-                                      className="absolute p-0.5 pointer-events-none"
+                                      className="absolute p-0.5"
                                       style={{
                                         top: `${top}px`,
                                         height: `${height}px`,
                                         left: `${leftPercent}%`,
                                         width: `${widthPercent}%`
+                                      }}
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setSelectedCell({
+                                          roomId: schedule.room_id,
+                                          roomName: room.name,
+                                          dayOfWeek: schedule.day_of_week as keyof typeof dayOfWeekMap,
+                                          startTime: startTime
+                                        })
+                                        setStartTime(startTime)
+                                        setEndTime(endTime)
+                                        setSelectedClassId(schedule.class_id || '')
+                                        setSelectedScheduleId(schedule.id)
+                                        setIsDialogOpen(true)
                                       }}
                                     >
                                       <div className={cn(
@@ -629,7 +685,15 @@ export default function RoomsPage() {
       </Card>
 
       {/* Schedule Creation Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+      <Dialog
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open)
+          if (!open) {
+            setSelectedScheduleId(null)
+          }
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>수업 등록</DialogTitle>
@@ -644,56 +708,19 @@ export default function RoomsPage() {
 
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="teacher">선생님 *</Label>
-              <Select value={teacherId} onValueChange={setTeacherId}>
-                <SelectTrigger id="teacher">
-                  <SelectValue placeholder="선생님을 선택하세요" />
+              <Label htmlFor="class">반 *</Label>
+              <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                <SelectTrigger id="class">
+                  <SelectValue placeholder="반을 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  {teachers.map((teacher) => (
-                    <SelectItem key={teacher.id} value={teacher.id}>
-                      {teacher.name}
+                  {classes.map((cls) => (
+                    <SelectItem key={cls.id} value={cls.id}>
+                      {cls.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="student-search">학생 검색</Label>
-              <Input
-                id="student-search"
-                placeholder="이름 또는 학년으로 검색..."
-                value={studentSearchQuery}
-                onChange={(e) => setStudentSearchQuery(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>학생 선택</Label>
-              <div className="border rounded-lg p-2 max-h-48 overflow-y-auto space-y-1">
-                {filteredStudents.length > 0 ? (
-                  filteredStudents.map((student) => (
-                    <div
-                      key={student.id}
-                      onClick={() => {
-                        setStudentId(student.id)
-                        setStudentSearchQuery(`${student.grade || ''}학년 ${student.name}`)
-                      }}
-                      className={cn(
-                        "p-2 rounded cursor-pointer hover:bg-muted transition-colors text-sm",
-                        studentId === student.id && "bg-primary text-primary-foreground"
-                      )}
-                    >
-                      {student.grade}학년 {student.name}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-sm text-muted-foreground text-center py-4">
-                    검색 결과가 없습니다
-                  </div>
-                )}
-              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -731,14 +758,65 @@ export default function RoomsPage() {
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-              취소
-            </Button>
-            <Button onClick={handleSaveSchedule}>
-              등록
-            </Button>
-          </DialogFooter>
+            <DialogFooter className="flex justify-between">
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                취소
+              </Button>
+              <div className="flex gap-2">
+                {getSchedulesForCell(
+                  selectedCell?.roomId || '',
+                  selectedCell?.dayOfWeek || 'monday',
+                  selectedCell?.startTime || ''
+                )?.[0] && selectedScheduleId && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={async () => {
+                      if (!selectedScheduleId) return
+                      const prev = schedules
+                      setSchedules(prev.filter((s) => s.id !== selectedScheduleId))
+                      try {
+                        const res = await fetch('/api/schedules', {
+                          method: 'DELETE',
+                          headers: { 'Content-Type': 'application/json' },
+                          credentials: 'include',
+                          body: JSON.stringify({ id: selectedScheduleId }),
+                        })
+                        const data = await res.json()
+                        if (!res.ok) {
+                          setSchedules(prev)
+                          toast({
+                            title: '삭제 실패',
+                            description: data.error || '스케줄 삭제에 실패했습니다.',
+                            variant: 'destructive',
+                          })
+                          return
+                        }
+                        // refresh
+                        const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
+                        const refreshData = await refreshRes.json()
+                        if (refreshData.schedules) setSchedules(refreshData.schedules)
+                        toast({ title: '삭제 완료', description: '수업이 삭제되었습니다.' })
+                        setSelectedScheduleId(null)
+                        setIsDialogOpen(false)
+                      } catch (err) {
+                        setSchedules(prev)
+                        toast({
+                          title: '삭제 실패',
+                          description: '서버와 통신할 수 없습니다.',
+                          variant: 'destructive',
+                        })
+                      }
+                    }}
+                  >
+                    삭제
+                  </Button>
+                )}
+                <Button onClick={handleSaveSchedule}>
+                  등록
+                </Button>
+              </div>
+            </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

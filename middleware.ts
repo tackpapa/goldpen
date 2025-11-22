@@ -2,6 +2,18 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // E2E / 스모크 테스트 시 인증 우회 플래그
+  if (process.env.E2E_NO_AUTH === '1') {
+    // API 요청 -> api-bypass로 rewrite (모든 메소드 200 OK)
+    if (request.nextUrl.pathname.startsWith('/api/')) {
+      const bypassUrl = request.nextUrl.clone()
+      bypassUrl.pathname = '/api-bypass' + request.nextUrl.pathname.substring(4)
+      return NextResponse.rewrite(bypassUrl)
+    }
+
+    return NextResponse.next();
+  }
+
   let response = NextResponse.next({
     request: {
       headers: request.headers,

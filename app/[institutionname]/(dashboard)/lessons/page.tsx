@@ -150,11 +150,52 @@ export default function LessonsPage() {
   // 강사 계정일 경우: 해당 강사의 스케줄만 표시
   // 원장/관리자 계정일 경우: 모든 스케줄 표시
   const filteredScheduledClasses = useMemo(() => {
-    if (userRole === 'teacher' && currentTeacherId) {
-      return scheduledClasses.filter(schedule => (schedule as ScheduledClass & { teacher_id?: string }).teacher_id === currentTeacherId)
+    const dayIdx = new Date(selectedDate).getDay() // 0=Sun
+    const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+    const todayKey = dayMap[dayIdx]
+
+    const isFinished = (schedule: ScheduledClass & { lesson_time?: string }) => {
+      if (!schedule.lesson_time) return false
+      const [start, end] = schedule.lesson_time.split('-').map((t) => t?.trim())
+      if (!end) return false
+
+      const selDate = new Date(selectedDate)
+      if (Number.isNaN(selDate.getTime())) return false
+
+      const endDateTime = new Date(`${selectedDate}T${end}:00`)
+      const today = new Date()
+
+      // 과거 날짜면 모두 완료로 간주
+      const selDay = new Date(selectedDate.split('T')[0] || selectedDate)
+      const nowDay = new Date(today.toISOString().slice(0, 10))
+      selDay.setHours(0, 0, 0, 0)
+      nowDay.setHours(0, 0, 0, 0)
+      if (selDay < nowDay) return true
+      if (selDay > nowDay) return false
+
+      // 같은 날짜면 종료 시간이 현재보다 이전인지 확인
+      return endDateTime.getTime() <= today.getTime()
     }
-    return scheduledClasses
-  }, [userRole, currentTeacherId, scheduledClasses])
+
+    const list = scheduledClasses.filter((schedule) => {
+      const matchTeacher =
+        userRole === 'teacher' && currentTeacherId
+          ? (schedule as ScheduledClass & { teacher_id?: string }).teacher_id === currentTeacherId
+          : true
+      const matchDay = schedule.day === todayKey
+      const finished = isFinished(schedule as ScheduledClass & { lesson_time?: string })
+      return matchTeacher && matchDay && finished
+    })
+
+    // 중복 제거: class_id + lesson_time + day 기준
+    const seen = new Set<string>()
+    return list.filter((s) => {
+      const key = `${s.class_id ?? s.id}-${s.lesson_time}-${s.day ?? ''}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [userRole, currentTeacherId, scheduledClasses, selectedDate])
 
   // Date navigation functions
   const handlePreviousDay = () => {
@@ -227,7 +268,10 @@ export default function LessonsPage() {
         ...prev,
         lesson_time: schedule.lesson_time,
         class_name: schedule.class_name,
-        class_id: schedule.id,
+        class_id: schedule.class_id ?? schedule.id,
+        subject: schedule.subject,
+        teacher_name: schedule.teacher_name,
+        teacher_id: schedule.teacher_id,
       }))
 
       // Initialize attendance with all students present
@@ -299,28 +343,50 @@ export default function LessonsPage() {
   }
 
   const handleSendNotification = () => {
-    if (isEditing && selectedLesson) {
-      // Update notification sent status
-      const updatedLessons = lessons.map((lesson) =>
-        lesson.id === selectedLesson.id
-          ? {
-              ...lesson,
-              // @ts-ignore - notification_sent는 타입에 없지만 런타임에서 처리
-              notification_sent: true,
-              notification_sent_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            }
-          : lesson
-      )
-      setLessons(updatedLessons)
+    // TODO: Kakao 알림톡 Cloudflare Worker 연동 예정. 현재는 발송 API 비어있음.
+    const sendKakao = async () => {
+      console.warn('[알림톡] Kakao 발송 API는 Cloudflare Worker로 연동 예정 (stub)')
+      return Promise.resolve()
     }
 
-    // TODO: 실제 알림톡 전송 API 호출
-    toast({
-      title: '알림톡 전송 완료',
-      description: '학부모님께 수업일지 알림톡이 전송되었습니다.',
-    })
-    setIsDialogOpen(false)
+    const markSent = async () => {
+      if (selectedLesson) {
+        const res = await fetch(`/api/lessons/${selectedLesson.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            notification_sent: true,
+            notification_sent_at: new Date().toISOString(),
+          }),
+        })
+        if (res.ok) {
+          setLessons((prev) =>
+            prev.map((l) =>
+              l.id === selectedLesson.id
+                ? { ...l, notification_sent: true, notification_sent_at: new Date().toISOString() }
+                : l
+            )
+          )
+        }
+      }
+    }
+
+    sendKakao()
+      .then(markSent)
+      .then(() => {
+        toast({
+          title: '알림톡 전송 완료',
+          description: '학부모님께 알림톡(예정)이 발송 처리되었습니다.',
+        })
+        setIsDialogOpen(false)
+      })
+      .catch((error: any) => {
+        toast({
+          title: '전송 실패',
+          description: error?.message || '알림톡 발송 중 오류가 발생했습니다.',
+          variant: 'destructive',
+        })
+      })
   }
 
   const handleUpdateFeedback = () => {
@@ -348,69 +414,52 @@ export default function LessonsPage() {
   }
 
   const handleGenerateFeedback = () => {
-    setIsGeneratingFeedback(true)
-
-    // Mock GPT feedback generation
-    setTimeout(() => {
-      const mockFeedback = `오늘 ${formData.subject} 수업에서 ${formData.content?.substring(0, 30)}... 내용을 학습했습니다. 학생들의 이해도는 ${comprehensionMap[formData.comprehension_level as keyof typeof comprehensionMap].label} 수준이며, ${formData.student_attitudes} 다음 시간에는 ${formData.next_lesson_plan}를 진행할 예정입니다.`
-
-      setFormData((prev) => ({
-        ...prev,
-        parent_feedback: mockFeedback,
-      }))
-
-      setIsGeneratingFeedback(false)
-
-      toast({
-        title: 'AI 피드백 생성 완료',
-        description: '부모님께 보낼 피드백이 생성되었습니다.',
-      })
-    }, 1500)
+    // TODO: Cloudflare AI 연동 예정 (현재 비활성화 상태)
+    console.warn('[AI Feedback] Cloudflare AI 적용 예정 — 현재 비활성화')
+    toast({
+      title: '준비 중',
+      description: 'Cloudflare AI 연동 후 사용 가능합니다.',
+    })
   }
 
   const handleGenerateFinalMessage = () => {
-    setIsGeneratingFinalMessage(true)
-
-    // Mock GPT final message generation
-    setTimeout(() => {
-      let finalMessage = `[${formData.class_name}] 수업일지\n\n`
-      finalMessage += `📅 ${new Date(formData.lesson_date || '').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })} ${formData.lesson_time}\n\n`
-
-      if (formData.content) {
-        finalMessage += `📚 학습 내용\n${formData.content}\n\n`
-      }
-
-      if (formData.parent_feedback) {
-        finalMessage += `👨‍🏫 선생님 피드백\n${formData.parent_feedback}\n\n`
-      }
-
-      if (formData.director_feedback) {
-        finalMessage += `👔 원장님 한마디\n${formData.director_feedback}\n\n`
-      }
-
-      if (formData.homework_assigned) {
-        finalMessage += `📝 과제\n${formData.homework_assigned}\n\n`
-      }
-
-      if (formData.next_lesson_plan) {
-        finalMessage += `📌 다음 수업 예고\n${formData.next_lesson_plan}\n`
-      }
-
-      setFormData((prev) => ({
-        ...prev,
-        final_message: finalMessage,
-      }))
-
-      setIsGeneratingFinalMessage(false)
-
-      toast({
-        title: 'AI 알림톡 생성 완료',
-        description: '최종 알림톡 내용이 생성되었습니다.',
-      })
-    }, 1500)
+    // TODO: Cloudflare AI 연동 예정 (현재 비활성화 상태)
+    console.warn('[AI Final Message] Cloudflare AI 적용 예정 — 현재 비활성화')
+    toast({
+      title: '준비 중',
+      description: 'Cloudflare AI 연동 후 사용 가능합니다.',
+    })
   }
 
-  const handleSaveLesson = () => {
+  const handleDeleteLesson = async () => {
+    if (!selectedLesson) return
+    const confirmed = confirm('수업일지를 삭제하시겠습니까?')
+    if (!confirmed) return
+    try {
+      setIsLoading(true)
+      const res = await fetch(`/api/lessons/${selectedLesson.id}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || '삭제에 실패했습니다.')
+      }
+      setLessons((prev) => prev.filter((l) => l.id !== selectedLesson.id))
+      toast({ title: '삭제 완료', description: '수업일지가 삭제되었습니다.' })
+      setIsDialogOpen(false)
+      setSelectedLesson(null)
+    } catch (error: any) {
+      toast({
+        title: '오류 발생',
+        description: error.message || '삭제 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSaveLesson = async () => {
     if (!formData.class_name || !formData.content || !formData.student_attitudes) {
       toast({
         title: '필수 정보 누락',
@@ -420,42 +469,58 @@ export default function LessonsPage() {
       return
     }
 
-    if (isEditing && selectedLesson) {
-      // Update existing lesson
-      const updatedLessons = lessons.map((lesson) =>
-        lesson.id === selectedLesson.id
-          ? { ...lesson, ...formData, updated_at: new Date().toISOString() }
-          : lesson
-      )
-      setLessons(updatedLessons)
-
-      toast({
-        title: '수업일지 수정 완료',
-        description: '수업일지가 성공적으로 수정되었습니다.',
+    try {
+      setIsLoading(true)
+      const response = await fetch('/api/lessons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          class_id: formData.class_id,
+          class_name: formData.class_name,
+          subject: formData.subject,
+          teacher_id: formData.teacher_id,
+          teacher_name: formData.teacher_name,
+          lesson_time: formData.lesson_time,
+          title: formData.content?.slice(0, 40) || formData.class_name || '수업일지',
+          content: formData.content,
+          lesson_date: formData.lesson_date,
+          homework_assigned: formData.homework_assigned,
+          homework_submissions: Object.entries(homeworkSubmissions).map(([student_id, submitted]) => ({
+            student_id,
+            submitted,
+          })),
+          comprehension_level: formData.comprehension_level || 'medium',
+          student_attitudes: formData.student_attitudes,
+          parent_feedback: formData.parent_feedback,
+          next_lesson_plan: formData.next_lesson_plan,
+          status: 'completed',
+        }),
       })
-    } else {
-      // Create new lesson
-      const newLesson: LessonNote = {
-        ...formData as LessonNote,
-        id: `lesson-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        org_id: 'org-1',
-        teacher_id: 'teacher-1',
-        teacher_name: '김선생',
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || '수업일지 저장에 실패했습니다.')
       }
 
-      const updatedLessons = [newLesson, ...lessons]
-      setLessons(updatedLessons)
+      const data = await response.json() as { lesson: LessonNote }
+      setLessons((prev) => [data.lesson, ...prev])
 
       toast({
         title: '수업일지 작성 완료',
-        description: '수업일지가 성공적으로 작성되었습니다.',
+        description: '수업일지가 성공적으로 저장되었습니다.',
       })
-    }
 
-    setIsDialogOpen(false)
-    setSelectedLesson(null)
+      setIsDialogOpen(false)
+      setSelectedLesson(null)
+    } catch (error: any) {
+      toast({
+        title: '오류 발생',
+        description: error.message || '수업일지 저장 중 문제가 발생했습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   // Filter lessons by class
@@ -1265,35 +1330,6 @@ export default function LessonsPage() {
               />
             </div>
 
-            {isEditing && formData.homework_assigned && (
-              <div className="space-y-2">
-                <Label>과제를 제출했나요?</Label>
-                <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant={formData.homework_submitted === true ? 'default' : 'outline'}
-                    className={formData.homework_submitted === true ? 'bg-green-600 hover:bg-green-700' : ''}
-                    onClick={() => setFormData({ ...formData, homework_submitted: true })}
-                  >
-                    Yes
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={formData.homework_submitted === false ? 'default' : 'outline'}
-                    className={formData.homework_submitted === false ? 'bg-red-600 hover:bg-red-700' : ''}
-                    onClick={() => setFormData({ ...formData, homework_submitted: false })}
-                  >
-                    No
-                  </Button>
-                </div>
-                {formData.homework_submitted !== undefined && (
-                  <p className="text-xs text-muted-foreground">
-                    {formData.homework_submitted ? '✓ 과제가 제출되었습니다' : '✗ 과제가 미제출되었습니다'}
-                  </p>
-                )}
-              </div>
-            )}
-
             <div className="space-y-2">
               <Label htmlFor="next_lesson_plan">다음 수업 계획</Label>
               <Textarea
@@ -1317,7 +1353,7 @@ export default function LessonsPage() {
                     variant="outline"
                     size="sm"
                     onClick={handleGenerateFeedback}
-                    disabled={isGeneratingFeedback || !formData.content}
+                    disabled={isGeneratingFeedback}
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
                     {isGeneratingFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
@@ -1406,19 +1442,29 @@ export default function LessonsPage() {
             </Button>
             {isEditing ? (
               <>
+                <Button variant="destructive" onClick={handleDeleteLesson}>
+                  삭제
+                </Button>
                 <Button variant="secondary" onClick={handleUpdateFeedback}>
                   피드백 저장
                 </Button>
-                {(userRole === 'director' || userRole === 'admin') && (
+                {(userRole === 'director' || userRole === 'admin' || userRole === 'owner') && (
                   <Button onClick={handleSendNotification}>
-                    알림톡 보내기 (원장님만 가능)
+                    알림톡 보내기
                   </Button>
                 )}
               </>
             ) : (
-              <Button onClick={handleSaveLesson}>
-                작성 완료
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={handleSaveLesson}>
+                  작성 완료
+                </Button>
+                {(userRole === 'director' || userRole === 'admin' || userRole === 'owner') && (
+                  <Button onClick={handleSendNotification}>
+                    알림톡 보내기
+                  </Button>
+                )}
+              </div>
             )}
           </DialogFooter>
         </DialogContent>

@@ -25,6 +25,7 @@ export interface Student {
   grade: string // 중1, 중2, 중3, 고1, 고2, 고3, 재수
   school: string // 학교명
   phone: string
+  teacher_id?: string | null // 담임/담당 교사
   parent_name: string
   parent_phone: string
   parent_email?: string
@@ -364,16 +365,25 @@ export type InvoiceInsert = Omit<Invoice, 'id' | 'created_at' | 'updated_at'>
 export interface Organization {
   id: string
   name: string
+  type?: string
+  owner_id: string
   owner_name?: string // 원장 이름
   address: string
   phone: string
   email: string
   logo_url?: string
+  slug: string
+  status: 'active' | 'inactive' | 'trial'
+  subscription_plan?: string
+  max_users?: number
+  max_students?: number
   settings: {
     auto_sms: boolean
     auto_email: boolean
     notification_enabled: boolean
   }
+  created_at: string
+  updated_at: string
 }
 
 export interface Branch {
@@ -776,3 +786,63 @@ export interface ManagerCall {
 }
 
 export type ManagerCallInsert = Omit<ManagerCall, 'id' | 'created_at'>
+
+// ============================================
+// SETTINGS - Additional Types
+// ============================================
+
+// Menu Settings (메뉴 설정)
+export interface MenuSettings {
+  id: string
+  org_id: string
+  menu_id: string  // 'students', 'classes', 'teachers', etc.
+  is_enabled: boolean
+  display_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type MenuSettingsInsert = Omit<MenuSettings, 'id' | 'created_at' | 'updated_at'>
+
+// KakaoTalk Usage (카카오톡 사용 내역)
+export interface KakaoTalkUsage {
+  id: string
+  org_id: string
+  student_id?: string | null
+  student_name: string  // Denormalized for archived students
+  message_type: string  // '지각 안내', '등원 알림', '하원 알림', '수업일지 전송', etc.
+  message_content: string
+  cost_cents: number  // Cost in cents (1500 = 15원, 2000 = 20원)
+  status: 'success' | 'failed'
+  sent_at: string
+  created_at: string
+}
+
+export type KakaoTalkUsageInsert = Omit<KakaoTalkUsage, 'id' | 'created_at'>
+
+// Service Usage (서비스 사용 내역)
+export interface ServiceUsage {
+  id: string
+  org_id: string
+  usage_date: string  // DATE (YYYY-MM-DD)
+  service_type: string  // '서버비', '문자 발송료', '스토리지', etc.
+  description?: string
+  cost_cents: number  // Cost in cents
+  created_at: string
+}
+
+export type ServiceUsageInsert = Omit<ServiceUsage, 'id' | 'created_at'>
+
+// System Settings (시스템 전역 설정 - Admin 설정 페이지용)
+export interface SystemSettings {
+  id: string
+  org_id?: string | null  // NULL이면 전역 설정, org_id 있으면 기관별 설정
+  key: string
+  value: any  // JSONB (string, number, boolean 모두 가능)
+  description?: string
+  category: 'general' | 'email' | 'security' | 'features'
+  created_at: string
+  updated_at: string
+}
+
+export type SystemSettingsInsert = Omit<SystemSettings, 'id' | 'created_at' | 'updated_at'>

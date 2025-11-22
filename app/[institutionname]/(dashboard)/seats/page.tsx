@@ -1416,7 +1416,8 @@ export default function SeatsPage() {
 
         const newStudentId = data.student?.id || data.id
 
-        // Add to students state
+        // Add to students state (optimistic)
+        const prevStudents = students
         setStudents(prev => [...prev, {
           id: newStudentId,
           name: newStudentName.trim(),
@@ -1424,7 +1425,19 @@ export default function SeatsPage() {
           school: newStudentSchool.trim(),
         }])
 
-        // Assign to seat with usage time
+        // Assign to seat with usage time (optimistic)
+        const prevSeats = seats
+        setSeats(seats.map(seat =>
+          seat.id === selectedSeat.id
+            ? {
+                ...seat,
+                student_id: newStudentId,
+                student_name: newStudentName.trim(),
+                status: 'checked_out' as const,
+              }
+            : seat
+        ))
+
         const assignResponse = await fetch('/api/seat-assignments', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1439,6 +1452,8 @@ export default function SeatsPage() {
         const assignData = await assignResponse.json()
 
         if (!assignResponse.ok) {
+          setSeats(prevSeats)
+          setStudents(prevStudents)
           toast({
             title: '배정 실패',
             description: assignData.error || '좌석 배정에 실패했습니다.',
@@ -1447,19 +1462,6 @@ export default function SeatsPage() {
           return
         }
 
-        // Update local seats state
-        const updatedSeats = seats.map(seat =>
-          seat.id === selectedSeat.id
-            ? {
-                ...seat,
-                student_id: newStudentId,
-                student_name: newStudentName.trim(),
-                status: 'checked_out' as const,
-              }
-            : seat
-        )
-
-        setSeats(updatedSeats)
         setIsAssignDialogOpen(false)
 
         toast({
@@ -1488,6 +1490,13 @@ export default function SeatsPage() {
   const handleRemoveStudent = async () => {
     if (!selectedSeat) return
 
+    const prevSeats = seats
+    setSeats(seats.map(seat =>
+      seat.id === selectedSeat.id
+        ? { ...seat, student_id: null, student_name: null, status: 'vacant' as const }
+        : seat
+    ))
+
     try {
       const response = await fetch('/api/seat-assignments', {
         method: 'DELETE',
@@ -1501,6 +1510,7 @@ export default function SeatsPage() {
       const data = await response.json()
 
       if (!response.ok) {
+        setSeats(prevSeats)
         toast({
           title: '해제 실패',
           description: data.error || '배정 해제에 실패했습니다.',
@@ -1509,18 +1519,6 @@ export default function SeatsPage() {
         return
       }
 
-      const updatedSeats = seats.map(seat =>
-        seat.id === selectedSeat.id
-          ? {
-              ...seat,
-              student_id: null,
-              student_name: null,
-              status: 'vacant' as const,
-            }
-          : seat
-      )
-
-      setSeats(updatedSeats)
       setIsAssignDialogOpen(false)
 
       toast({
@@ -1529,6 +1527,7 @@ export default function SeatsPage() {
       })
     } catch (error) {
       console.error('Failed to remove student:', error)
+      setSeats(prevSeats)
       toast({
         title: '해제 실패',
         description: '네트워크 오류가 발생했습니다.',
@@ -1542,6 +1541,18 @@ export default function SeatsPage() {
     if (!seat || !seat.student_id) return
 
     const newStatus = seat.status === 'checked_in' ? 'checked_out' : 'checked_in'
+
+    const prevSeats = seats
+    setSeats(seats.map(s => {
+      if (s.id === seatId && s.student_id) {
+        return {
+          ...s,
+          status: newStatus as Seat['status'],
+          check_in_time: newStatus === 'checked_in' ? new Date().toISOString() : undefined
+        }
+      }
+      return s
+    }))
 
     try {
       const response = await fetch('/api/seat-assignments', {
@@ -1557,6 +1568,7 @@ export default function SeatsPage() {
       const data = await response.json()
 
       if (!response.ok) {
+        setSeats(prevSeats)
         toast({
           title: '상태 변경 실패',
           description: data.error || '출결 상태 변경에 실패했습니다.',
@@ -1565,25 +1577,13 @@ export default function SeatsPage() {
         return
       }
 
-      const updatedSeats = seats.map(s => {
-        if (s.id === seatId && s.student_id) {
-          return {
-            ...s,
-            status: newStatus as Seat['status'],
-            check_in_time: newStatus === 'checked_in' ? new Date().toISOString() : undefined
-          }
-        }
-        return s
-      })
-
-      setSeats(updatedSeats)
-
       toast({
         title: '출결 상태 변경',
         description: `${seat.number}번 좌석 - ${seat.student_name} (${newStatus === 'checked_in' ? '등원' : '하원'})`,
       })
     } catch (error) {
       console.error('Failed to toggle attendance:', error)
+      setSeats(prevSeats)
       toast({
         title: '상태 변경 실패',
         description: '네트워크 오류가 발생했습니다.',

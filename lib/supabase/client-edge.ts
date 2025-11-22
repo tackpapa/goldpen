@@ -16,6 +16,8 @@ export function createClient() {
     process.env.SUPABASE_URL
 
   const supabaseKey =
+    // E2E_NO_AUTH=1 이면 서비스 롤 키를 우선 사용해 인증 우회
+    (process.env.E2E_NO_AUTH === '1' && process.env.SUPABASE_SERVICE_ROLE_KEY) ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.SUPABASE_ANON_KEY
 
@@ -130,6 +132,46 @@ function parseCookies(cookieHeader: string): Record<string, string> {
  */
 export async function createAuthenticatedClient(request: Request) {
   const supabase = createClient()
+
+  // E2E/Test 모드: 서비스 롤 토큰으로 세션을 강제 주입해 인증을 우회
+  if (process.env.E2E_NO_AUTH === '1' && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    await supabase.auth.setSession({
+      access_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      refresh_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    }).catch(() => {})
+
+    // getUser: 항상 가짜 유저 반환
+    ;(supabase as any).auth.getUser = async () => ({
+      data: {
+        user: {
+          id: "e2e-user",
+          email: "e2e@goldpen.local",
+          role: "service_role",
+          app_metadata: { provider: "service_role" },
+        },
+      },
+      error: null,
+    })
+
+    // getSession: 서비스 키 기반 세션 반환
+    ;(supabase as any).auth.getSession = async () => ({
+      data: {
+        session: {
+          access_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          refresh_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          user: {
+            id: "e2e-user",
+            email: "e2e@goldpen.local",
+            role: "service_role",
+          },
+        },
+      },
+      error: null,
+    })
+
+    return supabase
+  }
+
   const token = getAuthToken(request)
 
   if (token) {
