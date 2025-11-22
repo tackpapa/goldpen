@@ -75,19 +75,19 @@ export function StudentDetailModal({
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-8 w-full">
-            <TabsTrigger value="info" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              <span className="hidden sm:inline">기본 정보</span>
-            </TabsTrigger>
+            <TabsList className="grid grid-cols-8 w-full">
+              <TabsTrigger value="info" className="flex items-center gap-2">
+                <User className="h-4 w-4" />
+                <span className="hidden sm:inline">기본 정보</span>
+              </TabsTrigger>
             <TabsTrigger value="files" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
               <span className="hidden sm:inline">학생 자료</span>
             </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              <span className="hidden sm:inline">출근 스케줄</span>
-            </TabsTrigger>
+              <TabsTrigger value="schedule" className="flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                <span className="hidden sm:inline">등하원 일정</span>
+              </TabsTrigger>
             <TabsTrigger value="attendance" className="flex items-center gap-2">
               <ClipboardCheck className="h-4 w-4" />
               <span className="hidden sm:inline">출결 내역</span>

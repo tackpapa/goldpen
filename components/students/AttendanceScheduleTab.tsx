@@ -100,8 +100,8 @@ export function AttendanceScheduleTab({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>출근 스케줄</CardTitle>
-        <CardDescription>요일별 출근 시간을 설정하세요</CardDescription>
+        <CardTitle>등하원 일정</CardTitle>
+        <CardDescription>요일별 등원/하원 시간을 설정하세요</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {DAYS.map(({ value, label }) => {

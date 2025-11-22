@@ -22,6 +22,7 @@ export interface Student {
   org_id: string
   name: string
   attendance_code?: string // 출결용 4자리 고유 번호 (자동 생성, 변경 불가)
+  student_code?: string | null
   grade: string // 중1, 중2, 중3, 고1, 고2, 고3, 재수
   school: string // 학교명
   phone: string
@@ -35,6 +36,8 @@ export interface Student {
   enrollment_date: string // 입교 날짜
   notes?: string
   files?: StudentFile[] // 학생 자료 파일
+  branch_name?: string | null
+  campuses?: string[] | null
 }
 
 // ============================================
