@@ -96,18 +96,27 @@ export function BasicInfoTab({
   const branchValue = parseBranch(student.notes) || 'demoSchool'
   const campusValues = parseCampuses(student.notes)
 
-  // Load service enrollments from localStorage
+  // Sync local state when student prop changes (including campuses)
   useEffect(() => {
-    const stored = localStorage.getItem('service_enrollments')
-    if (stored) {
-      try {
-        const all = JSON.parse(stored) as ServiceEnrollment[]
-        setServiceEnrollments(all.filter(e => e.student_id === student.id && e.status === 'active'))
-      } catch (error) {
-        console.error('Failed to load service enrollments:', error)
+    setLocalStudent(student)
+    const campuses = student.campuses || []
+    const mapToService = (campus: string): ServiceEnrollment | null => {
+      const value =
+        campus === '학원' ? 'academy' :
+        campus === '독서실' ? 'study_room' :
+        campus === '공부방' ? 'study_center' : null
+      if (!value) return null
+      return {
+        id: `enroll-${student.id}-${value}`,
+        created_at: new Date().toISOString(),
+        student_id: student.id,
+        service_type: value as ServiceEnrollment['service_type'],
+        status: 'active',
+        enrolled_at: new Date().toISOString(),
       }
     }
-  }, [student.id])
+    setServiceEnrollments(campuses.map(mapToService).filter(Boolean) as ServiceEnrollment[])
+  }, [student])
 
   // Load teachers from localStorage
   useEffect(() => {
@@ -295,32 +304,36 @@ export function BasicInfoTab({
   }, [student.id])
 
   const handleServiceToggle = (serviceType: 'academy' | 'study_room' | 'study_center', checked: boolean) => {
-    const stored = localStorage.getItem('service_enrollments')
-    let allEnrollments: ServiceEnrollment[] = stored ? JSON.parse(stored) : []
+    // campuses 값을 직접 관리
+    const campusLabel =
+      serviceType === 'academy' ? '학원' :
+      serviceType === 'study_room' ? '독서실' :
+      '공부방'
 
-    if (checked) {
-      // Add enrollment
-      const newEnrollment: ServiceEnrollment = {
-        id: `enrollment-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        student_id: student.id,
-        service_type: serviceType,
-        status: 'active',
-        enrolled_at: new Date().toISOString(),
-      }
-      allEnrollments.push(newEnrollment)
-      setServiceEnrollments([...serviceEnrollments, newEnrollment])
-    } else {
-      // Remove enrollment
-      allEnrollments = allEnrollments.map(e =>
-        e.student_id === student.id && e.service_type === serviceType
-          ? { ...e, status: 'inactive' as const }
-          : e
-      )
-      setServiceEnrollments(serviceEnrollments.filter(e => e.service_type !== serviceType))
-    }
+    const nextCampuses = new Set(localStudent.campuses || [])
+    if (checked) nextCampuses.add(campusLabel)
+    else nextCampuses.delete(campusLabel)
 
-    localStorage.setItem('service_enrollments', JSON.stringify(allEnrollments))
+    const nextCampusesArr = Array.from(nextCampuses)
+    setLocalStudent({ ...localStudent, campuses: nextCampusesArr })
+
+    // 서비스 표시용 state 동기화
+    setServiceEnrollments(
+      nextCampusesArr.map((c) => {
+        const val =
+          c === '학원' ? 'academy' :
+          c === '독서실' ? 'study_room' :
+          'study_center'
+        return {
+          id: `enroll-${student.id}-${val}`,
+          created_at: new Date().toISOString(),
+          student_id: student.id,
+          service_type: val as ServiceEnrollment['service_type'],
+          status: 'active',
+          enrolled_at: new Date().toISOString(),
+        }
+      })
+    )
   }
 
   const handleFieldChange = (field: keyof Student, value: any) => {
