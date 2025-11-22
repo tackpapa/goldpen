@@ -82,23 +82,6 @@ export default function StudentsPage() {
     { id: 'readingroom', label: '독서실' },
   ]
 
-  const parseBranch = (notes?: string) => {
-    if (!notes) return ''
-    const line = notes.split('\n').find((l) => l.startsWith('지점:'))
-    return line ? line.replace('지점:', '').trim() : ''
-  }
-
-  const parseCampuses = (notes?: string) => {
-    if (!notes) return [] as string[]
-    const line = notes.split('\n').find((l) => l.startsWith('캠퍼스:'))
-    if (!line) return []
-    return line
-      .replace('캠퍼스:', '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-  }
-
   // Student detail modal state
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
@@ -116,6 +99,8 @@ export default function StudentsPage() {
             ...s,
             attendance_code: (s as any).attendance_code || (s as any).student_code || '',
             student_code: (s as any).student_code || (s as any).attendance_code || '',
+            branch_name: (s as any).branch_name || institutionName || '',
+            campuses: (s as any).campuses || [],
           }))
           setStudents(normalized)
         } else {
@@ -185,19 +170,16 @@ export default function StudentsPage() {
       header: '연락처',
     },
     {
-      id: 'branch',
+      accessorKey: 'branch_name',
       header: '지점',
-      cell: ({ row }) => {
-        const branch = parseBranch((row.original as any).notes)
-        return branch || '-'
-      },
+      cell: ({ row }) => row.getValue('branch_name') || '-',
     },
     {
-      id: 'campuses',
+      accessorKey: 'campuses',
       header: '소속',
       cell: ({ row }) => {
-        const campuses = parseCampuses((row.original as any).notes)
-        if (!campuses.length) return '-'
+        const campuses = row.getValue('campuses') as string[] | null
+        if (!campuses || campuses.length === 0) return '-'
         return (
           <div className="flex gap-1 flex-wrap">
             {campuses.map((campus, i) => (
@@ -390,6 +372,8 @@ export default function StudentsPage() {
       const payload = {
         ...data,
         attendance_code: attendanceCode,
+        branch_name: selectedBranch,
+        campuses: selectedCampuses,
         notes: data.notes ? `${data.notes}\n${notesCombined}` : notesCombined,
       }
 

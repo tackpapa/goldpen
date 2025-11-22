@@ -50,6 +50,8 @@ export const StudentSchema = z.object({
   status: z.enum(['active', 'inactive', 'graduated']).default('active'),
   goals: z.string().optional(),
   notes: z.string().optional(),
+  branch_name: z.string().optional(),
+  campuses: z.array(z.string()).optional(),
 })
 
 export type StudentInput = z.infer<typeof StudentSchema>
