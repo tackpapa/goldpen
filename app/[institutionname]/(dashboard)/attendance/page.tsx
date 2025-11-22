@@ -55,12 +55,13 @@ interface WeeklyStatItem {
   excused: number
 }
 
-interface StudentAttendanceRateItem {
+interface ClassAttendanceRateItem {
   name: string
   rate: number
   present: number
   late: number
   absent: number
+  excused: number
 }
 
 export default function AttendancePage() {
@@ -72,7 +73,7 @@ export default function AttendancePage() {
   const [todayAttendance, setTodayAttendance] = useState<TodayStudent[]>([])
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStatItem[]>([])
-  const [studentAttendanceRate, setStudentAttendanceRate] = useState<StudentAttendanceRateItem[]>([])
+  const [classAttendanceRate, setClassAttendanceRate] = useState<ClassAttendanceRateItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
@@ -116,20 +117,24 @@ export default function AttendancePage() {
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
   }, [attendanceHistory])
 
-  const computeStudentRatesFromHistory = useCallback(() => {
+  const computeClassRatesFromHistory = useCallback(() => {
     const agg: Record<string, { name: string; present: number; late: number; absent: number; excused: number }> = {}
     attendanceHistory.forEach((r) => {
-      if (!agg[r.student_id]) agg[r.student_id] = { name: (r as any).student?.name || r.student_id, present: 0, late: 0, absent: 0, excused: 0 }
-      if (r.status === 'present') agg[r.student_id].present++
-      else if (r.status === 'late') agg[r.student_id].late++
-      else if (r.status === 'absent') agg[r.student_id].absent++
-      else if (r.status === 'excused') agg[r.student_id].excused++
+      const key = r.class_id || 'unknown'
+      const name = (r as any).class?.name || r.class_id || '미지정 반'
+      if (!agg[key]) agg[key] = { name, present: 0, late: 0, absent: 0, excused: 0 }
+      if (r.status === 'present') agg[key].present++
+      else if (r.status === 'late') agg[key].late++
+      else if (r.status === 'absent') agg[key].absent++
+      else if (r.status === 'excused') agg[key].excused++
     })
-    return Object.entries(agg).map(([id, v]) => {
-      const total = v.present + v.late + v.absent + v.excused
-      const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
-      return { id, name: v.name, ...v, rate }
-    })
+    return Object.values(agg)
+      .map((v) => {
+        const total = v.present + v.late + v.absent + v.excused
+        const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
+        return { ...v, rate }
+      })
+      .sort((a, b) => b.rate - a.rate)
   }, [attendanceHistory])
 
   const fetchAttendancePage = useCallback(async (pageToLoad: number) => {
@@ -146,7 +151,8 @@ export default function AttendancePage() {
 
     const fetchedCount = data.attendance?.length || 0
     console.log('[history] page', pageToLoad, 'fetched', fetchedCount, 'hasMore?', fetchedCount === HISTORY_PAGE_SIZE)
-    setAttendanceHistory(prev => pageToLoad === 0 ? (data.attendance || []) : [...prev, ...(data.attendance || [])])
+    const merged = pageToLoad === 0 ? (data.attendance || []) : [...attendanceHistory, ...(data.attendance || [])]
+    setAttendanceHistory(merged)
 
     // 첫 페이지에서만 오늘/통계 세트업
     if (pageToLoad === 0) {
@@ -158,12 +164,17 @@ export default function AttendancePage() {
       })
       setTodayAttendance(sortedToday)
       setWeeklyStats((data.weeklyStats && data.weeklyStats.length > 0) ? data.weeklyStats : computeWeeklyFromHistory())
-      setStudentAttendanceRate((data.studentRates && data.studentRates.length > 0) ? data.studentRates : computeStudentRatesFromHistory())
+      setClassAttendanceRate(computeClassRatesFromHistory())
     }
 
     // hasMore 판단
     setHasMore(fetchedCount === HISTORY_PAGE_SIZE)
-  }, [HISTORY_PAGE_SIZE])
+  }, [HISTORY_PAGE_SIZE, attendanceHistory, computeWeeklyFromHistory, computeClassRatesFromHistory])
+
+  // attendanceHistory 변경 시 반별 출결률 갱신
+  useEffect(() => {
+    setClassAttendanceRate(computeClassRatesFromHistory())
+  }, [attendanceHistory, computeClassRatesFromHistory])
 
   useEffect(() => {
     const load = async () => {
@@ -658,15 +669,15 @@ export default function AttendancePage() {
               </CardContent>
             </Card>
 
-            {/* 학생별 출결률 */}
+            {/* 반별 출결률 */}
             <Card>
               <CardHeader>
-                <CardTitle>학생별 출결률</CardTitle>
-                <CardDescription>이번 달 주요 학생 출결률</CardDescription>
+                <CardTitle>반별 출결률</CardTitle>
+                <CardDescription>이번 달 반별 출결률</CardDescription>
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={studentAttendanceRate}>
+                  <LineChart data={classAttendanceRate}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="name" />
                     <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
@@ -684,44 +695,6 @@ export default function AttendancePage() {
               </CardContent>
             </Card>
           </div>
-
-          {/* 학생별 상세 출결 통계 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>학생별 출결 상세</CardTitle>
-              <CardDescription>이번 달 학생별 출결 통계</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="p-2 text-left">학생명</th>
-                      <th className="p-2 text-center">출석</th>
-                      <th className="p-2 text-center">지각</th>
-                      <th className="p-2 text-center">결석</th>
-                      <th className="p-2 text-center">출결률</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {studentAttendanceRate.map((student, i) => (
-                      <tr key={i} className="border-b">
-                        <td className="p-2 font-medium">{student.name}</td>
-                        <td className="p-2 text-center text-green-600">{student.present}회</td>
-                        <td className="p-2 text-center text-orange-600">{student.late}회</td>
-                        <td className="p-2 text-center text-red-600">{student.absent}회</td>
-                        <td className="p-2 text-center">
-                          <Badge variant={student.rate >= 95 ? 'default' : 'secondary'}>
-                            {student.rate}%
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
     </div>
