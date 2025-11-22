@@ -239,7 +239,7 @@ export default function StudentsPage() {
     })
   }
 
-  const handleAttendanceCodeChange = (value: string) => {
+  const handleAttendanceCodeChange = async (value: string) => {
     setValue('attendance_code', value)
 
     // 4자리가 아니면 검증 안 함
@@ -254,9 +254,21 @@ export default function StudentsPage() {
       .filter(Boolean) as string[]
 
     if (existingCodes.includes(value)) {
-      setAttendanceCodeError('이미 사용 중인 출결코드입니다')
-    } else {
-      setAttendanceCodeError('')
+      setAttendanceCodeError('중복 코드는 사용할 수 없습니다.')
+      return
+    }
+
+    // 서버 측 중복 확인 (동일 org 내)
+    try {
+      const res = await fetch(`/api/students?attendance_code=${value}`, { credentials: 'include' })
+      const data = await res.json() as { count?: number }
+      if (data.count && data.count > 0) {
+        setAttendanceCodeError('중복 코드는 사용할 수 없습니다.')
+      } else {
+        setAttendanceCodeError('')
+      }
+    } catch {
+      // 네트워크 오류 시 기존 상태 유지
     }
   }
 
