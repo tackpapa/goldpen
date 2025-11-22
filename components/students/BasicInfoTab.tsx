@@ -59,7 +59,7 @@ const parseCampuses = (notes?: string) => {
     .filter(Boolean)
 }
 
-// Grade options from 중1 to N수
+// Grade options (StudentSchema와 동일)
 const GRADE_OPTIONS = [
   { value: '초1', label: '초1' },
   { value: '초2', label: '초2' },
