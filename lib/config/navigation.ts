@@ -82,6 +82,13 @@ export const navigationItems: NavigationItem[] = [
     badges: ['학원용', '독서실', '공부방', '강사용'],
   },
   {
+    id: 'seatsattendance',
+    name: '독서실 출결관리',
+    href: '/seatsattendance',
+    icon: CheckSquare,
+    badges: ['독서실', '공부방'],
+  },
+  {
     id: 'lessons',
     name: '수업일지',
     href: '/lessons',
