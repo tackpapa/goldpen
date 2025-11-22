@@ -7,7 +7,17 @@ export const createClassSchema = z.object({
   name: z.string().min(1, '반 이름은 필수입니다').max(100, '반 이름은 100자 이하여야 합니다'),
   subject: z.string().optional(),
   teacher_id: z.string().uuid('유효한 교사 ID가 아닙니다').optional(),
-  schedule: z.record(z.any()).optional(), // JSONB 스케줄
+  schedule: z
+    .array(
+      z.object({
+        day: z.string(),
+        start_time: z.string(),
+        end_time: z.string(),
+      })
+    )
+    .default([]), // JSONB 스케줄
+  capacity: z.number().int().positive('정원은 1명 이상이어야 합니다').default(10),
+  room: z.string().optional(),
   status: z.enum(['active', 'inactive']).default('active'),
 })
 
@@ -18,7 +28,17 @@ export const updateClassSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   subject: z.string().optional(),
   teacher_id: z.string().uuid().nullable().optional(),
-  schedule: z.record(z.any()).optional(),
+  schedule: z
+    .array(
+      z.object({
+        day: z.string(),
+        start_time: z.string(),
+        end_time: z.string(),
+      })
+    )
+    .optional(),
+  capacity: z.number().int().positive().optional(),
+  room: z.string().optional(),
   status: z.enum(['active', 'inactive']).optional(),
 })
 
@@ -34,9 +54,18 @@ export type UpdateClassInput = z.infer<typeof updateClassSchema>
 export const ClassSchema = z.object({
   name: z.string().min(2, '반 이름은 최소 2자 이상이어야 합니다'),
   subject: z.string().min(1, '과목을 선택해주세요'),
-  teacher_name: z.string().min(2, '강사 이름을 입력해주세요'),
+  teacher_id: z.string().uuid('강사를 선택해주세요').optional(),
   capacity: z.number().min(1, '정원은 1명 이상이어야 합니다'),
   room: z.string().optional(),
+  schedule: z
+    .array(
+      z.object({
+        day: z.string(),
+        start_time: z.string(),
+        end_time: z.string(),
+      })
+    )
+    .optional(),
   status: z.enum(['active', 'inactive']).default('active'),
   notes: z.string().optional(),
 })

@@ -7,6 +7,7 @@ export const runtime = 'edge'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const LATE_GRACE_MINUTES = Number(process.env.NEXT_PUBLIC_ATTENDANCE_LATE_GRACE ?? '10')
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
@@ -27,6 +28,73 @@ const updateStatusSchema = z.object({
   seatNumber: z.number().int().positive(),
   status: z.enum(['checked_in', 'checked_out']),
 })
+
+function parseTimeToMinutes(time: string) {
+  const [h, m, s] = time.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0) + (s ? s / 60 : 0)
+}
+
+async function upsertAttendanceForStudent(params: {
+  supabase: any
+  orgId: string
+  studentId: string | null
+  status: 'checked_in' | 'checked_out'
+  now: Date
+}) {
+  const { supabase, orgId, studentId, status, now } = params
+  if (!studentId) return
+
+  const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
+  const todayStr = now.toISOString().slice(0, 10)
+  const dayOfWeek = dayMap[now.getDay()]
+
+  // 1) 학생이 속한 반 조회
+  const { data: enrollments, error: enrollError } = await supabase
+    .from('class_enrollments')
+    .select('class_id')
+    .eq('student_id', studentId)
+    .eq('status', 'active')
+
+  if (enrollError || !enrollments?.length) return
+  const classIds = enrollments.map((e: any) => e.class_id).filter(Boolean)
+  if (!classIds.length) return
+
+  // 2) 오늘 요일 스케줄 조회
+  const { data: schedules, error: scheduleError } = await supabase
+    .from('schedules')
+    .select('id, class_id, start_time, end_time, day_of_week')
+    .eq('org_id', orgId)
+    .eq('day_of_week', dayOfWeek)
+    .in('class_id', classIds)
+
+  if (scheduleError || !schedules?.length) return
+
+  // 가장 이른 수업을 기준으로 지각 판정
+  const target = [...schedules].sort((a, b) => a.start_time.localeCompare(b.start_time))[0]
+  const startMinutes = parseTimeToMinutes(target.start_time)
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const attendanceStatus =
+    status === 'checked_in' && nowMinutes > startMinutes + LATE_GRACE_MINUTES ? 'late' : 'present'
+
+  const payload: any = {
+    org_id: orgId,
+    student_id: studentId,
+    class_id: target.class_id,
+    date: todayStr,
+    status: attendanceStatus,
+  }
+
+  if (status === 'checked_in') payload.check_in_time = now.toISOString()
+  if (status === 'checked_out') payload.check_out_time = now.toISOString()
+
+  const { error: attendanceError } = await supabase
+    .from('attendance')
+    .upsert(payload, { onConflict: 'org_id,class_id,student_id,date' })
+
+  if (attendanceError) {
+    console.error('[SeatAssignments Attendance] upsert error:', attendanceError)
+  }
+}
 
 // GET: 좌석 배정 목록 조회
 export async function GET(request: Request) {
@@ -51,7 +119,7 @@ export async function GET(request: Request) {
     // Get all seat assignments with student info
     const { data: assignments, error: assignmentsError } = await supabase
       .from('seat_assignments')
-      .select('*, students(id, name, grade)')
+      .select('*, students(id, name, grade, student_code, remaining_minutes)')
       .eq('org_id', userProfile.org_id)
       .order('seat_number', { ascending: true })
 
@@ -102,11 +170,12 @@ export async function GET(request: Request) {
         studentId: a.student_id,
         studentName: a.students?.name || null,
         studentGrade: a.students?.grade || null,
+        studentCode: a.students?.student_code || null,
         status: a.status,
         checkInTime: a.check_in_time,
         sessionStartTime: a.session_start_time,
         allocatedMinutes: a.allocated_minutes,
-        remainingMinutes,
+        remainingMinutes: remainingMinutes ?? a.students?.remaining_minutes ?? null,
         passType: pass?.pass_type || null,
         remainingDays: pass?.pass_type === 'days' ? pass.remaining_amount : null,
       }
@@ -226,7 +295,7 @@ export async function PUT(request: Request) {
     // Get current assignment to access session data
     const { data: currentAssignment, error: fetchError } = await supabase
       .from('seat_assignments')
-      .select('*, students(id, remaining_minutes)')
+      .select('*, students(id, remaining_minutes, student_code)')
       .eq('org_id', userProfile.org_id)
       .eq('seat_number', validated.seatNumber)
       .single()
@@ -294,6 +363,15 @@ export async function PUT(request: Request) {
       console.error('[SeatAssignments PUT] Error:', updateError)
       return Response.json({ error: '상태 업데이트 실패', details: updateError.message }, { status: 500 })
     }
+
+    // 동시로 출결 테이블 업데이트 (지각/출석)
+    await upsertAttendanceForStudent({
+      supabase,
+      orgId: userProfile.org_id,
+      studentId: currentAssignment.student_id,
+      status: validated.status,
+      now: new Date(),
+    })
 
     return Response.json({
       message: validated.status === 'checked_in' ? '등원 처리 완료' : '하원 처리 완료',

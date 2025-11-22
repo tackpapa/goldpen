@@ -54,6 +54,9 @@ supabase/.temp
 
 # Claude MCP config (contains secrets)
 .claude/mcp.json
+# Codex MCP config (contains secrets)
+.codex/
+.codex/config.toml
 
 # Editor directories and files
 .vscode/*

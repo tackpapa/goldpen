@@ -4,6 +4,7 @@ export const runtime = 'edge'
 
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Button } from '@/components/ui/button'
@@ -40,8 +41,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { StudentDetailModal } from '@/components/students/StudentDetailModal'
 import { generateUniqueAttendanceCode } from '@/lib/utils/generate-attendance-code'
+
+const StudentDetailModal = dynamic(
+  () => import('@/components/students/StudentDetailModal').then((m) => m.StudentDetailModal),
+  { ssr: false }
+)
 
 // Grade options
 const gradeOptions = [
@@ -245,19 +250,21 @@ export default function StudentsPage() {
     if (!confirm('정말로 삭제하시겠습니까?')) return
 
     setIsLoading(true)
+    const prev = students
+    setStudents(students.filter((s) => s.id !== id))
     try {
       const response = await fetch(`/api/students/${id}`, {
         method: 'DELETE',
       })
 
       if (response.ok) {
-        setStudents(students.filter((s) => s.id !== id))
         toast({
           title: '삭제 완료',
           description: '학생 정보가 삭제되었습니다.',
         })
       } else {
         const data = await response.json() as { error?: string }
+        setStudents(prev)
         toast({
           title: '삭제 실패',
           description: data.error || '학생 삭제에 실패했습니다.',
@@ -265,6 +272,7 @@ export default function StudentsPage() {
         })
       }
     } catch (error) {
+      setStudents(prev)
       toast({
         title: '오류 발생',
         description: '서버와 통신할 수 없습니다.',
@@ -312,6 +320,26 @@ export default function StudentsPage() {
 
       const payload = { ...data, attendance_code: attendanceCode }
 
+      const tempId = crypto.randomUUID()
+      const optimisticStudent: Student = {
+        id: tempId,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        org_id: '',
+        class_id: data.class_id || null,
+        name: data.name,
+        grade: data.grade,
+        phone: data.phone || '',
+        parent_name: data.parent_name || '',
+        parent_phone: data.parent_phone || '',
+        attendance_code: attendanceCode,
+        subjects: data.subjects || [],
+        status: data.status || 'active',
+        school: data.school || '',
+        notes: data.notes || '',
+      }
+      setStudents((prev) => [...prev, optimisticStudent])
+
       const response = await fetch('/api/students', {
         credentials: 'include',
         method: 'POST',
@@ -321,7 +349,15 @@ export default function StudentsPage() {
 
       if (response.ok) {
         const { student } = (await response.json()) as { student: Student }
-        setStudents([...students, student])
+        setStudents((prev) => {
+          const idx = prev.findIndex((s) => s.id === tempId)
+          if (idx >= 0) {
+            const copy = [...prev]
+            copy[idx] = student
+            return copy
+          }
+          return [...prev, student]
+        })
         toast({
           title: '등록 완료',
           description: `학생이 등록되었습니다. 출결코드: ${attendanceCode}`,
@@ -331,6 +367,7 @@ export default function StudentsPage() {
         setAttendanceCodeError('')
       } else {
         const { error } = (await response.json()) as { error?: string }
+        setStudents((prev) => prev.filter((s) => s.id !== tempId))
         toast({
           title: '등록 실패',
           description: error || '학생 등록에 실패했습니다.',
@@ -338,6 +375,7 @@ export default function StudentsPage() {
         })
       }
     } catch (error) {
+      setStudents((prev) => prev.filter((s) => s.id !== tempId))
       toast({
         title: '오류 발생',
         description: '다시 시도해주세요.',

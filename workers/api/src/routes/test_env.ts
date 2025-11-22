@@ -1,29 +1,16 @@
-import { Hono } from 'hono'
-import type { Env } from '../env'
-import { createAuthenticatedClient } from '../lib/supabase'
+import { Hono } from "hono";
+import type { Env } from "../env";
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<{ Bindings: Env }>();
 
+app.get("/", (c) => {
+  return c.json({
+    env: {
+      hasHyperdrive: !!c.env.HYPERDRIVE_DB,
+      supabaseUrl: c.env.NEXT_PUBLIC_SUPABASE_URL,
+      appUrl: c.env.NEXT_PUBLIC_APP_URL,
+    },
+  });
+});
 
-/**
- * GET /api/test-env
- */
-app.get('/', async (c) => {
-  try {
-    const supabase = await createAuthenticatedClient(c.req.raw, c.env)
-
-    // TODO: 기존 app/api/test-env/route.ts 로직 이식
-    // 현재는 기본 응답만 반환
-
-    return c.json({
-      message: 'GET /api/test-env - Implementation needed',
-      // TODO: 실제 데이터 반환
-    })
-  } catch (error: any) {
-    console.error('[test-env] GET error:', error)
-    return c.json({ error: error.message }, 500)
-  }
-})
-
-
-export default app
+export default app;

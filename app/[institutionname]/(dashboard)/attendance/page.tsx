@@ -3,8 +3,9 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
+import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,6 +25,7 @@ import { Calendar, CheckCircle, XCircle, Clock, User, ExternalLink } from 'lucid
 import type { Attendance } from '@/lib/types/database'
 import { format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+import { useMemo } from 'react'
 
 // Type definitions
 interface TodayStudent {
@@ -59,34 +61,126 @@ export default function AttendancePage() {
   usePageAccess('attendance')
 
   const { toast } = useToast()
+  const params = useParams()
+  const institutionName = params.institutionname as string
   const [todayAttendance, setTodayAttendance] = useState<TodayStudent[]>([])
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStatItem[]>([])
   const [studentAttendanceRate, setStudentAttendanceRate] = useState<StudentAttendanceRateItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+  const PAGE_SIZE = 20
+  const statusPriority: Record<string, number> = {
+    absent: 0,
+    late: 1,
+    present: 2,
+    excused: 3,
+    scheduled: 4,
+  }
+
+  // 통계 fallback 계산 (데이터 없을 때 로컬 계산)
+  const computeWeeklyFromHistory = useCallback(() => {
+    const map: Record<string, { date: string; present: number; late: number; absent: number; excused: number }> = {}
+    attendanceHistory.forEach((r) => {
+      if (!map[r.date]) map[r.date] = { date: r.date, present: 0, late: 0, absent: 0, excused: 0 }
+      if (r.status === 'present') map[r.date].present++
+      else if (r.status === 'late') map[r.date].late++
+      else if (r.status === 'absent') map[r.date].absent++
+      else if (r.status === 'excused') map[r.date].excused++
+    })
+    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
+  }, [attendanceHistory])
+
+  const computeStudentRatesFromHistory = useCallback(() => {
+    const agg: Record<string, { name: string; present: number; late: number; absent: number; excused: number }> = {}
+    attendanceHistory.forEach((r) => {
+      if (!agg[r.student_id]) agg[r.student_id] = { name: (r as any).student?.name || r.student_id, present: 0, late: 0, absent: 0, excused: 0 }
+      if (r.status === 'present') agg[r.student_id].present++
+      else if (r.status === 'late') agg[r.student_id].late++
+      else if (r.status === 'absent') agg[r.student_id].absent++
+      else if (r.status === 'excused') agg[r.student_id].excused++
+    })
+    return Object.entries(agg).map(([id, v]) => {
+      const total = v.present + v.late + v.absent + v.excused
+      const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
+      return { id, name: v.name, ...v, rate }
+    })
+  }, [attendanceHistory])
+
+  const fetchAttendancePage = useCallback(async (pageToLoad: number) => {
+    const params = new URLSearchParams({
+      limit: PAGE_SIZE.toString(),
+      offset: (pageToLoad * PAGE_SIZE).toString(),
+    })
+    const response = await fetch(`/api/attendance?${params.toString()}`, { credentials: 'include' })
+    const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[] }
+
+    if (!response.ok) {
+      throw new Error(data?.error || '출결 데이터 로드 실패')
+    }
+
+    setAttendanceHistory(prev => pageToLoad === 0 ? (data.attendance || []) : [...prev, ...(data.attendance || [])])
+
+    // 첫 페이지에서만 오늘/통계 세트업
+    if (pageToLoad === 0) {
+      const sortedToday = (data.todayStudents || []).slice().sort((a, b) => {
+        const pa = statusPriority[a.status] ?? 99
+        const pb = statusPriority[b.status] ?? 99
+        if (pa !== pb) return pa - pb
+        return (a.student_name || '').localeCompare(b.student_name || '')
+      })
+      setTodayAttendance(sortedToday)
+      setWeeklyStats((data.weeklyStats && data.weeklyStats.length > 0) ? data.weeklyStats : computeWeeklyFromHistory())
+      setStudentAttendanceRate((data.studentRates && data.studentRates.length > 0) ? data.studentRates : computeStudentRatesFromHistory())
+    }
+
+    // hasMore 판단
+    const fetched = data.attendance?.length || 0
+    setHasMore(fetched === PAGE_SIZE)
+  }, [PAGE_SIZE])
 
   useEffect(() => {
-    const fetchAttendance = async () => {
+    const load = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch('/api/attendance', { credentials: 'include' })
-        const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[]; error?: string }
-        if (response.ok) {
-          setAttendanceHistory(data.attendance || [])
-          setTodayAttendance(data.todayStudents || [])
-          setWeeklyStats(data.weeklyStats || [])
-          setStudentAttendanceRate(data.studentRates || [])
-        } else {
-          toast({ title: '출결 데이터 로드 실패', variant: 'destructive' })
-        }
-      } catch {
-        toast({ title: '오류 발생', variant: 'destructive' })
+        await fetchAttendancePage(0)
+        setPage(0)
+      } catch (err) {
+        toast({ title: '출결 데이터 로드 실패', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
       } finally {
         setIsLoading(false)
       }
     }
-    fetchAttendance()
-  }, [toast])
+    load()
+  }, [fetchAttendancePage, toast])
+
+  // Infinite scroll observer
+  useEffect(() => {
+    if (!hasMore || isLoadingMore) return
+    const observer = new IntersectionObserver(
+      async (entries) => {
+        if (entries[0].isIntersecting) {
+          observer.disconnect()
+          setIsLoadingMore(true)
+          try {
+            const nextPage = page + 1
+            await fetchAttendancePage(nextPage)
+            setPage(nextPage)
+          } catch (err) {
+            toast({ title: '추가 로드 실패', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+          } finally {
+            setIsLoadingMore(false)
+          }
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    if (loadMoreRef.current) observer.observe(loadMoreRef.current)
+    return () => observer.disconnect()
+  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast])
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null)
@@ -112,16 +206,29 @@ export default function AttendancePage() {
     excused: { label: '인정결석', variant: 'outline' as const, icon: CheckCircle, color: 'text-blue-600' },
   }
 
-  const handleStatusChange = (studentId: string, newStatus: 'scheduled' | 'present' | 'absent' | 'late' | 'excused') => {
-    setTodayAttendance(
-      todayAttendance.map((record) =>
-        record.student_id === studentId ? { ...record, status: newStatus } as typeof record : record
-      )
-    )
-    toast({
-      title: '출결 상태 변경',
-      description: `출결 상태가 ${statusMap[newStatus].label}(으)로 변경되었습니다.`,
-    })
+  const handleStatusChange = async (recordId: string, newStatus: 'scheduled' | 'present' | 'absent' | 'late' | 'excused') => {
+    // optimistic update
+    setTodayAttendance(prev => prev.map(r => r.id === recordId ? { ...r, status: newStatus } : r))
+    try {
+      const res = await fetch(`/api/attendance/${recordId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || '저장 실패')
+      }
+      toast({
+        title: '출결 상태 변경',
+        description: `출결 상태가 ${statusMap[newStatus].label}(으)로 변경되었습니다.`,
+      })
+    } catch (err) {
+      toast({ title: '저장 실패', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+      // rollback to present if failed
+      setTodayAttendance(prev => prev.map(r => r.id === recordId ? { ...r, status: 'present' } : r))
+    }
   }
 
   const todayColumns: ColumnDef<TodayStudent>[] = [
@@ -149,18 +256,21 @@ export default function AttendancePage() {
       header: '선생님',
       cell: ({ row }) => {
         const teacherName = row.getValue('teacher_name') as string
-        return <span className="text-sm">{teacherName}</span>
+        return <span className="text-sm">{teacherName || '-'}</span>
       },
     },
     {
       accessorKey: 'scheduled_time',
       header: '수업 시간',
-      cell: ({ row }) => (
-        <div className="flex items-center gap-2">
-          <Calendar className="h-3 w-3 text-muted-foreground" />
-          <span className="text-sm">{row.getValue('scheduled_time')}</span>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const time = row.getValue('scheduled_time') as string
+        return (
+          <div className="flex items-center gap-2">
+            <Calendar className="h-3 w-3 text-muted-foreground" />
+            <span className="text-sm">{time || '-'}</span>
+          </div>
+        )
+      },
     },
     {
       accessorKey: 'status',
@@ -185,9 +295,9 @@ export default function AttendancePage() {
         return (
           <Select
             value={student.status}
-            onValueChange={(value) =>
-              handleStatusChange(student.student_id, value as typeof student.status)
-            }
+              onValueChange={(value) =>
+                handleStatusChange(student.id, value as typeof student.status)
+              }
           >
             <SelectTrigger className="w-32">
               <SelectValue />
@@ -238,7 +348,7 @@ export default function AttendancePage() {
           <p className="text-sm md:text-base text-muted-foreground">학생 출결을 관리하세요 · 출결 데이터는 <span className="font-medium text-blue-600">학생용 출결 페이지</span>의 등원/하원 기록을 기반으로 자동 반영됩니다</p>
         </div>
         <Link
-          href="/goldpen/liveattendance"
+          href={`/${institutionName}/liveattendance`}
           target="_blank"
           className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors"
         >
@@ -323,9 +433,16 @@ export default function AttendancePage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">전체 반</SelectItem>
-                    <SelectItem value="class-1">수학 특강반</SelectItem>
-                    <SelectItem value="class-2">영어 회화반</SelectItem>
-                    <SelectItem value="class-3">국어 독해반</SelectItem>
+                    {useMemo(() => {
+                      const opts = Array.from(new Map(
+                        todayAttendance
+                          .filter(r => r.class_id)
+                          .map(r => [r.class_id!, r.class_name || r.class_id!])
+                      ).entries())
+                      return opts.map(([id, name]) => (
+                        <SelectItem key={id} value={id}>{name}</SelectItem>
+                      ))
+                    }, [todayAttendance])}
                   </SelectContent>
                 </Select>
               </div>
@@ -350,30 +467,32 @@ export default function AttendancePage() {
             </CardHeader>
             <CardContent>
               <div className="rounded-md border">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="p-2 text-left">날짜</th>
-                      <th className="p-2 text-left">학생 ID</th>
-                      <th className="p-2 text-left">반 ID</th>
-                      <th className="p-2 text-center">상태</th>
-                      <th className="p-2 text-left">비고</th>
-                    </tr>
+                 <table className="w-full text-sm">
+                   <thead>
+                     <tr className="border-b bg-muted/50">
+                       <th className="p-2 text-left">날짜</th>
+                       <th className="p-2 text-left">학생</th>
+                       <th className="p-2 text-left">반</th>
+                       <th className="p-2 text-center">상태</th>
+                       <th className="p-2 text-left">비고</th>
+                     </tr>
                   </thead>
                   <tbody>
-                    {attendanceHistory.map((record) => {
-                      const statusInfo = statusMap[record.status]
-                      const Icon = statusInfo.icon
-                      return (
-                        <tr key={record.id} className="border-b">
-                          <td className="p-2">{record.date}</td>
-                          <td className="p-2">{record.student_id}</td>
-                          <td className="p-2">{record.class_id}</td>
-                          <td className="p-2 text-center">
-                            <Badge variant={statusInfo.variant} className="gap-1">
-                              <Icon className="h-3 w-3" />
-                              {statusInfo.label}
-                            </Badge>
+          {attendanceHistory.map((record) => {
+            const statusInfo = statusMap[record.status]
+            const Icon = statusInfo.icon
+            const studentName = record.student?.name || record.student_id
+            const className = record.class?.name || record.class_id
+            return (
+              <tr key={record.id} className="border-b">
+                <td className="p-2">{record.date}</td>
+                <td className="p-2">{studentName}</td>
+                <td className="p-2">{className}</td>
+                <td className="p-2 text-center">
+                  <Badge variant={statusInfo.variant} className="gap-1">
+                    <Icon className="h-3 w-3" />
+                    {statusInfo.label}
+                  </Badge>
                           </td>
                           <td className="p-2 text-muted-foreground">{record.notes || '-'}</td>
                         </tr>
@@ -381,6 +500,14 @@ export default function AttendancePage() {
                     })}
                   </tbody>
                 </table>
+                {hasMore && (
+                  <div ref={loadMoreRef} className="p-4 text-center text-muted-foreground">
+                    {isLoadingMore ? '불러오는 중...' : '스크롤하여 더 보기'}
+                  </div>
+                )}
+                {!hasMore && attendanceHistory.length > 0 && (
+                  <div className="p-3 text-center text-muted-foreground text-xs">모두 불러왔습니다</div>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -1,50 +1,111 @@
-import { Hono } from 'hono'
-import type { Env } from '../env'
-import { createAuthenticatedClient } from '../lib/supabase'
+import { Hono } from "hono";
+import type { Env } from "../env";
+import { withClient } from "../lib/db";
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<{ Bindings: Env }>();
+const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
+const mapOrg = (row: any) => ({
+  id: row.id,
+  name: row.name,
+  owner_name: row.owner_name,
+  address: row.address,
+  phone: row.phone,
+  email: row.email,
+  logo_url: row.logo_url,
+  settings: row.settings || {
+    auto_sms: false,
+    auto_email: false,
+    notification_enabled: false,
+  },
+});
 
-/**
- * GET /api/settings
- */
-app.get('/', async (c) => {
+const mapBranch = (row: any) => ({
+  id: row.id,
+  org_id: row.org_id,
+  name: row.name,
+  address: row.address,
+  phone: row.phone,
+  manager_name: row.manager_name,
+  status: row.status,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+});
+
+// GET /api/settings
+app.get("/", async (c) => {
   try {
-    const supabase = await createAuthenticatedClient(c.req.raw, c.env)
+    const data = await withClient(c.env, async (client) => {
+      const orgRes = await client.query(`SELECT * FROM organizations LIMIT 1`);
+      const org = orgRes.rows[0] ? mapOrg(orgRes.rows[0]) : null;
 
-    // TODO: 기존 app/api/settings/route.ts 로직 이식
-    // 현재는 기본 응답만 반환
+      const { rows: branchRows } = await client.query(
+        `SELECT * FROM branches WHERE org_id = $1 ORDER BY created_at DESC`,
+        [DEMO_ORG],
+      );
+      const branches = branchRows.map(mapBranch);
 
-    return c.json({
-      message: 'GET /api/settings - Implementation needed',
-      // TODO: 실제 데이터 반환
-    })
+      // rooms: map from classes as fallback
+      const { rows: roomRows } = await client.query(
+        `SELECT id, org_id, name, 0::int as capacity, subject as type, status, created_at, updated_at FROM classes WHERE org_id = $1`,
+        [DEMO_ORG],
+      );
+      const rooms = roomRows.map((r) => ({
+        id: r.id,
+        org_id: r.org_id,
+        name: r.name,
+        capacity: r.capacity,
+        status: r.status,
+      }));
+
+      return { organization: org, branches, rooms };
+    });
+
+    return c.json(data);
   } catch (error: any) {
-    console.error('[settings] GET error:', error)
-    return c.json({ error: error.message }, 500)
+    console.error("[settings] GET error:", error);
+    return c.json({ error: error.message }, 500);
   }
-})
+});
 
-
-/**
- * PUT /api/settings
- */
-app.put('/', async (c) => {
+// PUT /api/settings  (organization info + settings JSON)
+app.put("/", async (c) => {
   try {
-    const supabase = await createAuthenticatedClient(c.req.raw, c.env)
+    const body = await c.req.json();
+    const fields = [
+      "name",
+      "owner_name",
+      "address",
+      "phone",
+      "email",
+      "logo_url",
+      "settings",
+    ];
+    const setParts: string[] = [];
+    const values: any[] = [];
+    fields.forEach((f) => {
+      if (body[f] !== undefined) {
+        setParts.push(`${f} = $${setParts.length + 1}`);
+        values.push(body[f]);
+      }
+    });
 
-    // TODO: 기존 app/api/settings/route.ts 로직 이식
-    // 현재는 기본 응답만 반환
+    if (!setParts.length) return c.json({ error: "No fields to update" }, 400);
 
-    return c.json({
-      message: 'PUT /api/settings - Implementation needed',
-      // TODO: 실제 데이터 반환
-    })
+    const updated = await withClient(c.env, async (client) => {
+      const { rows } = await client.query(
+        `UPDATE organizations SET ${setParts.join(", ")}, updated_at = now() WHERE id = (SELECT id FROM organizations LIMIT 1) RETURNING *`,
+        values,
+      );
+      return rows[0] ? mapOrg(rows[0]) : null;
+    });
+
+    if (!updated) return c.json({ error: "organization row missing" }, 404);
+    return c.json({ organization: updated });
   } catch (error: any) {
-    console.error('[settings] PUT error:', error)
-    return c.json({ error: error.message }, 500)
+    console.error("[settings] PUT error:", error);
+    return c.json({ error: error.message }, 500);
   }
-})
+});
 
-
-export default app
+export default app;

@@ -1,29 +1,41 @@
-import { Hono } from 'hono'
-import type { Env } from '../env'
-import { createAuthenticatedClient } from '../lib/supabase'
+import { Hono } from "hono";
+import type { Env } from "../env";
+import { createClient } from "@supabase/supabase-js";
 
-const app = new Hono<{ Bindings: Env }>()
+const app = new Hono<{ Bindings: Env }>();
 
-
-/**
- * POST /api/auth/login
- */
-app.post('/', async (c) => {
+app.post("/", async (c) => {
   try {
-    const supabase = await createAuthenticatedClient(c.req.raw, c.env)
+    const body = await c.req.json();
+    const { email, password } = body || {};
+    if (!email || !password)
+      return c.json({ error: "email and password required" }, 400);
 
-    // TODO: 기존 app/api/auth/login/route.ts 로직 이식
-    // 현재는 기본 응답만 반환
+    const supabase = createClient(
+      c.env.NEXT_PUBLIC_SUPABASE_URL,
+      c.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      {
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    );
 
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error || !data.session) {
+      return c.json({ error: error?.message || "login failed" }, 401);
+    }
+
+    // 전달할 최소 정보
     return c.json({
-      message: 'POST /api/auth/login - Implementation needed',
-      // TODO: 실제 데이터 반환
-    })
-  } catch (error: any) {
-    console.error('[auth.login] POST error:', error)
-    return c.json({ error: error.message }, 500)
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      user: data.user,
+    });
+  } catch (err: any) {
+    return c.json({ error: err.message }, 500);
   }
-})
+});
 
-
-export default app
+export default app;

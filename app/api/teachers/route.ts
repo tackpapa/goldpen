@@ -6,18 +6,29 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// Teachers = users 테이블에서 role='teacher'인 사용자
-const createTeacherSchema = z.object({
+// teachers 테이블 스키마
+const baseTeacherSchema = z.object({
   name: z.string().min(1, '이름은 필수입니다'),
   email: z.string().email('올바른 이메일을 입력해주세요'),
-  phone: z.string().optional(),
+  phone: z.string().min(1, '전화번호는 필수입니다'),
+  subjects: z.array(z.string()).optional().default([]),
+  status: z.enum(['active', 'inactive']).optional().default('active'),
+  employment_type: z.enum(['full_time', 'part_time', 'contract']).optional().default('full_time'),
+  salary_type: z.enum(['monthly', 'hourly']).optional().default('monthly'),
+  salary_amount: z.coerce.number().nonnegative().optional().default(0),
+  hire_date: z.string().optional().default(() => new Date().toISOString().split('T')[0]),
+  notes: z.string().optional(),
 })
+
+const createTeacherSchema = baseTeacherSchema
+const updateTeacherSchema = baseTeacherSchema.partial()
 
 /**
  * GET /api/teachers
- * 교사 목록 조회 (users 테이블에서 role='teacher')
+ * 교사 목록 조회 (users 테이블 role='teacher')
  */
 export async function GET(request: Request) {
+
   try {
     const supabase = await createAuthenticatedClient(request)
 
@@ -48,12 +59,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search') // 이름 검색
 
-    // 4. 교사 목록 조회 (users 테이블에서 role='teacher')
+    // 4. 교사 목록 조회 (teachers 테이블)
     let query = supabase
-      .from('users')
-      .select('id, name, email, phone, created_at')
+      .from('teachers')
+      .select('*, user:user_id(id, role)')
       .eq('org_id', userProfile.org_id)
-      .eq('role', 'teacher')
       .order('created_at', { ascending: false })
 
     // 검색 필터 적용
@@ -86,7 +96,7 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/teachers
- * 교사 생성 (users 테이블에 role='teacher'로 추가)
+ * 교사 생성 (users 테이블 role='teacher')
  * owner만 생성 가능 (설정 페이지에서)
  */
 export async function POST(request: Request) {
@@ -128,30 +138,30 @@ export async function POST(request: Request) {
     const body = await request.json()
     const validated = createTeacherSchema.parse(body)
 
-    // 5. 이메일 중복 확인 (users 테이블)
-    const { data: existingUser } = await supabase
-      .from('users')
+    // 5. 이메일 중복 확인 (org 내부)
+    const { data: existingTeacher } = await supabase
+      .from('teachers')
       .select('id')
+      .eq('org_id', userProfile.org_id)
       .eq('email', validated.email)
-      .single()
+      .limit(1)
+      .maybeSingle()
 
-    if (existingUser) {
+    if (existingTeacher) {
       return Response.json(
-        { error: '이미 존재하는 이메일입니다' },
+        { error: '이미 동일한 이메일의 교사가 존재합니다' },
         { status: 409 }
       )
     }
 
-    // 6. 교사 생성 (users 테이블에 role='teacher')
     const { data: teacher, error: createError } = await supabase
-      .from('users')
+      .from('teachers')
       .insert({
         ...validated,
         org_id: userProfile.org_id,
-        role: 'teacher',
-        status: 'active'
+        user_id: user.id, // owner creating for now; ideally we would create a user first
       })
-      .select('id, name, email, phone, created_at')
+      .select('*')
       .single()
 
     if (createError) {

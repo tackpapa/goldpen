@@ -11,11 +11,11 @@ export async function GET(
     const supabase = createClient()
     const slug = params.slug
 
-    // slug로 organization 조회 (공개 정보)
+    // slug 컬럼이 없을 수 있으므로 name/id 기준으로 조회
     const { data: organization, error } = await supabase
       .from('organizations')
-      .select('id, name, slug, logo_url')
-      .eq('slug', slug)
+      .select('id, name, logo_url')
+      .or(`name.eq.${slug},id.eq.${slug}`)
       .single()
 
     if (error || !organization) {

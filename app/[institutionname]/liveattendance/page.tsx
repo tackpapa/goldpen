@@ -26,19 +26,25 @@ export default function LiveAttendancePage() {
   const institutionName = params.institutionname as string
 
   const [mounted, setMounted] = useState(false)
-  const [organization, setOrganization] = useState<Organization>({ name: '', logo_url: null })
+  const [organization, setOrganization] = useState<Organization>({
+    name: params.institutionname as string,
+    logo_url: null,
+  })
   const [currentTime, setCurrentTime] = useState('')
   const [currentDate, setCurrentDate] = useState('')
   const [temperature, setTemperature] = useState('--°')
   const [weather, setWeather] = useState<'sunny' | 'cloudy' | 'rainy'>('cloudy')
   const [weatherDescription, setWeatherDescription] = useState('날씨 정보 로딩 중...')
+  const [geoCoords, setGeoCoords] = useState<{ lat: number; lon: number } | null>(null)
+  const [audioAllowed, setAudioAllowed] = useState(false)
   const [studentId, setStudentId] = useState('')
   const [showWelcome, setShowWelcome] = useState(false)
   const [welcomeName, setWelcomeName] = useState('')
   const [welcomeMessage, setWelcomeMessage] = useState('')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [fullscreenPromptOpen, setFullscreenPromptOpen] = useState(false)
+  // 풀스크린 프롬프트 제거
+  // const [fullscreenPromptOpen, setFullscreenPromptOpen] = useState(false)
   const [isIOSDevice, setIsIOSDevice] = useState(false)
 
   // Track attendance status: { studentId: 'checked_in' | 'checked_out' }
@@ -47,29 +53,14 @@ export default function LiveAttendancePage() {
   const [isLoading, setIsLoading] = useState(false)
 
   // Usage time expired alerts
-  const [usageTimeExpiredOpen, setUsageTimeExpiredOpen] = useState(false)
-  const [expiredStudentInfo, setExpiredStudentInfo] = useState<{ seatNumber: number; studentName: string } | null>(null)
-  const [usageAlarmInterval, setUsageAlarmInterval] = useState<NodeJS.Timeout | null>(null)
+  // 사용시간 만료 모달 제거
+  // const [usageTimeExpiredOpen, setUsageTimeExpiredOpen] = useState(false)
+  // const [expiredStudentInfo, setExpiredStudentInfo] = useState<{ seatNumber: number; studentName: string } | null>(null)
+  // const [usageAlarmInterval, setUsageAlarmInterval] = useState<NodeJS.Timeout | null>(null)
   const [orgId, setOrgId] = useState<string | null>(null)
 
-  // Alarm sound for usage time expired
-  const playAlarmBeep = useCallback(() => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      oscillator.frequency.value = 880
-      oscillator.type = 'sine'
-      gainNode.gain.setValueAtTime(0.5, audioContext.currentTime)
-      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5)
-      oscillator.start(audioContext.currentTime)
-      oscillator.stop(audioContext.currentTime + 0.5)
-    } catch (e) {
-      console.error('Audio play error:', e)
-    }
-  }, [])
+  // Alarm sound 제거
+  const playAlarmBeep = useCallback(() => {}, [])
 
   // Fix hydration error by only rendering time on client
   useEffect(() => {
@@ -83,11 +74,6 @@ export default function LiveAttendancePage() {
   useEffect(() => {
     const checkIsIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
     setIsIOSDevice(checkIsIOS)
-
-    // iOS/iPad면 모달 표시
-    if (checkIsIOS) {
-      setFullscreenPromptOpen(true)
-    }
   }, [])
 
   // Check if device is mobile or tablet (not PC)
@@ -100,23 +86,7 @@ export default function LiveAttendancePage() {
   useEffect(() => {
     if (!isIOSDevice) return
 
-    const checkFullscreenStatus = () => {
-      const isInFullscreen = !!(
-        document.fullscreenElement ||
-        (document as any).webkitFullscreenElement ||
-        (document as any).webkitCurrentFullScreenElement
-      )
-
-      // 풀스크린이 아니면 모달 표시
-      if (!isInFullscreen) {
-        setFullscreenPromptOpen(true)
-      }
-    }
-
-    // 3초마다 체크
-    const interval = setInterval(checkFullscreenStatus, 3000)
-
-    return () => clearInterval(interval)
+    return () => {}
   }, [isIOSDevice])
 
   // Auto-enter fullscreen every 2 seconds if not in fullscreen (Mobile/Tablet only, excluding iOS)
@@ -253,119 +223,58 @@ export default function LiveAttendancePage() {
   }
 
   // Handle fullscreen prompt (iOS/iPad only)
-  const handleEnterFullscreenFromPrompt = async (e?: React.MouseEvent | React.TouchEvent) => {
-    if (e) {
-      e.preventDefault()
-      e.stopPropagation()
-    }
-    setFullscreenPromptOpen(false)
-    await handleEnterFullscreen()
+  const handleEnterFullscreenFromPrompt = async (_e?: React.MouseEvent | React.TouchEvent) => {
+    return
   }
 
-  // Fetch weather data
+  // 날씨: 30분 간격, 기본은 서울, 사용자 제스처(버튼) 후 지오로케이션 사용
   useEffect(() => {
-    const fetchWeather = async () => {
+    const fetchWeather = async (coords?: { lat: number; lon: number }) => {
       try {
-        // Try to get user's location
-        if ('geolocation' in navigator) {
-          navigator.geolocation.getCurrentPosition(
-            async (position) => {
-              const { latitude, longitude } = position.coords
+        const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || ''
+        if (!apiKey) throw new Error('NO_API_KEY')
 
-              // OpenWeatherMap API (무료 tier)
-              // API Key는 환경 변수로 관리하는 것이 좋습니다
-              const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'YOUR_API_KEY_HERE'
+        const url = coords
+          ? `https://api.openweathermap.org/data/2.5/weather?lat=${coords.lat}&lon=${coords.lon}&appid=${apiKey}&units=metric&lang=kr`
+          : `https://api.openweathermap.org/data/2.5/weather?q=Seoul&appid=${apiKey}&units=metric&lang=kr`
 
-              try {
-                const response = await fetch(
-                  `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&appid=${apiKey}&units=metric&lang=kr`
-                )
-
-                if (!response.ok) {
-                  throw new Error('Weather API failed')
-                }
-
-                const data = await response.json()
-
-                // Set temperature
-                setTemperature(`${Math.round(data.main.temp)}°`)
-
-                // Map weather condition to our types
-                const condition = data.weather[0].main
-                const description = data.weather[0].description
-
-                setWeatherDescription(description)
-
-                if (condition === 'Clear') {
-                  setWeather('sunny')
-                } else if (condition === 'Rain' || condition === 'Drizzle' || condition === 'Thunderstorm') {
-                  setWeather('rainy')
-                } else {
-                  setWeather('cloudy')
-                }
-              } catch (error) {
-                console.error('Failed to fetch weather:', error)
-                // Fallback to default values
-                setTemperature('--°')
-                setWeatherDescription('날씨 정보 없음')
-              }
-            },
-            (error) => {
-              console.error('Geolocation error:', error)
-              // Fallback: Use Seoul coordinates
-              fetchWeatherByCity('Seoul')
-            }
-          )
-        } else {
-          // Geolocation not available, use default city
-          fetchWeatherByCity('Seoul')
-        }
-      } catch (error) {
-        console.error('Weather fetch error:', error)
-      }
-    }
-
-    const fetchWeatherByCity = async (city: string) => {
-      try {
-        const apiKey = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'YOUR_API_KEY_HERE'
-        const response = await fetch(
-          `https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}&units=metric&lang=kr`
-        )
-
-        if (!response.ok) {
-          throw new Error('Weather API failed')
-        }
-
+        const response = await fetch(url)
+        if (!response.ok) throw new Error('weather fetch fail')
         const data = await response.json()
-
         setTemperature(`${Math.round(data.main.temp)}°`)
-
-        const condition = data.weather[0].main
-        const description = data.weather[0].description
-
-        setWeatherDescription(description)
-
-        if (condition === 'Clear') {
-          setWeather('sunny')
-        } else if (condition === 'Rain' || condition === 'Drizzle' || condition === 'Thunderstorm') {
-          setWeather('rainy')
-        } else {
-          setWeather('cloudy')
-        }
-      } catch (error) {
-        console.error('Failed to fetch weather by city:', error)
+        setWeatherDescription(data.weather?.[0]?.description || '날씨 정보')
+        const condition = data.weather?.[0]?.main
+        if (condition === 'Clear') setWeather('sunny')
+        else if (['Rain', 'Drizzle', 'Thunderstorm'].includes(condition)) setWeather('rainy')
+        else setWeather('cloudy')
+      } catch (err) {
         setTemperature('--°')
+        setWeather('cloudy')
         setWeatherDescription('날씨 정보 없음')
       }
     }
 
+    // 최초 1회 (서울)
     fetchWeather()
-
-    // Refresh weather every 30 minutes
-    const weatherInterval = setInterval(fetchWeather, 30 * 60 * 1000)
-
+    const weatherInterval = setInterval(() => fetchWeather(geoCoords || undefined), 30 * 60 * 1000)
     return () => clearInterval(weatherInterval)
-  }, [])
+  }, [geoCoords])
+
+  const requestGeolocation = () => {
+    if (!('geolocation' in navigator)) {
+      setWeatherDescription('위치 정보를 사용할 수 없습니다')
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeoCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+      },
+      () => {
+        setWeatherDescription('위치 권한 거부됨')
+      },
+      { enableHighAccuracy: false, maximumAge: 10 * 60 * 1000, timeout: 5000 }
+    )
+  }
 
   // Fetch seat assignments with student codes
   useEffect(() => {
@@ -415,67 +324,28 @@ export default function LiveAttendancePage() {
     fetchSeatAssignments()
   }, [])
 
-  // Check usage time expiry every 30 seconds
+  // 사용시간 만료 체크/모달 제거
+  // useEffect(() => { ... }, [])
+  // const handleCloseUsageTimeExpired = () => { ... }
+
+  // 기관 정보 로드 (로고 포함) - 실패해도 기본 이름 유지
   useEffect(() => {
-    if (!mounted) return
-
-    const checkUsageTimeExpiry = () => {
-      seatAssignments.forEach((a) => {
-        if (a.status === 'checked_in' && a.sessionStartTime && a.remainingMinutes != null) {
-          const sessionStart = new Date(a.sessionStartTime).getTime()
-          const now = Date.now()
-          const usedMinutes = Math.floor((now - sessionStart) / (1000 * 60))
-          const remaining = a.remainingMinutes - usedMinutes
-
-          if (remaining <= 0 && !usageTimeExpiredOpen) {
-            // Usage time expired - show red modal
-            playAlarmBeep()
-            const interval = setInterval(() => playAlarmBeep(), 2000)
-            setUsageAlarmInterval(interval)
-            setExpiredStudentInfo({ seatNumber: a.seatNumber, studentName: a.studentName })
-            setUsageTimeExpiredOpen(true)
-          }
-        }
-      })
-    }
-
-    checkUsageTimeExpiry()
-    const interval = setInterval(checkUsageTimeExpiry, 30000)
-    return () => clearInterval(interval)
-  }, [mounted, seatAssignments, usageTimeExpiredOpen, playAlarmBeep])
-
-  // Close usage time expired modal
-  const handleCloseUsageTimeExpired = () => {
-    if (usageAlarmInterval) {
-      clearInterval(usageAlarmInterval)
-      setUsageAlarmInterval(null)
-    }
-    setUsageTimeExpiredOpen(false)
-    setExpiredStudentInfo(null)
-  }
-
-  // Fetch organization data
-  useEffect(() => {
-    const fetchOrganization = async () => {
+    const fetchOrg = async () => {
       try {
-        const response = await fetch(`/api/organizations/${institutionName}`)
-        if (response.ok) {
-          const data = await response.json()
-          if (data.organization) {
-            setOrganization({
-              name: data.organization.name || institutionName,
-              logo_url: data.organization.logo_url || null,
-            })
-          }
+        const res = await fetch(`/api/organizations/${institutionName}`)
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.organization) {
+          setOrganization((prev) => ({
+            name: data.organization.name || prev.name,
+            logo_url: data.organization.logo_url ?? prev.logo_url,
+          }))
         }
-      } catch (error) {
-        console.error('Failed to fetch organization:', error)
+      } catch (e) {
+        // ignore errors, keep defaults
       }
     }
-
-    if (institutionName) {
-      fetchOrganization()
-    }
+    if (institutionName) fetchOrg()
   }, [institutionName])
 
   const updateDateTime = () => {
@@ -581,25 +451,6 @@ export default function LiveAttendancePage() {
 
   return (
     <div ref={containerRef} className="h-screen flex bg-white overflow-hidden">
-      {/* Fullscreen Prompt Modal */}
-      {fullscreenPromptOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center cursor-pointer"
-          onClick={(e) => handleEnterFullscreenFromPrompt(e)}
-          onTouchEnd={(e) => handleEnterFullscreenFromPrompt(e)}
-        >
-          <div className="text-center space-y-4 px-8 pointer-events-none">
-            <h2 className="text-3xl md:text-4xl font-bold text-white">풀스크린 모드</h2>
-            <p className="text-lg md:text-xl text-white/80">
-              최적의 학습 환경을 위해<br />화면을 터치해주세요
-            </p>
-            <p className="text-sm text-white/60 pt-4">
-              👆 화면 아무 곳이나 터치
-            </p>
-          </div>
-        </div>
-      )}
-
       {/* Left Panel - Blue Background */}
       <div className="w-1/2 flex flex-col items-center justify-center p-16 bg-gradient-to-br from-blue-500 to-blue-600 text-white relative overflow-hidden">
         {/* Decorative circles */}
@@ -728,33 +579,6 @@ export default function LiveAttendancePage() {
         </div>
       </div>
 
-      {/* Usage Time Expired Modal - Red Full Screen */}
-      {usageTimeExpiredOpen && expiredStudentInfo && (
-        <div className="fixed inset-0 z-[100] bg-red-600 flex flex-col items-center justify-center animate-pulse">
-          <button
-            onClick={handleCloseUsageTimeExpired}
-            className="absolute top-6 right-6 p-3 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
-          >
-            <X className="w-8 h-8 text-white" />
-          </button>
-          <div className="text-center space-y-8">
-            <Clock className="w-32 h-32 text-white mx-auto animate-bounce" />
-            <h1 className="text-6xl md:text-8xl font-bold text-white">
-              이용시간이 끝났어요!
-            </h1>
-            <div className="text-4xl md:text-5xl text-white/90">
-              <p className="font-semibold">{expiredStudentInfo.studentName}님</p>
-              <p className="text-3xl mt-2">좌석 {expiredStudentInfo.seatNumber}번</p>
-            </div>
-            <Button
-              onClick={handleCloseUsageTimeExpired}
-              className="mt-8 px-12 py-6 text-2xl font-bold bg-white text-red-600 hover:bg-white/90 rounded-2xl shadow-lg"
-            >
-              확인
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

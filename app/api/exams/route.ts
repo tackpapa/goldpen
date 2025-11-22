@@ -7,15 +7,10 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 const createExamSchema = z.object({
-  class_id: z.string().uuid().optional(),
-  teacher_id: z.string().uuid().optional(),
-  room_id: z.string().uuid().optional(),
   title: z.string().min(1, '시험 제목은 필수입니다'),
   description: z.string().optional(),
   exam_date: z.string(), // YYYY-MM-DD
-  start_time: z.string(), // HH:MM
-  end_time: z.string(),
-  total_score: z.number().int().positive().optional(),
+  max_score: z.number().int().positive().optional(),
   status: z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
 })
 
@@ -39,19 +34,15 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const class_id = searchParams.get('class_id')
     const exam_date = searchParams.get('exam_date')
-    const status = searchParams.get('status')
 
     let query = supabase
       .from('exams')
-      .select('*, classes(name), rooms(name)')
+      .select('*')
       .eq('org_id', userProfile.org_id)
       .order('exam_date', { ascending: false })
 
-    if (class_id) query = query.eq('class_id', class_id)
     if (exam_date) query = query.eq('exam_date', exam_date)
-    if (status) query = query.eq('status', status)
 
     const { data: exams, error: examsError } = await query
 
@@ -89,12 +80,19 @@ export async function POST(request: Request) {
     const body = await request.json()
     const validated = createExamSchema.parse(body)
 
+    const payload = {
+      org_id: userProfile.org_id,
+      title: validated.title,
+      description: validated.description ?? null,
+      exam_date: validated.exam_date,
+      subject: body.subject ?? null,
+      max_score: validated.max_score ?? 100,
+      status: validated.status ?? 'scheduled',
+    }
+
     const { data: exam, error: createError } = await supabase
       .from('exams')
-      .insert({
-        ...validated,
-        org_id: userProfile.org_id
-      })
+      .insert(payload)
       .select()
       .single()
 

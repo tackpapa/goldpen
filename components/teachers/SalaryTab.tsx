@@ -10,18 +10,23 @@ interface SalaryTabProps {
   teacher: Teacher
 }
 
+const normalizeNumber = (value: number | null | undefined, fallback = 0) =>
+  typeof value === 'number' && !Number.isNaN(value) ? value : fallback
+
 // Mock salary data
 const generateDummySalaryRecords = (teacher: Teacher) => {
+  const salaryType = teacher.salary_type === 'hourly' || teacher.salary_type === 'monthly' ? teacher.salary_type : 'monthly'
+  const salaryAmount = normalizeNumber(teacher.salary_amount)
   const records = []
   for (let i = 0; i < 6; i++) {
     const date = new Date()
     date.setMonth(date.getMonth() - i)
 
-    const hoursWorked = teacher.salary_type === 'hourly' ? Math.floor(Math.random() * 40) + 60 : 0
+    const hoursWorked = salaryType === 'hourly' ? Math.floor(Math.random() * 40) + 60 : 0
     const amount =
-      teacher.salary_type === 'monthly'
-        ? teacher.salary_amount
-        : hoursWorked * teacher.salary_amount
+      salaryType === 'monthly'
+        ? salaryAmount
+        : hoursWorked * salaryAmount
 
     records.push({
       id: `salary-${i}`,
@@ -36,13 +41,16 @@ const generateDummySalaryRecords = (teacher: Teacher) => {
 }
 
 export function SalaryTab({ teacher }: SalaryTabProps) {
-  const [salaryRecords] = useState(generateDummySalaryRecords(teacher))
+  const salaryType = teacher.salary_type === 'hourly' || teacher.salary_type === 'monthly' ? teacher.salary_type : 'monthly'
+  const salaryAmount = normalizeNumber(teacher.salary_amount)
+  const [salaryRecords] = useState(generateDummySalaryRecords({ ...teacher, salary_type: salaryType, salary_amount: salaryAmount }))
 
   const totalPaid = salaryRecords
     .filter((r) => r.status === 'paid')
     .reduce((sum, r) => sum + r.amount, 0)
-  const thisMonthAmount = salaryRecords[0].amount
-  const avgMonthly = Math.floor(totalPaid / salaryRecords.filter((r) => r.status === 'paid').length)
+  const thisMonthAmount = salaryRecords[0]?.amount ?? 0
+  const paidCount = salaryRecords.filter((r) => r.status === 'paid').length || 1
+  const avgMonthly = Math.floor(totalPaid / paidCount)
 
   return (
     <div className="space-y-6">
@@ -93,17 +101,17 @@ export function SalaryTab({ teacher }: SalaryTabProps) {
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
             <span className="text-sm font-medium">급여 유형</span>
             <Badge variant="secondary">
-              {teacher.salary_type === 'monthly' ? '월급제' : '시급제'}
+              {salaryType === 'monthly' ? '월급제' : '시급제'}
             </Badge>
           </div>
           <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
             <span className="text-sm font-medium">기본 급여</span>
             <span className="font-semibold">
-              {teacher.salary_amount.toLocaleString()}원
-              {teacher.salary_type === 'hourly' && '/시간'}
+              {salaryAmount.toLocaleString()}원
+              {salaryType === 'hourly' && '/시간'}
             </span>
           </div>
-          {teacher.salary_type === 'hourly' && (
+          {salaryType === 'hourly' && (
             <>
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
                 <span className="text-sm font-medium">이번 달 근무 시간</span>

@@ -11,7 +11,7 @@ const updateHomeworkSchema = z.object({
   description: z.string().optional(),
   due_date: z.string().optional(),
   attachments: z.array(z.any()).optional(),
-  status: z.enum(['active', 'completed', 'cancelled']).optional(),
+  status: z.enum(['active', 'completed', 'overdue']).optional(),
 })
 
 export async function PUT(

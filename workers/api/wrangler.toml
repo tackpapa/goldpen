@@ -4,6 +4,11 @@ main = "src/index.ts"
 compatibility_date = "2024-11-19"
 workers_dev = true
 
+# Hyperdrive binding for Supabase Postgres
+[[hyperdrive]]
+binding = "HYPERDRIVE_DB"
+id = "8c1cfe4c456d460da34153acc8e0eb2c"
+
 # Observability
 [observability]
 enabled = true

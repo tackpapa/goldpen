@@ -33,9 +33,22 @@ const salaryTypeMap = {
   hourly: '시급',
 }
 
+const normalizeSubjects = (subjects: Teacher['subjects']) => {
+  if (Array.isArray(subjects)) return subjects.filter((s): s is string => Boolean(s))
+  if (typeof subjects === 'string')
+    return subjects
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  return []
+}
+
 export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
   const { toast } = useToast()
-  const [localTeacher, setLocalTeacher] = useState(teacher)
+  const [localTeacher, setLocalTeacher] = useState({
+    ...teacher,
+    subjects: normalizeSubjects(teacher.subjects),
+  })
   const [subjectInput, setSubjectInput] = useState('')
 
   const handleFieldChange = (field: keyof Teacher, value: any) => {
@@ -48,10 +61,11 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
   }
 
   const handleAddSubject = () => {
-    if (subjectInput.trim() && !localTeacher.subjects.includes(subjectInput.trim())) {
+    const value = subjectInput.trim()
+    if (value && !localTeacher.subjects?.includes(value)) {
       setLocalTeacher({
         ...localTeacher,
-        subjects: [...localTeacher.subjects, subjectInput.trim()],
+        subjects: [...(localTeacher.subjects ?? []), value],
       })
       setSubjectInput('')
     }
@@ -60,7 +74,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
   const handleRemoveSubject = (subject: string) => {
     setLocalTeacher({
       ...localTeacher,
-      subjects: localTeacher.subjects.filter((s) => s !== subject),
+      subjects: (localTeacher.subjects ?? []).filter((s) => s !== subject),
     })
   }
 
@@ -151,7 +165,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               </Button>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
-              {localTeacher.subjects.map((subject) => (
+              {(localTeacher.subjects ?? []).map((subject) => (
                 <Badge key={subject} variant="secondary">
                   {subject}
                   <button

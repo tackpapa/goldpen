@@ -9,7 +9,14 @@ export const revalidate = 0
 const updateTeacherSchema = z.object({
   name: z.string().min(1, '이름은 필수입니다').optional(),
   email: z.string().email('올바른 이메일을 입력해주세요').optional(),
-  phone: z.string().optional(),
+  phone: z.string().min(1, '전화번호는 필수입니다').optional(),
+  subjects: z.array(z.string()).optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+  employment_type: z.enum(['full_time', 'part_time', 'contract']).optional(),
+  salary_type: z.enum(['monthly', 'hourly']).optional(),
+  salary_amount: z.coerce.number().nonnegative().optional(),
+  hire_date: z.string().optional(),
+  notes: z.string().optional(),
 })
 
 /**
@@ -59,13 +66,12 @@ export async function PUT(
     const body = await request.json()
     const validated = updateTeacherSchema.parse(body)
 
-    // 5. 교사 정보 수정 (같은 org_id 확인)
+    // 5. 교사 정보 수정 (같은 org_id 확인) + legacy fallback
     const { data: teacher, error: updateError } = await supabase
-      .from('users')
+      .from('teachers')
       .update(validated)
       .eq('id', teacherId)
       .eq('org_id', userProfile.org_id)
-      .eq('role', 'teacher')
       .select()
       .single()
 
@@ -147,13 +153,12 @@ export async function DELETE(
       )
     }
 
-    // 4. 교사 삭제 (같은 org_id 확인)
+    // 4. 교사 삭제 (같은 org_id 확인) + legacy fallback
     const { error: deleteError } = await supabase
-      .from('users')
+      .from('teachers')
       .delete()
       .eq('id', teacherId)
       .eq('org_id', userProfile.org_id)
-      .eq('role', 'teacher')
 
     if (deleteError) {
       console.error('[Teachers DELETE] Error:', deleteError)

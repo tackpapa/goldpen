@@ -44,10 +44,9 @@ export async function GET(request: Request) {
 
       // Total teachers
       supabase
-        .from('users')
+        .from('teachers')
         .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId)
-        .eq('role', 'teacher'),
+        .eq('org_id', orgId),
 
       // Total classes
       supabase

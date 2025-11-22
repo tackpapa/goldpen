@@ -68,6 +68,7 @@ export function BasicInfoTab({
   const [serviceEnrollments, setServiceEnrollments] = useState<ServiceEnrollment[]>([])
   const [localStudent, setLocalStudent] = useState(student)
   const [saving, setSaving] = useState(false)
+  const [studentCodeError, setStudentCodeError] = useState<string | null>(null)
   const [enrolledClasses, setEnrolledClasses] = useState<Array<Class & { enrollment_id: string }>>([])
   const [assignedTeachers, setAssignedTeachers] = useState<Teacher[]>([]) // 1:1 배정된 강사들
   const [availableClasses, setAvailableClasses] = useState<Class[]>([])
@@ -304,6 +305,10 @@ export function BasicInfoTab({
   }
 
   const handleFieldChange = (field: keyof Student, value: any) => {
+    // 입력 시 해당 필드 에러를 즉시 해제
+    if (field === 'student_code') {
+      setStudentCodeError(null)
+    }
     setLocalStudent({ ...localStudent, [field]: value })
   }
 
@@ -450,7 +455,12 @@ export function BasicInfoTab({
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || '저장에 실패했습니다.')
+        // 중복 코드 에러를 필드에 표시
+        const errorMsg: string = result.error || '저장에 실패했습니다.'
+        if (errorMsg.includes('student_code') || errorMsg.toLowerCase().includes('duplicate key')) {
+          setStudentCodeError('이미 사용 중인 출결 코드입니다. 다른 코드를 입력하세요.')
+        }
+        throw new Error(errorMsg)
       }
 
       toast({
@@ -614,7 +624,7 @@ export function BasicInfoTab({
                         <span>{classData.teacher_name}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {classData.schedule.map((s, idx) => (
+                        {(Array.isArray(classData.schedule) ? classData.schedule : []).map((s, idx) => (
                           <Badge key={idx} variant="outline" className="text-xs">
                             {s.day} {s.start_time}-{s.end_time}
                           </Badge>
@@ -678,9 +688,13 @@ export function BasicInfoTab({
                 placeholder="1234"
                 maxLength={4}
               />
-              <p className="text-xs text-muted-foreground mt-1">
-                학생이 출결 체크 시 사용하는 고유 번호입니다
-              </p>
+              {studentCodeError ? (
+                <p className="text-sm text-destructive mt-1">{studentCodeError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground mt-1">
+                  학생이 출결 체크 시 사용하는 고유 번호입니다
+                </p>
+              )}
             </div>
 
             <div>
@@ -873,7 +887,7 @@ export function BasicInfoTab({
                           <div className="pt-2">
                             <p className="text-xs text-muted-foreground mb-1">수업 시간</p>
                             <div className="flex flex-wrap gap-1">
-                              {selected.schedule.map((s, idx) => (
+                              {(Array.isArray(selected.schedule) ? selected.schedule : []).map((s, idx) => (
                                 <Badge key={idx} variant="outline" className="text-xs">
                                   {s.day} {s.start_time}-{s.end_time}
                                 </Badge>

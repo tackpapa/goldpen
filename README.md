@@ -13,6 +13,8 @@
 - Node.js 20 이상
 - pnpm 9 이상
 - Supabase 계정 (https://supabase.com)
+- (Cloudflare Pages) 빌드 환경 변수 `NODE_VERSION=20.19.5` 설정 권장
+- (CI 사용 시) `actions/setup-node` 등에서 `node-version: 20` 명시
 
 ### 설치
 
