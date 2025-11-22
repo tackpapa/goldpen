@@ -76,7 +76,7 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     id: 'attendance',
-    name: '출결 관리',
+    name: '강의출결관리',
     href: '/attendance',
     icon: CheckSquare,
     badges: ['학원용', '독서실', '공부방', '강사용'],
