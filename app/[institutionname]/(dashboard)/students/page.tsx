@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -65,8 +66,15 @@ export default function StudentsPage() {
   const { toast } = useToast()
   const [students, setStudents] = useState<Student[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-    const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
   const [attendanceCodeError, setAttendanceCodeError] = useState<string>('')
+  const [campusError, setCampusError] = useState<string>('')
+  const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
+  const campusOptions = [
+    { id: 'academy', label: '학원' },
+    { id: 'studyroom', label: '공부방' },
+    { id: 'readingroom', label: '독서실' },
+  ]
 
   // Student detail modal state
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
@@ -284,6 +292,13 @@ export default function StudentsPage() {
   }
 
   const onSubmit = async (data: StudentInput) => {
+    // 캠퍼스 필수 체크
+    if (selectedCampuses.length === 0) {
+      setCampusError('소속(학원/공부방/독서실)을 최소 1개 선택하세요.')
+      return
+    } else {
+      setCampusError('')
+    }
     // 출결코드 중복 검증
     if (attendanceCodeError) {
       toast({
@@ -318,7 +333,12 @@ export default function StudentsPage() {
         }
       }
 
-      const payload = { ...data, attendance_code: attendanceCode }
+      const campusNote = `캠퍼스:${selectedCampuses.join(',')}`
+      const payload = {
+        ...data,
+        attendance_code: attendanceCode,
+        notes: data.notes ? `${data.notes}\n${campusNote}` : campusNote,
+      }
 
       const tempId = crypto.randomUUID()
       const optimisticStudent: Student = {
@@ -466,6 +486,32 @@ export default function StudentsPage() {
                 <p className="text-xs text-muted-foreground">
                   학생이 출결 체크 시 사용하는 고유 번호입니다
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>소속(필수) *</Label>
+                <div className="flex flex-col gap-2">
+                  {campusOptions.map((option) => {
+                    const checked = selectedCampuses.includes(option.id)
+                    return (
+                      <label key={option.id} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(val) => {
+                            setSelectedCampuses((prev) =>
+                              val
+                                ? [...prev, option.id]
+                                : prev.filter((id) => id !== option.id)
+                            )
+                          }}
+                          disabled={isLoading}
+                        />
+                        <span>{option.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {campusError && <p className="text-sm text-destructive">{campusError}</p>}
               </div>
 
               <div className="space-y-2">
