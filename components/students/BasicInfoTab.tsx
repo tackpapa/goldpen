@@ -95,6 +95,7 @@ export function BasicInfoTab({
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('')
   const branchValue = student.branch_name || parseBranch(student.notes) || 'demoSchool'
   const campusValues = student.campuses || parseCampuses(student.notes)
+  const placeholderClass = 'placeholder:text-muted-foreground/60'
 
   // Sync local state when student prop changes (including campuses)
   useEffect(() => {
@@ -697,6 +698,7 @@ export function BasicInfoTab({
                 id="name"
                 value={localStudent.name || ''}
                 onChange={(e) => handleFieldChange('name', e.target.value)}
+                className={placeholderClass}
               />
             </div>
 
@@ -707,6 +709,7 @@ export function BasicInfoTab({
                 value={localStudent.phone || ''}
                 onChange={(e) => handlePhoneChange('phone', e.target.value)}
                 placeholder="01012345678"
+                className={placeholderClass}
               />
             </div>
 
@@ -721,6 +724,7 @@ export function BasicInfoTab({
                 }}
                 placeholder="1234"
                 maxLength={4}
+                className={placeholderClass}
               />
               {studentCodeError ? (
                 <p className="text-sm text-destructive mt-1">{studentCodeError}</p>
@@ -790,6 +794,7 @@ export function BasicInfoTab({
                 id="school"
                 value={localStudent.school || ''}
                 onChange={(e) => handleFieldChange('school', e.target.value)}
+                className={placeholderClass}
               />
             </div>
 
@@ -799,6 +804,7 @@ export function BasicInfoTab({
                 id="parent_name"
                 value={localStudent.parent_name || ''}
                 onChange={(e) => handleFieldChange('parent_name', e.target.value)}
+                className={placeholderClass}
               />
             </div>
 
@@ -809,6 +815,7 @@ export function BasicInfoTab({
                 value={localStudent.parent_phone || ''}
                 onChange={(e) => handlePhoneChange('parent_phone', e.target.value)}
                 placeholder="01012345678"
+                className={placeholderClass}
               />
             </div>
 
@@ -820,6 +827,7 @@ export function BasicInfoTab({
                 value={localStudent.email || ''}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
                 placeholder="student@example.com"
+                className={placeholderClass}
               />
             </div>
           </div>
@@ -831,6 +839,7 @@ export function BasicInfoTab({
               value={localStudent.notes || ''}
               onChange={(e) => handleFieldChange('notes', e.target.value)}
               rows={4}
+              className={placeholderClass}
             />
           </div>
         </CardContent>
