@@ -4,6 +4,7 @@ export const runtime = 'edge'
 
 
 import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
@@ -64,11 +65,15 @@ export default function StudentsPage() {
   usePageAccess('students')
 
   const { toast } = useToast()
+  const params = useParams()
+  const institutionName = (params?.institutionname as string) || ''
   const [students, setStudents] = useState<Student[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [attendanceCodeError, setAttendanceCodeError] = useState<string>('')
   const [campusError, setCampusError] = useState<string>('')
+  const [branchError, setBranchError] = useState<string>('')
+  const [selectedBranch, setSelectedBranch] = useState<string>(institutionName)
   const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
   const campusOptions = [
     { id: 'academy', label: '학원' },
@@ -299,6 +304,12 @@ export default function StudentsPage() {
     } else {
       setCampusError('')
     }
+    if (!selectedBranch) {
+      setBranchError('지점을 선택하세요.')
+      return
+    } else {
+      setBranchError('')
+    }
     // 출결코드 중복 검증
     if (attendanceCodeError) {
       toast({
@@ -334,10 +345,12 @@ export default function StudentsPage() {
       }
 
       const campusNote = `캠퍼스:${selectedCampuses.join(',')}`
+      const branchNote = `지점:${selectedBranch}`
+      const notesCombined = [branchNote, campusNote].join('\n')
       const payload = {
         ...data,
         attendance_code: attendanceCode,
-        notes: data.notes ? `${data.notes}\n${campusNote}` : campusNote,
+        notes: data.notes ? `${data.notes}\n${notesCombined}` : notesCombined,
       }
 
       const tempId = crypto.randomUUID()
@@ -486,6 +499,25 @@ export default function StudentsPage() {
                 <p className="text-xs text-muted-foreground">
                   학생이 출결 체크 시 사용하는 고유 번호입니다
                 </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="branch">지점 *</Label>
+                <Select
+                  value={selectedBranch}
+                  onValueChange={(val) => setSelectedBranch(val)}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger id="branch">
+                    <SelectValue placeholder="지점을 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={institutionName || '본점'}>
+                      {institutionName || '본점'}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                {branchError && <p className="text-sm text-destructive">{branchError}</p>}
               </div>
 
               <div className="space-y-2">
