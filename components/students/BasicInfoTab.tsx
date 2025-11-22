@@ -93,8 +93,8 @@ export function BasicInfoTab({
   const [isAddClassDialogOpen, setIsAddClassDialogOpen] = useState(false)
   const [selectedClassId, setSelectedClassId] = useState<string>('')
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('')
-  const branchValue = parseBranch(student.notes) || 'demoSchool'
-  const campusValues = parseCampuses(student.notes)
+  const branchValue = student.branch_name || parseBranch(student.notes) || 'demoSchool'
+  const campusValues = student.campuses || parseCampuses(student.notes)
 
   // Sync local state when student prop changes (including campuses)
   useEffect(() => {
@@ -481,6 +481,8 @@ export function BasicInfoTab({
           parent_phone: localStudent.parent_phone,
           student_code: localStudent.student_code,
           notes: localStudent.notes,
+          branch_name: localStudent.branch_name || branchValue,
+          campuses: localStudent.campuses || campusValues,
         }),
       })
 
@@ -731,7 +733,21 @@ export function BasicInfoTab({
 
             <div>
               <Label>지점</Label>
-              <Input value={branchValue} disabled />
+              <Select
+                value={localStudent.branch_name || branchValue}
+                onValueChange={(val) => handleFieldChange('branch_name', val)}
+              >
+                <SelectTrigger id="branch_name">
+                  <SelectValue placeholder="지점을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from(new Set([branchValue, 'demoSchool'])).map((b) => (
+                    <SelectItem key={b} value={b}>
+                      {b}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>
