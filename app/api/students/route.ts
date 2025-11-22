@@ -53,10 +53,20 @@ export async function POST(request: Request) {
     if (profileError || !profile) return Response.json({ error: '프로필 없음' }, { status: 404 })
 
     const body = await request.json()
+    const { campuses, branch, ...rest } = body || {}
+
+    // campuses/branch은 현재 스키마에 컬럼이 없을 수 있어 notes에 병합 저장
+    let notes = rest.notes || ''
+    const extra: string[] = []
+    if (branch) extra.push(`지점:${branch}`)
+    if (Array.isArray(campuses) && campuses.length > 0) extra.push(`캠퍼스:${campuses.join(',')}`)
+    if (extra.length) notes = notes ? `${notes}\n${extra.join('\n')}` : extra.join('\n')
+
+    const insertPayload = { ...rest, org_id: profile.org_id, notes }
 
     const { data: student, error } = await supabase
       .from('students')
-      .insert({ ...body, org_id: profile.org_id })
+      .insert(insertPayload)
       .select()
       .single()
 
