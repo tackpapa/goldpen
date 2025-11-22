@@ -42,6 +42,23 @@ const SERVICE_TYPES = [
   { value: 'study_center', label: '공부방', icon: Building2, color: 'bg-purple-500' },
 ] as const
 
+const parseBranch = (notes?: string) => {
+  if (!notes) return ''
+  const line = notes.split('\n').find((l) => l.startsWith('지점:'))
+  return line ? line.replace('지점:', '').trim() : ''
+}
+
+const parseCampuses = (notes?: string) => {
+  if (!notes) return [] as string[]
+  const line = notes.split('\n').find((l) => l.startsWith('캠퍼스:'))
+  if (!line) return []
+  return line
+    .replace('캠퍼스:', '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
 // Grade options from 중1 to N수
 const GRADE_OPTIONS = [
   { value: '중1', label: '중1' },
@@ -76,6 +93,8 @@ export function BasicInfoTab({
   const [isAddClassDialogOpen, setIsAddClassDialogOpen] = useState(false)
   const [selectedClassId, setSelectedClassId] = useState<string>('')
   const [selectedTeacherId, setSelectedTeacherId] = useState<string>('')
+  const branchValue = parseBranch(student.notes) || 'demoSchool'
+  const campusValues = parseCampuses(student.notes)
 
   // Load service enrollments from localStorage
   useEffect(() => {
@@ -694,6 +713,26 @@ export function BasicInfoTab({
                 <p className="text-xs text-muted-foreground mt-1">
                   학생이 출결 체크 시 사용하는 고유 번호입니다
                 </p>
+              )}
+            </div>
+
+            <div>
+              <Label>지점</Label>
+              <Input value={branchValue} disabled />
+            </div>
+
+            <div>
+              <Label>소속</Label>
+              {campusValues.length === 0 ? (
+                <p className="text-sm text-muted-foreground mt-2">소속 정보 없음</p>
+              ) : (
+                <div className="flex gap-2 flex-wrap mt-2">
+                  {campusValues.map((c, i) => (
+                    <Badge key={i} variant="secondary">
+                      {c}
+                    </Badge>
+                  ))}
+                </div>
               )}
             </div>
 
