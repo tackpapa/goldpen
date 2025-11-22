@@ -95,7 +95,12 @@ export default function StudentsPage() {
         const data = await response.json() as { students?: Student[]; error?: string }
 
         if (response.ok) {
-          setStudents(data.students || [])
+          const normalized = (data.students || []).map((s) => ({
+            ...s,
+            attendance_code: (s as any).attendance_code || (s as any).student_code || '',
+            student_code: (s as any).student_code || (s as any).attendance_code || '',
+          }))
+          setStudents(normalized)
         } else {
           toast({
             title: '데이터 로드 실패',
