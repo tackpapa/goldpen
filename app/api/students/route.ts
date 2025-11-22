@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     if (profileError || !profile) return Response.json({ error: '프로필 없음' }, { status: 404 })
 
     const { searchParams } = new URL(request.url)
-    const attendanceCode = searchParams.get('attendance_code') || undefined
+    const attendanceCode = searchParams.get('attendance_code') || searchParams.get('student_code') || undefined
 
     let query = supabase
       .from('students')
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
       .order('created_at', { ascending: false })
 
     if (attendanceCode) {
-      query = query.eq('attendance_code', attendanceCode)
+      query = query.eq('student_code', attendanceCode)
     }
 
     const { data: students, error, count } = await query
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     if (profileError || !profile) return Response.json({ error: '프로필 없음' }, { status: 404 })
 
     const body = await request.json()
-    const { campuses, branch, ...rest } = body || {}
+    const { campuses, branch, attendance_code, student_code, ...rest } = body || {}
 
     // campuses/branch은 현재 스키마에 컬럼이 없을 수 있어 notes에 병합 저장
     let notes = rest.notes || ''
@@ -71,7 +71,12 @@ export async function POST(request: Request) {
     if (Array.isArray(campuses) && campuses.length > 0) extra.push(`캠퍼스:${campuses.join(',')}`)
     if (extra.length) notes = notes ? `${notes}\n${extra.join('\n')}` : extra.join('\n')
 
-    const insertPayload = { ...rest, org_id: profile.org_id, notes }
+    const insertPayload = {
+      ...rest,
+      student_code: attendance_code || student_code || null,
+      org_id: profile.org_id,
+      notes,
+    }
 
     const { data: student, error } = await supabase
       .from('students')
