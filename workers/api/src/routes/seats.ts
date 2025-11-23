@@ -16,7 +16,7 @@ const mapSeat = (row: any) => ({
   session_start_time: row.session_start_time,
   allocated_minutes: row.allocated_minutes,
   pass_type: row.pass_type,
-  remaining_minutes: row.remaining_minutes,
+  seatsremainingtime: row.seatsremainingtime,
   remaining_days: row.remaining_days,
 });
 
@@ -68,7 +68,7 @@ app.patch("/", async (c) => {
       student_id,
       allocated_minutes,
       pass_type,
-      remaining_minutes,
+      seatsremainingtime,
       remaining_days,
       type_name,
     } = body || {};
@@ -84,8 +84,8 @@ app.patch("/", async (c) => {
     if (allocated_minutes !== undefined)
       push("allocated_minutes", allocated_minutes);
     if (pass_type !== undefined) push("pass_type", pass_type);
-    if (remaining_minutes !== undefined)
-      push("remaining_minutes", remaining_minutes);
+    if (seatsremainingtime !== undefined)
+      push("seatsremainingtime", seatsremainingtime);
     if (remaining_days !== undefined) push("remaining_days", remaining_days);
     if (type_name !== undefined) push("type_name", type_name);
 

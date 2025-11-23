@@ -71,17 +71,23 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
     const subject = searchParams.get('subject')
+    const teacherId = searchParams.get('teacher_id')
+    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined
+    const offset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : 0
 
     let query = supabase
       .from('classes')
-      .select('*, teacher:teacher_id(id, name, email)')
+      .select('*, teacher:teacher_id(id, name, email)', { count: 'exact' })
       .eq('org_id', userProfile.org_id)
       .order('created_at', { ascending: false })
 
     if (status) query = query.eq('status', status)
     if (subject) query = query.eq('subject', subject)
+    if (teacherId) query = query.eq('teacher_id', teacherId)
+    if (limit) query = query.limit(limit)
+    if (offset) query = query.range(offset, offset + (limit || 15) - 1)
 
-    const { data: classes, error } = await query
+    const { data: classes, error, count } = await query
 
     if (error) {
       console.error('[Classes GET] Error:', error)
@@ -94,7 +100,7 @@ export async function GET(request: Request) {
         schedule: Array.isArray(cls.schedule) ? cls.schedule : [],
       })) ?? []
 
-    return Response.json({ classes: normalized, count: normalized.length })
+    return Response.json({ classes: normalized, count: count || 0, total: count || 0 })
   } catch (error: any) {
     console.error('[Classes GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })

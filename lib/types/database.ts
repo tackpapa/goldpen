@@ -38,6 +38,8 @@ export interface Student {
   files?: StudentFile[] // 학생 자료 파일
   branch_name?: string | null
   campuses?: string[] | null
+  credit: number // 수업 크레딧 (시간 단위)
+  seatsremainingtime: number // 독서실 남은 시간 (분 단위)
 }
 
 // ============================================
@@ -71,67 +73,6 @@ export interface AttendanceSchedule {
 
 export type AttendanceScheduleInsert = Omit<AttendanceSchedule, 'id' | 'created_at' | 'updated_at'>
 
-// ============================================
-// CLASS CREDITS (수업 크레딧)
-// ============================================
-export interface ClassCredit {
-  id: string
-  created_at: string
-  student_id: string
-  total_hours: number      // 총 충전 시간
-  used_hours: number       // 사용한 시간
-  remaining_hours: number  // 남은 시간
-  expiry_date?: string     // 만료일 (optional)
-  status: 'active' | 'expired' | 'depleted'
-}
-
-// 크레딧 트랜잭션 (충전/사용 내역)
-export interface CreditTransaction {
-  id: string
-  created_at: string
-  student_id: string
-  credit_id: string
-  type: 'charge' | 'use' | 'refund' | 'expire'
-  amount: number           // 변동 시간 (+ or -)
-  balance_after: number    // 거래 후 잔액
-  related_payment_id?: string
-  related_class_id?: string  // 수업 사용 시
-  notes?: string
-}
-
-export type ClassCreditInsert = Omit<ClassCredit, 'id' | 'created_at'>
-export type CreditTransactionInsert = Omit<CreditTransaction, 'id' | 'created_at'>
-
-// ============================================
-// STUDY ROOM PASS (독서실 이용권)
-// ============================================
-export interface StudyRoomPass {
-  id: string
-  created_at: string
-  student_id: string
-  pass_type: 'hours' | 'days'  // 시간권 or 일수권
-  total_amount: number         // 총 시간/일수
-  remaining_amount: number     // 남은 시간/일수
-  start_date: string
-  expiry_date: string
-  status: 'active' | 'expired' | 'paused' | 'depleted'
-  notes?: string
-}
-
-// 독서실 이용 내역
-export interface StudyRoomUsage {
-  id: string
-  created_at: string
-  student_id: string
-  pass_id: string
-  check_in: string   // ISO datetime
-  check_out?: string // ISO datetime
-  duration_hours?: number  // 계산된 이용 시간
-  notes?: string
-}
-
-export type StudyRoomPassInsert = Omit<StudyRoomPass, 'id' | 'created_at'>
-export type StudyRoomUsageInsert = Omit<StudyRoomUsage, 'id' | 'created_at'>
 
 // ============================================
 // PAYMENT RECORDS (결제 내역)
@@ -153,15 +94,9 @@ export interface PaymentRecord {
   revenue_category_name: string
 
   // 부여 항목 (optional)
-  granted_credits?: {
-    hours: number
-    credit_id: string  // 생성된 ClassCredit ID
-  }
-  granted_pass?: {
-    type: 'hours' | 'days'
-    amount: number
-    pass_id: string  // 생성된 StudyRoomPass ID
-  }
+  granted_credits_hours?: number | null
+  granted_pass_type?: 'hours' | 'days' | null
+  granted_pass_amount?: number | null
 
   status: 'completed' | 'refunded' | 'pending'
   refunded_at?: string
@@ -442,6 +377,7 @@ export interface Teacher {
   salary_type: 'monthly' | 'hourly'
   salary_amount: number // 월급 or 시급
   hire_date: string
+  payment_day?: number // 월 급여 지급일 (1-31일, 기본값: 25일)
   lesson_note_token?: string // 수업일지 등록 고유 토큰
   assigned_students?: string[] // 배정된 학생 ID 배열
   total_hours_worked?: number // 시간강사 총 근무 시간

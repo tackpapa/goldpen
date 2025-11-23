@@ -3,6 +3,14 @@
 import type { Student } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { CreditCard, Clock, Calendar as CalendarIcon } from 'lucide-react'
 
 interface PaymentHistoryTabProps {
@@ -49,7 +57,7 @@ export function PaymentHistoryTab({
         </Card>
       </div>
 
-      {/* 결제 내역 리스트 */}
+      {/* 결제 내역 테이블 */}
       <Card>
         <CardHeader>
           <CardTitle>결제 내역</CardTitle>
@@ -61,46 +69,48 @@ export function PaymentHistoryTab({
               결제 내역이 없습니다.
             </div>
           ) : (
-            <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {[...payments].reverse().map(payment => (
-                <div key={payment.id} className="p-4 border rounded-lg hover:bg-muted/50 transition-colors">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <CreditCard className="h-4 w-4 text-muted-foreground" />
-                        <p className="font-semibold text-lg">{payment.revenue_category_name || payment.category || payment.description || '결제'}</p>
+            <div className="max-h-[500px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>항목</TableHead>
+                    <TableHead>상태</TableHead>
+                    <TableHead>날짜</TableHead>
+                    <TableHead>결제수단</TableHead>
+                    <TableHead className="text-right">금액</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...payments].reverse().map(payment => (
+                    <TableRow key={payment.id}>
+                      <TableCell className="font-medium">
+                        {payment.revenue_category_name || payment.category || payment.description || '결제'}
+                        {payment.notes && (
+                          <div className="text-xs text-muted-foreground mt-1">{payment.notes}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <Badge variant={payment.status === 'completed' ? 'default' : 'destructive'}>
                           {payment.status === 'completed' ? '완료' : '환불'}
                         </Badge>
-                      </div>
-
-                      <div className="flex items-center gap-4 text-sm text-muted-foreground mb-2">
-                        <span className="flex items-center gap-1">
-                          <CalendarIcon className="h-3 w-3" />
-                          {new Date(payment.payment_date).toLocaleDateString('ko-KR', {
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                          })}
-                        </span>
-                        <span>
-                          {payment.payment_method === 'card' ? '카드' : payment.payment_method === 'cash' ? '현금' : '계좌이체'}
-                        </span>
-                      </div>
-
-                      {payment.notes && (
-                        <div className="text-xs text-muted-foreground">
-                          {payment.notes}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-2xl font-bold">{(payment.amount || 0).toLocaleString()}원</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                      </TableCell>
+                      <TableCell>
+                        {new Date(payment.payment_date).toLocaleDateString('ko-KR', {
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric',
+                        })}
+                      </TableCell>
+                      <TableCell>
+                        {payment.payment_method === 'card' ? '카드' : payment.payment_method === 'cash' ? '현금' : '계좌이체'}
+                      </TableCell>
+                      <TableCell className="text-right font-bold">
+                        {(payment.amount || 0).toLocaleString()}원
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>

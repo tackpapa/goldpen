@@ -8,11 +8,11 @@ export const revalidate = 0
  * GET /api/teachers/[id]/modal
  * 상세 모달용 데이터 (users.role='teacher', 담당 클래스/학생 집계)
  */
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
 
   try {
     const supabase = await createAuthenticatedClient(request)
-    const teacherId = params.id
+    const { id: teacherId } = await params
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return Response.json({ error: '인증 필요' }, { status: 401 })
@@ -26,11 +26,10 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
     // 1) 교사 기본 정보
     const { data: teacher, error: teacherError } = await supabase
-      .from('users')
-      .select('id, created_at, updated_at, org_id, name, email, phone, status, role')
+      .from('teachers')
+      .select('*, user:user_id(id, role)')
       .eq('id', teacherId)
       .eq('org_id', profile.org_id)
-      .eq('role', 'teacher')
       .single()
     if (teacherError || !teacher) {
       return Response.json({ error: '교사 정보를 찾을 수 없습니다' }, { status: 404 })
@@ -39,7 +38,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     // 2) 담당 클래스
     const { data: classes, error: classesError } = await supabase
       .from('classes')
-      .select('id, name, subject, status, student_count, created_at, day_of_week, start_time, end_time')
+      .select('id, name, subject, status, created_at')
       .eq('org_id', profile.org_id)
       .eq('teacher_id', teacherId)
 

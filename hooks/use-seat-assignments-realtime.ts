@@ -11,7 +11,7 @@ export interface SeatAssignment {
   status: 'checked_in' | 'checked_out' | 'vacant'
   check_in_time: string | null
   session_start_time: string | null
-  remaining_minutes: number | null
+  seatsremainingtime: number | null
 }
 
 interface SeatAssignmentsRealtimeState {
@@ -43,7 +43,7 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
 
       const { data, error } = await supabase
         .from('seat_assignments')
-        .select('*, students(id, name, grade, remaining_minutes)')
+        .select('*, students(id, name, grade, seatsremainingtime)')
         .eq('org_id', orgId)
         .order('seat_number', { ascending: true })
 
@@ -65,7 +65,7 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
           status: record.status,
           check_in_time: record.check_in_time,
           session_start_time: record.session_start_time || null,
-          remaining_minutes: record.students?.remaining_minutes ?? null,
+          seatsremainingtime: record.students?.seatsremainingtime ?? null,
         })
       })
 
@@ -123,14 +123,14 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
             if (record.student_id) {
               const { data: student } = await supabase
                 .from('students')
-                .select('name, grade, remaining_minutes')
+                .select('name, grade, seatsremainingtime')
                 .eq('id', record.student_id)
                 .single()
 
               if (student) {
                 studentName = student.name
                 studentGrade = student.grade
-                studentRemainingMinutes = student.remaining_minutes
+                studentRemainingMinutes = student.seatsremainingtime
               }
             }
 
@@ -144,7 +144,7 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
               status: record.status,
               check_in_time: record.check_in_time,
               session_start_time: record.session_start_time,
-              remaining_minutes: studentRemainingMinutes,
+              seatsremainingtime: studentRemainingMinutes,
             }
 
             console.log('✅ Seat assignment updated:', assignment)

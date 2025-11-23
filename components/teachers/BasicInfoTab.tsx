@@ -248,6 +248,28 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
                 {localTeacher.salary_type === 'monthly' ? '월급 (원)' : '시급 (원/시간)'}
               </p>
             </div>
+
+            <div>
+              <Label htmlFor="payment_day">급여일</Label>
+              <Select
+                value={localTeacher.payment_day?.toString() || '25'}
+                onValueChange={(value) => handleFieldChange('payment_day', Number(value))}
+              >
+                <SelectTrigger id="payment_day">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+                    <SelectItem key={day} value={day.toString()}>
+                      {day}일
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                매월 급여 지급일 (1-31일)
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

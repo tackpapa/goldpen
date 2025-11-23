@@ -78,11 +78,16 @@ export default function ClassesPage() {
   const { toast } = useToast()
   const [classes, setClasses] = useState<Class[]>([])
   const [allStudents, setAllStudents] = useState<StudentForAssignment[]>([])
+  const [classEnrollments, setClassEnrollments] = useState<any[]>([])
   const [teachers, setTeachers] = useState<TeacherOption[]>([])
   const [rooms, setRooms] = useState<RoomOption[]>([])
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingClass, setEditingClass] = useState<Class | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [page, setPage] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
+  const [totalCount, setTotalCount] = useState(0)
+  const [filterTeacherId, setFilterTeacherId] = useState<string | null>(null)
   const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([])
   const [teacherSchedules, setTeacherSchedules] = useState<TeacherScheduleSlot[]>([])
   const [selectedStudentsDraft, setSelectedStudentsDraft] = useState<string[]>([])
@@ -112,7 +117,7 @@ export default function ClassesPage() {
     },
   })
 
-  const selectedTeacherId = watch('teacher_id')
+  const formTeacherId = watch('teacher_id')
 
   // 스케줄 JSON을 UI에서 안전하게 다루기 위해 배열로 정규화
   const normalizeClassSchedule = (cls: Class): Class => ({
@@ -120,33 +125,65 @@ export default function ClassesPage() {
     schedule: Array.isArray(cls.schedule) ? cls.schedule : [],
   })
 
-  useEffect(() => {
-    const fetchClasses = async () => {
-      setIsLoading(true)
-      try {
-        const response = await fetch('/api/classes', { credentials: 'include', credentials: 'include' })
-        const data = await response.json() as { classes?: Class[]; error?: string }
+  const fetchClasses = async (pageNum: number = 0, append: boolean = false) => {
+    if (!append) setIsLoading(true)
 
-        if (response.ok) {
-          const normalized = (data.classes || []).map(normalizeClassSchedule)
-          setClasses(normalized)
+    try {
+      const limit = 15
+      const offset = pageNum * limit
+      const params = new URLSearchParams({
+        limit: limit.toString(),
+        offset: offset.toString(),
+      })
+
+      if (filterTeacherId) {
+        params.append('teacher_id', filterTeacherId)
+      }
+
+      const response = await fetch(`/api/classes?${params.toString()}`, { credentials: 'include' })
+      const data = await response.json() as { classes?: Class[]; total?: number; error?: string }
+
+      if (response.ok) {
+        const normalized = (data.classes || []).map(normalizeClassSchedule)
+
+        if (append) {
+          setClasses(prev => [...prev, ...normalized])
         } else {
-          toast({
-            title: '데이터 로드 실패',
-            description: data.error || '반 목록을 불러올 수 없습니다.',
-            variant: 'destructive',
-          })
+          setClasses(normalized)
         }
-      } catch (error) {
+
+        setTotalCount(data.total || 0)
+        setHasMore(normalized.length === limit)
+      } else {
         toast({
-          title: '오류 발생',
-          description: '서버와 통신할 수 없습니다.',
+          title: '데이터 로드 실패',
+          description: data.error || '반 목록을 불러올 수 없습니다.',
           variant: 'destructive',
         })
-      } finally {
-        setIsLoading(false)
       }
+    } catch (error) {
+      toast({
+        title: '오류 발생',
+        description: '서버와 통신할 수 없습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
     }
+  }
+
+  const loadMore = () => {
+    if (hasMore && !isLoading) {
+      const nextPage = page + 1
+      setPage(nextPage)
+      fetchClasses(nextPage, true)
+    }
+  }
+
+  useEffect(() => {
+    setPage(0)
+    setClasses([])
+    fetchClasses(0, false)
 
     const fetchStudents = async () => {
       try {
@@ -185,21 +222,33 @@ export default function ClassesPage() {
       }
     }
 
-    fetchClasses()
+    const fetchClassEnrollments = async () => {
+      try {
+        const res = await fetch('/api/class-enrollments', { credentials: 'include' })
+        const data = await res.json() as { enrollments?: any[] }
+        if (res.ok && data.enrollments) {
+          setClassEnrollments(data.enrollments)
+        }
+      } catch (e) {
+        console.error('Failed to fetch class enrollments', e)
+      }
+    }
+
     fetchStudents()
     fetchTeachers()
     fetchRooms()
-  }, [toast])
+    fetchClassEnrollments()
+  }, [filterTeacherId, toast])
 
   // 선택된 강사의 기존 스케줄 불러오기 (충돌 검사용)
   useEffect(() => {
     const fetchTeacherSchedules = async () => {
-      if (!selectedTeacherId) {
+      if (!formTeacherId) {
         setTeacherSchedules([])
         return
       }
       try {
-        const res = await fetch(`/api/schedules?teacher_id=${selectedTeacherId}`, { credentials: 'include' })
+        const res = await fetch(`/api/schedules?teacher_id=${formTeacherId}`, { credentials: 'include' })
         const data = await res.json() as { schedules?: any[] }
         if (res.ok && data.schedules) {
           const slots: TeacherScheduleSlot[] = data.schedules.map((s) => ({
@@ -216,7 +265,7 @@ export default function ClassesPage() {
       }
     }
     fetchTeacherSchedules()
-  }, [selectedTeacherId])
+  }, [formTeacherId])
 
   const columns: ColumnDef<Class>[] = [
     {
@@ -615,18 +664,16 @@ export default function ClassesPage() {
         })
 
         if (response.ok) {
-          const result = await response.json() as { class: Class }
-          setClasses(
-            classes.map((c) =>
-              c.id === editingClass.id ? normalizeClassSchedule(result.class) : c
-            )
-          )
           toast({
             title: '수정 완료',
             description: '반 정보가 수정되었습니다.',
           })
           setIsDialogOpen(false)
           reset()
+          // 목록 새로고침
+          setPage(0)
+          setClasses([])
+          fetchClasses(0, false)
         } else {
           const error = await response.json() as { error?: string }
           toast({
@@ -644,14 +691,16 @@ export default function ClassesPage() {
         })
 
         if (response.ok) {
-          const result = await response.json() as { class: Class }
-          setClasses([normalizeClassSchedule(result.class), ...classes])
           toast({
             title: '생성 완료',
             description: '반이 생성되었습니다.',
           })
           setIsDialogOpen(false)
           reset()
+          // 목록 새로고침
+          setPage(0)
+          setClasses([])
+          fetchClasses(0, false)
         } else {
           const error = await response.json() as { error?: string }
           toast({
@@ -686,13 +735,56 @@ export default function ClassesPage() {
       </div>
 
       <Card>
-        <CardContent className="pt-6 overflow-x-auto">
-          <DataTable
-            columns={columns}
-            data={classes}
-            searchKey="name"
-            searchPlaceholder="반 이름으로 검색..."
-          />
+        <CardContent className="pt-6">
+          {/* 강사 필터 */}
+          <div className="mb-4 flex flex-wrap gap-2">
+            <Button
+              variant={filterTeacherId === null ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setFilterTeacherId(null)}
+            >
+              전체
+            </Button>
+            {teachers.map((teacher) => (
+              <Button
+                key={teacher.id}
+                variant={filterTeacherId === teacher.id ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setFilterTeacherId(teacher.id)}
+              >
+                {teacher.name}
+              </Button>
+            ))}
+          </div>
+
+          <div className="overflow-x-auto">
+            <DataTable
+              columns={columns}
+              data={classes}
+              searchKey="name"
+              searchPlaceholder="반 이름으로 검색..."
+              disablePagination={true}
+            />
+          </div>
+
+          {/* 무한 스크롤 트리거 */}
+          {hasMore && (
+            <div className="flex justify-center py-4">
+              <Button
+                variant="outline"
+                onClick={loadMore}
+                disabled={isLoading}
+              >
+                {isLoading ? '로딩 중...' : '더 보기'}
+              </Button>
+            </div>
+          )}
+
+          {!hasMore && classes.length > 0 && (
+            <div className="text-center py-4 text-sm text-muted-foreground">
+              전체 {totalCount}개의 반을 모두 불러왔습니다
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -881,7 +973,7 @@ export default function ClassesPage() {
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  if (!selectedTeacherId) {
+                  if (!formTeacherId) {
                     toast({
                       title: '강사를 먼저 선택하세요',
                       description: '스케줄을 추가하기 전에 강사를 지정해야 합니다.',
@@ -967,7 +1059,66 @@ export default function ClassesPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            <p className="text-center text-muted-foreground py-8">등록된 학생이 없습니다.</p>
+            {(() => {
+              // class_enrollments에서 해당 반의 학생 찾기
+              const classEnrollmentsList = classEnrollments.filter(
+                (enrollment) => enrollment.class_id === selectedClass?.id
+              )
+
+              if (classEnrollmentsList.length === 0) {
+                return (
+                  <p className="text-center text-muted-foreground py-8">
+                    등록된 학생이 없습니다.
+                  </p>
+                )
+              }
+
+              return (
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left px-4 py-3 font-medium text-sm">학생 이름</th>
+                        <th className="text-left px-4 py-3 font-medium text-sm">학년</th>
+                        <th className="text-left px-4 py-3 font-medium text-sm">학교</th>
+                        <th className="text-left px-4 py-3 font-medium text-sm">수업 잔여 크레딧</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {classEnrollmentsList.map((enrollment) => {
+                        const studentData = enrollment.students
+                        if (!studentData) return null
+
+                        const remainingHours = studentData.remaining_minutes
+                          ? Math.floor(studentData.remaining_minutes / 60)
+                          : 0
+                        const remainingMins = studentData.remaining_minutes
+                          ? studentData.remaining_minutes % 60
+                          : 0
+
+                        return (
+                          <tr key={enrollment.id} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-4 py-3 font-medium">{studentData.name}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{studentData.grade || '-'}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{studentData.school || '-'}</td>
+                            <td className="px-4 py-3">
+                              {studentData.remaining_minutes !== null && studentData.remaining_minutes !== undefined ? (
+                                <span className="text-sm">
+                                  {remainingHours > 0 && `${remainingHours}시간 `}
+                                  {remainingMins}분
+                                </span>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
           </div>
 
           <DialogFooter>

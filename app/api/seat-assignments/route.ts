@@ -119,7 +119,7 @@ export async function GET(request: Request) {
     // Get all seat assignments with student info
     const { data: assignments, error: assignmentsError } = await supabase
       .from('seat_assignments')
-      .select('*, students(id, name, grade, student_code, remaining_minutes)')
+      .select('*, students(id, name, grade, student_code, seatsremainingtime)')
       .eq('org_id', userProfile.org_id)
       .order('seat_number', { ascending: true })
 
@@ -128,43 +128,8 @@ export async function GET(request: Request) {
       return Response.json({ error: '좌석 배정 조회 실패', details: assignmentsError.message }, { status: 500 })
     }
 
-    // Get active study room passes for all assigned students (use service role to bypass RLS)
-    const studentIds = (assignments || []).map((a: any) => a.student_id).filter(Boolean)
-    let passesMap: Record<string, { remaining_amount: number, pass_type: string }> = {}
-
-    if (studentIds.length > 0) {
-      const serviceSupabase = createClient(supabaseUrl, supabaseServiceKey)
-      const { data: passes, error: passesError } = await serviceSupabase
-        .from('study_room_passes')
-        .select('student_id, remaining_amount, pass_type')
-        .in('student_id', studentIds)
-        .eq('status', 'active')
-
-      console.log('[SeatAssignments GET] studentIds:', studentIds)
-      console.log('[SeatAssignments GET] passes query result:', passes, 'error:', passesError)
-
-      if (passes) {
-        passes.forEach((p: any) => {
-          // 이미 있으면 합산 (여러 이용권 가능)
-          if (passesMap[p.student_id]) {
-            if (p.pass_type === 'hours') {
-              passesMap[p.student_id].remaining_amount += p.remaining_amount
-            }
-          } else {
-            passesMap[p.student_id] = { remaining_amount: p.remaining_amount, pass_type: p.pass_type }
-          }
-        })
-      }
-    }
-
     // Transform to frontend format
     const formattedAssignments = (assignments || []).map((a: any) => {
-      const pass = passesMap[a.student_id]
-      // hours 타입이면 분으로 변환, days 타입이면 그대로
-      const remainingMinutes = pass
-        ? (pass.pass_type === 'hours' ? pass.remaining_amount * 60 : null)
-        : null
-
       return {
         seatNumber: a.seat_number,
         studentId: a.student_id,
@@ -175,9 +140,7 @@ export async function GET(request: Request) {
         checkInTime: a.check_in_time,
         sessionStartTime: a.session_start_time,
         allocatedMinutes: a.allocated_minutes,
-        remainingMinutes: remainingMinutes ?? a.students?.remaining_minutes ?? null,
-        passType: pass?.pass_type || null,
-        remainingDays: pass?.pass_type === 'days' ? pass.remaining_amount : null,
+        seatsremainingtime: a.students?.seatsremainingtime ?? null,
       }
     })
 
@@ -295,7 +258,7 @@ export async function PUT(request: Request) {
     // Get current assignment to access session data
     const { data: currentAssignment, error: fetchError } = await supabase
       .from('seat_assignments')
-      .select('*, students(id, remaining_minutes, student_code)')
+      .select('*, students(id, seatsremainingtime, student_code)')
       .eq('org_id', userProfile.org_id)
       .eq('seat_number', validated.seatNumber)
       .single()

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import type { Student, AttendanceSchedule } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -34,16 +34,10 @@ export function AttendanceScheduleTab({
 }: AttendanceScheduleTabProps) {
   const { toast } = useToast()
   const [schedules, setSchedules] = useState<AttendanceSchedule[]>([])
-  const prevKey = useRef<string>('')
 
   useEffect(() => {
-    const key = JSON.stringify(initialSchedules || [])
-    if (key === prevKey.current) return
-    prevKey.current = key
     if (initialSchedules && initialSchedules.length > 0) {
       setSchedules(initialSchedules)
-    } else {
-      setSchedules([])
     }
   }, [initialSchedules])
 

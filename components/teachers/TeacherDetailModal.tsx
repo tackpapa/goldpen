@@ -116,6 +116,7 @@ export function TeacherDetailModal({
         salary_type: updatedTeacher.salary_type,
         salary_amount: updatedTeacher.salary_amount,
         hire_date: updatedTeacher.hire_date,
+        payment_day: updatedTeacher.payment_day,
         notes: updatedTeacher.notes,
       }
 
@@ -126,7 +127,7 @@ export function TeacherDetailModal({
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || '강사 정보 업데이트 실패')
-      toast({ title: '저장 완료', description: '강사 정보가 업데이트되었습니다.' })
+      // toast 제거: 부모 컴포넌트의 onUpdate에서 처리
       await refetch()
       onUpdate?.(result.teacher || updatedTeacher)
     } catch (err) {
@@ -158,25 +159,14 @@ export function TeacherDetailModal({
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
             </div>
-            <div className="text-sm text-muted-foreground">
-              {subjectList.length ? subjectList.join(', ') : '과목 정보 없음'}
-            </div>
           </div>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid grid-cols-5 w-full">
+          <TabsList className="grid grid-cols-3 w-full">
             <TabsTrigger value="info" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               <span className="hidden sm:inline">기본 정보</span>
-            </TabsTrigger>
-            <TabsTrigger value="students" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              <span className="hidden sm:inline">배정 학생</span>
-            </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              <span className="hidden sm:inline">수업 스케줄</span>
             </TabsTrigger>
             <TabsTrigger value="salary" className="flex items-center gap-2">
               <DollarSign className="h-4 w-4" />
@@ -194,22 +184,12 @@ export function TeacherDetailModal({
               <BasicInfoTab teacher={currentTeacher} onUpdate={handleUpdateBasic} />
             </TabsContent>
 
-            {/* Tab 2: 배정 학생 */}
-            <TabsContent value="students" className="mt-0">
-              <AssignedStudentsTab teacher={currentTeacher} students={students || modalData?.students} />
-            </TabsContent>
-
-            {/* Tab 3: 수업 스케줄 */}
-            <TabsContent value="schedule" className="mt-0">
-              <ScheduleTab teacher={currentTeacher} classes={classes || modalData?.classes} />
-            </TabsContent>
-
-            {/* Tab 4: 급여 관리 */}
+            {/* Tab 2: 급여 관리 */}
             <TabsContent value="salary" className="mt-0">
               <SalaryTab teacher={currentTeacher} />
             </TabsContent>
 
-            {/* Tab 5: 수업 이력 */}
+            {/* Tab 3: 수업 이력 */}
             <TabsContent value="history" className="mt-0">
               <ClassHistoryTab teacher={currentTeacher} />
             </TabsContent>

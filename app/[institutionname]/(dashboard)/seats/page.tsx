@@ -95,7 +95,7 @@ interface Seat {
   check_in_time?: string // ISO string for check-in time
   session_start_time?: string // ISO string for session start
   allocated_minutes?: number // allocated usage time
-  remaining_minutes?: number | null // student's remaining usage time (hours pass)
+  seatsremainingtime?: number | null // student's remaining usage time (hours pass)
   pass_type?: 'hours' | 'days' | null // type of active pass
   remaining_days?: number | null // remaining days for days-based pass
 }
@@ -526,16 +526,16 @@ function SeatCard({
             )}
 
             {/* Usage Time Status */}
-            {seat.status === 'checked_in' && seat.session_start_time && seat.remaining_minutes != null && seat.remaining_minutes > 0 && (
+            {seat.status === 'checked_in' && seat.session_start_time && seat.seatsremainingtime != null && seat.seatsremainingtime > 0 && (
               <UsageTimeStatus
                 sessionStartTime={seat.session_start_time}
-                remainingMinutes={seat.remaining_minutes}
+                remainingMinutes={seat.seatsremainingtime}
                 onExpired={() => handleUsageTimeExpired(seat.number, seat.student_name)}
               />
             )}
 
-            {/* Show expired badge if remaining_minutes is 0 (hours pass) */}
-            {seat.pass_type === 'hours' && seat.remaining_minutes === 0 && (
+            {/* Show expired badge if seatsremainingtime is 0 (hours pass) */}
+            {seat.pass_type === 'hours' && seat.seatsremainingtime === 0 && (
               <div className="flex items-center gap-1.5 text-xs font-bold px-2 py-1 rounded bg-red-600 text-white">
                 ⏰ 이용시간 끝
               </div>
@@ -549,9 +549,9 @@ function SeatCard({
             )}
 
             {/* Show remaining hours for hours-based pass (when not checked in) */}
-            {seat.pass_type === 'hours' && seat.remaining_minutes != null && seat.remaining_minutes > 0 && seat.status !== 'checked_in' && (
+            {seat.pass_type === 'hours' && seat.seatsremainingtime != null && seat.seatsremainingtime > 0 && seat.status !== 'checked_in' && (
               <div className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded bg-green-600 text-white">
-                ⏱️ {Math.floor(seat.remaining_minutes / 60)}시간 {seat.remaining_minutes % 60}분 남음
+                ⏱️ {Math.floor(seat.seatsremainingtime / 60)}시간 {seat.seatsremainingtime % 60}분 남음
               </div>
             )}
 
@@ -712,7 +712,7 @@ export default function SeatsPage() {
             check_in_time: assignment.check_in_time || undefined,
             session_start_time: assignment.session_start_time || undefined,
             // Preserve pass info (realtime doesn't have it)
-            // remaining_minutes, pass_type, remaining_days are kept from initial load
+            // seatsremainingtime, pass_type, remaining_days are kept from initial load
           }
         } else if (seat.student_id && !assignedSeatNumbers.has(seat.number)) {
           // Seat had assignment but now removed (deleted from DB)
@@ -792,7 +792,7 @@ export default function SeatsPage() {
                 status: assignment.status as 'checked_in' | 'checked_out' | 'vacant',
                 check_in_time: assignment.checkInTime || undefined,
                 session_start_time: assignment.sessionStartTime || undefined,
-                remaining_minutes: assignment.remainingMinutes ?? null,
+                seatsremainingtime: assignment.remainingMinutes ?? null,
                 pass_type: assignment.passType ?? null,
                 remaining_days: assignment.remainingDays ?? null,
               }
@@ -1399,7 +1399,7 @@ export default function SeatsPage() {
             grade: newStudentGrade,
             school: newStudentSchool.trim(),
             phone: newStudentPhone.trim(),
-            remaining_minutes: totalUsageMinutes > 0 ? totalUsageMinutes : null,
+            seatsremainingtime: totalUsageMinutes > 0 ? totalUsageMinutes : null,
           }),
         })
 

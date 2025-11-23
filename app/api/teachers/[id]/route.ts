@@ -16,6 +16,7 @@ const updateTeacherSchema = z.object({
   salary_type: z.enum(['monthly', 'hourly']).optional(),
   salary_amount: z.coerce.number().nonnegative().optional(),
   hire_date: z.string().optional(),
+  payment_day: z.number().int().min(1).max(31).optional(),
   notes: z.string().optional(),
 })
 
@@ -25,11 +26,11 @@ const updateTeacherSchema = z.object({
  */
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createAuthenticatedClient(request)
-    const teacherId = params.id
+    const { id: teacherId } = await params
 
     // 1. 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -77,6 +78,15 @@ export async function PUT(
 
     if (updateError) {
       console.error('[Teachers PUT] Error:', updateError)
+
+      // 이메일 중복 에러 처리
+      if (updateError.code === '23505' && updateError.message.includes('teachers_org_id_email_key')) {
+        return Response.json(
+          { error: '이미 사용 중인 이메일입니다' },
+          { status: 400 }
+        )
+      }
+
       return Response.json(
         { error: '교사 정보 수정 실패', details: updateError.message },
         { status: 500 }
@@ -116,11 +126,11 @@ export async function PUT(
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createAuthenticatedClient(request)
-    const teacherId = params.id
+    const { id: teacherId } = await params
 
     // 1. 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()

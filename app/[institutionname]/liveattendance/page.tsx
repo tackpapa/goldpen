@@ -291,7 +291,7 @@ export default function LiveAttendancePage() {
             const studentMinutesMap: Record<string, number> = {}
             studentsData.students?.forEach((s: any) => {
               if (s.student_code) studentCodeMap[s.id] = s.student_code
-              if (s.remaining_minutes != null) studentMinutesMap[s.id] = s.remaining_minutes
+              if (s.seatsremainingtime != null) studentMinutesMap[s.id] = s.seatsremainingtime
             })
 
             const assignmentsWithCodes = data.assignments?.map((a: any) => ({

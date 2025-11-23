@@ -1,96 +1,185 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Teacher } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { DollarSign, TrendingUp, Clock, Calendar } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface SalaryTabProps {
   teacher: Teacher
 }
 
+interface SalaryData {
+  period: {
+    start_date: string
+    end_date: string
+    payment_date: string
+  }
+  salary_type: 'hourly' | 'monthly'
+  total_amount: number
+  hourly_details?: {
+    hourly_rate: number
+    total_hours: number
+    lessons: Array<{
+      date: string
+      duration_minutes: number
+      duration_hours: number
+      subject: string
+      class_name?: string
+      amount: number
+    }>
+  }
+  monthly_details?: {
+    base_salary: number
+    is_prorated: boolean
+    proration_days?: number
+    total_days?: number
+    hire_date: string
+  }
+}
+
 const normalizeNumber = (value: number | null | undefined, fallback = 0) =>
   typeof value === 'number' && !Number.isNaN(value) ? value : fallback
 
-// Mock salary data
-const generateDummySalaryRecords = (teacher: Teacher) => {
-  const salaryType = teacher.salary_type === 'hourly' || teacher.salary_type === 'monthly' ? teacher.salary_type : 'monthly'
-  const salaryAmount = normalizeNumber(teacher.salary_amount)
-  const records = []
-  for (let i = 0; i < 6; i++) {
-    const date = new Date()
-    date.setMonth(date.getMonth() - i)
-
-    const hoursWorked = salaryType === 'hourly' ? Math.floor(Math.random() * 40) + 60 : 0
-    const amount =
-      salaryType === 'monthly'
-        ? salaryAmount
-        : hoursWorked * salaryAmount
-
-    records.push({
-      id: `salary-${i}`,
-      month: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-      monthLabel: date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' }),
-      hoursWorked,
-      amount,
-      status: i === 0 ? 'pending' : 'paid',
-    })
-  }
-  return records
-}
-
 export function SalaryTab({ teacher }: SalaryTabProps) {
-  const salaryType = teacher.salary_type === 'hourly' || teacher.salary_type === 'monthly' ? teacher.salary_type : 'monthly'
-  const salaryAmount = normalizeNumber(teacher.salary_amount)
-  const [salaryRecords] = useState(generateDummySalaryRecords({ ...teacher, salary_type: salaryType, salary_amount: salaryAmount }))
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [salaryData, setSalaryData] = useState<SalaryData | null>(null)
+  const [displayCount, setDisplayCount] = useState(10)
+  const observerTarget = useRef<HTMLDivElement>(null)
 
-  const totalPaid = salaryRecords
-    .filter((r) => r.status === 'paid')
-    .reduce((sum, r) => sum + r.amount, 0)
-  const thisMonthAmount = salaryRecords[0]?.amount ?? 0
-  const paidCount = salaryRecords.filter((r) => r.status === 'paid').length || 1
-  const avgMonthly = Math.floor(totalPaid / paidCount)
+  useEffect(() => {
+    const fetchSalary = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // 현재 월 급여 조회
+        const response = await fetch(`/api/teachers/${teacher.id}/salary`)
+        if (!response.ok) {
+          const result = await response.json()
+          throw new Error(result.error || '급여 정보 조회 실패')
+        }
+
+        const data = await response.json()
+        setSalaryData(data)
+        setDisplayCount(10) // Reset display count when data changes
+      } catch (err) {
+        console.error('[SalaryTab] Error fetching salary:', err)
+        setError(err instanceof Error ? err.message : '알 수 없는 오류')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (teacher.id) {
+      fetchSalary()
+    }
+  }, [teacher.id])
+
+  // Infinite scroll for lessons list
+  useEffect(() => {
+    if (!salaryData?.hourly_details?.lessons) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && displayCount < salaryData.hourly_details!.lessons.length) {
+          setDisplayCount(prev => Math.min(prev + 10, salaryData.hourly_details!.lessons.length))
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [displayCount, salaryData])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">급여 정보 로딩 중...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64">
+        <p className="text-destructive mb-2">❌ 오류: {error}</p>
+        <p className="text-sm text-muted-foreground">급여 정보를 불러올 수 없습니다.</p>
+      </div>
+    )
+  }
+
+  if (!salaryData) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-muted-foreground">급여 정보가 없습니다.</p>
+      </div>
+    )
+  }
+
+  const salaryType = salaryData.salary_type
+  const totalAmount = salaryData.total_amount
+  const salaryAmount = teacher.salary_amount || 0
 
   return (
     <div className="space-y-6">
-      {/* Statistics */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="border-2 border-primary">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">이번 달 급여</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-primary">
-              {thisMonthAmount.toLocaleString()}원
+      {/* Period Info */}
+      <Card className="bg-primary/5">
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">급여 기간</p>
+              <p className="text-lg font-semibold">
+                {salaryData.period.start_date} ~ {salaryData.period.end_date}
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {salaryRecords[0].status === 'pending' ? '미지급' : '지급 완료'}
-            </p>
-          </CardContent>
-        </Card>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground">지급일</p>
+              <p className="text-lg font-semibold text-primary">
+                {salaryData.period.payment_date}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">누적 지급액</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalPaid.toLocaleString()}원</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {salaryRecords.filter((r) => r.status === 'paid').length}개월
+      {/* Total Amount */}
+      <Card className="border-2 border-primary">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">이번 기간 급여</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-3xl font-bold text-primary">
+            {totalAmount.toLocaleString()}원
+          </div>
+          {salaryData.monthly_details?.is_prorated && (
+            <p className="text-xs text-muted-foreground mt-2">
+              ⓘ 일할 계산: {salaryData.monthly_details.proration_days}일 /{' '}
+              {salaryData.monthly_details.total_days}일
             </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">월 평균 급여</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{avgMonthly.toLocaleString()}원</div>
-          </CardContent>
-        </Card>
-      </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Salary Type Info */}
       <Card>
@@ -111,59 +200,102 @@ export function SalaryTab({ teacher }: SalaryTabProps) {
               {salaryType === 'hourly' && '/시간'}
             </span>
           </div>
-          {salaryType === 'hourly' && (
+          {salaryData.hourly_details && (
             <>
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                <span className="text-sm font-medium">이번 달 근무 시간</span>
-                <span className="font-semibold">{salaryRecords[0].hoursWorked}시간</span>
+                <span className="text-sm font-medium">총 근무 시간</span>
+                <span className="font-semibold">{salaryData.hourly_details.total_hours}시간</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
-                <span className="text-sm font-medium">총 근무 시간</span>
-                <span className="font-semibold">
-                  {salaryRecords.reduce((sum, r) => sum + r.hoursWorked, 0)}시간
-                </span>
+                <span className="text-sm font-medium">총 수업 횟수</span>
+                <span className="font-semibold">{salaryData.hourly_details.lessons.length}회</span>
               </div>
+            </>
+          )}
+          {salaryData.monthly_details && (
+            <>
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                <span className="text-sm font-medium">입사일</span>
+                <span className="font-semibold">{salaryData.monthly_details.hire_date}</span>
+              </div>
+              {salaryData.monthly_details.is_prorated && (
+                <div className="flex items-center justify-between p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded border border-yellow-200 dark:border-yellow-800">
+                  <span className="text-sm font-medium">첫 달 일할 계산</span>
+                  <span className="font-semibold text-yellow-700 dark:text-yellow-500">
+                    {salaryData.monthly_details.proration_days}일 근무
+                  </span>
+                </div>
+              )}
             </>
           )}
         </CardContent>
       </Card>
 
-      {/* Salary Records */}
-      <Card>
-        <CardHeader>
-          <CardTitle>급여 지급 내역</CardTitle>
-          <CardDescription>월별 급여 지급 기록</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3 max-h-[400px] overflow-y-auto">
-            {salaryRecords.map((record) => (
-              <div
-                key={record.id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    <span className="font-medium">{record.monthLabel}</span>
-                    <Badge variant={record.status === 'paid' ? 'default' : 'secondary'}>
-                      {record.status === 'paid' ? '지급 완료' : '미지급'}
-                    </Badge>
-                  </div>
-                  {teacher.salary_type === 'hourly' && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground ml-6">
-                      <Clock className="h-3 w-3" />
-                      <span>{record.hoursWorked}시간 근무</span>
-                    </div>
-                  )}
+      {/* Hourly Details: Lessons */}
+      {salaryData.hourly_details && salaryData.hourly_details.lessons.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>수업 내역</CardTitle>
+            <CardDescription>
+              급여 기간 내 진행한 수업 목록 (스크롤하여 더 보기)
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader className="sticky top-0 bg-background z-10">
+                  <TableRow>
+                    <TableHead>날짜</TableHead>
+                    <TableHead>반</TableHead>
+                    <TableHead>과목</TableHead>
+                    <TableHead>수업시간</TableHead>
+                    <TableHead className="text-right">금액</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {salaryData.hourly_details.lessons.slice(0, displayCount).map((lesson, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell className="font-medium">{lesson.date}</TableCell>
+                      <TableCell>{lesson.class_name || '-'}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{lesson.subject}</Badge>
+                      </TableCell>
+                      <TableCell>{lesson.duration_hours}시간</TableCell>
+                      <TableCell className="text-right font-semibold">
+                        {lesson.amount.toLocaleString()}원
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {/* Infinite Scroll Trigger */}
+              <div ref={observerTarget} className="h-4" />
+
+              {/* No More Data */}
+              {displayCount >= salaryData.hourly_details.lessons.length && (
+                <div className="text-center py-4 text-sm text-muted-foreground">
+                  모든 수업 내역을 불러왔습니다. (총 {salaryData.hourly_details.lessons.length}건)
                 </div>
-                <div className="text-right">
-                  <div className="text-xl font-bold">{record.amount.toLocaleString()}원</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Hourly: No Lessons */}
+      {salaryData.hourly_details && salaryData.hourly_details.lessons.length === 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>수업 내역</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-center text-muted-foreground py-8">
+              이번 기간에 진행한 수업이 없습니다.
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

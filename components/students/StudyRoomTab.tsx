@@ -3,6 +3,14 @@
 import type { Student } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { BookOpen, Calendar as CalendarIcon, Clock, TrendingUp, AlertCircle } from 'lucide-react'
 
 interface StudyRoomUsageRecord {
@@ -23,8 +31,8 @@ interface StudyRoomPass {
 
 interface StudyRoomTabProps {
   student: Student
-  passes?: StudyRoomPass[]
-  activePass?: StudyRoomPass | null
+  passes?: StudyRoomPass[] // Deprecated: 이제 student.seatsremainingtime 사용
+  activePass?: StudyRoomPass | null // Deprecated: 이제 student.seatsremainingtime 사용
   usages?: StudyRoomUsageRecord[]
   loading?: boolean
 }
@@ -36,6 +44,14 @@ export function StudyRoomTab({
   usages = [],
   loading = false
 }: StudyRoomTabProps) {
+  // 마이그레이션 후: students.seatsremainingtime 컬럼 사용 (분 단위)
+  const remainingMinutes = student.seatsremainingtime || 0
+  const remainingHours = remainingMinutes / 60
+
+  // 일 + 시간 형식으로 변환
+  const remainingDays = Math.floor(remainingMinutes / (60 * 24))
+  const remainingHoursOnly = Math.floor((remainingMinutes % (60 * 24)) / 60)
+
   // 통계 계산
   const totalMinutes = usages.reduce((sum, u) => sum + (u.duration_minutes || 0), 0)
   const totalHours = totalMinutes / 60
@@ -59,12 +75,12 @@ export function StudyRoomTab({
 
   return (
     <div className="space-y-6">
-      {/* 이용권 정보 */}
-      {activePass ? (
+      {/* 남은 시간 정보 */}
+      {remainingMinutes > 0 ? (
         <Card className="border-2 border-blue-500">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle>현재 이용권</CardTitle>
+              <CardTitle>남은 시간</CardTitle>
               <Badge variant="default">사용 가능</Badge>
             </div>
           </CardHeader>
@@ -72,16 +88,10 @@ export function StudyRoomTab({
             <div className="flex items-end justify-between">
               <div>
                 <p className="text-3xl font-bold text-blue-600">
-                  {activePass.remaining_amount}{activePass.pass_type === 'days' ? '일' : '시간'}
+                  {remainingDays}일 {remainingHoursOnly}시간
                 </p>
                 <p className="text-sm text-muted-foreground mt-1">
-                  총 {activePass.total_amount}{activePass.pass_type === 'days' ? '일' : '시간'} 중 남은 기간
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">만료일</p>
-                <p className="text-lg font-semibold">
-                  {new Date(activePass.expiry_date).toLocaleDateString('ko-KR')}
+                  (총 {remainingMinutes}분)
                 </p>
               </div>
             </div>
@@ -91,14 +101,14 @@ export function StudyRoomTab({
         <Card className="border-2 border-gray-300">
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle>현재 이용권</CardTitle>
+              <CardTitle>남은 시간</CardTitle>
               <Badge variant="secondary">없음</Badge>
             </div>
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2 text-muted-foreground">
               <AlertCircle className="h-5 w-5" />
-              <p>활성화된 이용권이 없습니다.</p>
+              <p>사용 가능한 시간이 없습니다.</p>
             </div>
           </CardContent>
         </Card>
@@ -158,52 +168,51 @@ export function StudyRoomTab({
               이용 내역이 없습니다.
             </div>
           ) : (
-            <div className="space-y-2 max-h-[500px] overflow-y-auto">
-              {usages.map(usage => {
-                const checkInDate = new Date(usage.check_in_time)
-                const checkOutDate = usage.check_out_time ? new Date(usage.check_out_time) : null
-                const durationHours = (usage.duration_minutes || 0) / 60
+            <div className="max-h-[500px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>날짜</TableHead>
+                    <TableHead>입실시간</TableHead>
+                    <TableHead>퇴실시간</TableHead>
+                    <TableHead className="text-right">이용시간</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {usages.map(usage => {
+                    const checkInDate = new Date(usage.check_in_time)
+                    const checkOutDate = usage.check_out_time ? new Date(usage.check_out_time) : null
+                    const durationHours = (usage.duration_minutes || 0) / 60
 
-                return (
-                  <div
-                    key={usage.id}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <BookOpen className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium">
+                    return (
+                      <TableRow key={usage.id}>
+                        <TableCell className="font-medium">
                           {checkInDate.toLocaleDateString('ko-KR', {
                             year: 'numeric',
                             month: 'long',
                             day: 'numeric',
                             weekday: 'short',
                           })}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          입실: {checkInDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <span>
-                          퇴실: {checkOutDate
+                        </TableCell>
+                        <TableCell>
+                          {checkInDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                        </TableCell>
+                        <TableCell>
+                          {checkOutDate
                             ? checkOutDate.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })
                             : '-'
                           }
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <Badge variant="secondary" className="text-base font-semibold">
-                        {durationHours.toFixed(1)}시간
-                      </Badge>
-                    </div>
-                  </div>
-                )
-              })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary" className="text-base font-semibold">
+                            {durationHours.toFixed(1)}시간
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             </div>
           )}
         </CardContent>

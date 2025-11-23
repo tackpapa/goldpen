@@ -15,7 +15,7 @@ const mapSeat = (row: any) => ({
   session_start_time: row.session_start_time,
   allocated_minutes: row.allocated_minutes,
   pass_type: row.pass_type,
-  remaining_minutes: row.remaining_minutes,
+  seatsremainingtime: row.seatsremainingtime,
   remaining_days: row.remaining_days,
 });
 
