@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import type { Student, ServiceEnrollment, Class } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -87,6 +86,8 @@ export function BasicInfoTab({
   const branchValue = student.branch_name || parseBranch(student.notes) || 'demoSchool'
   const campusValues = student.campuses || parseCampuses(student.notes)
   const placeholderClass = 'placeholder:text-muted-foreground/60'
+  const currentCampuses =
+    localStudent.campuses && localStudent.campuses.length > 0 ? localStudent.campuses : campusValues
 
   // Sync local state when student prop changes (including campuses)
   useEffect(() => {
@@ -212,69 +213,53 @@ export function BasicInfoTab({
 
   return (
     <div className="space-y-6">
-      {/* 서비스 소속 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>서비스 소속</CardTitle>
-          <CardDescription>학생이 이용하는 서비스를 선택하세요 (복수 선택 가능)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-4">
-            {SERVICE_TYPES.map(({ value, label, icon: Icon, color }) => {
-              const isEnrolled = serviceEnrollments.some(e => e.service_type === value)
-
-              return (
-                <div
-                  key={value}
-                  className={`
-                    border-2 rounded-lg p-4 cursor-pointer transition-all
-                    ${isEnrolled ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'}
-                  `}
-                  onClick={() => handleServiceToggle(value, !isEnrolled)}
-                >
-                  <div className="flex items-center gap-3">
-                    <Checkbox
-                      id={value}
-                      checked={isEnrolled}
-                      onCheckedChange={(checked) => handleServiceToggle(value, checked as boolean)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <div className="flex items-center gap-2 flex-1">
-                      <div className={`${color} p-2 rounded`}>
-                        <Icon className="h-4 w-4 text-white" />
-                      </div>
-                      <Label htmlFor={value} className="cursor-pointer font-medium">
-                        {label}
-                      </Label>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-
-          {serviceEnrollments.length > 0 && (
-            <div className="mt-4 flex gap-2">
-              <span className="text-sm text-muted-foreground">현재 소속:</span>
-              {serviceEnrollments.map(enrollment => {
-                const serviceType = SERVICE_TYPES.find(s => s.value === enrollment.service_type)
-                return (
-                  <Badge key={enrollment.id} variant="secondary">
-                    {serviceType?.label}
-                  </Badge>
-                )
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
       {/* 기본 정보 */}
       <Card>
         <CardHeader>
           <CardTitle>기본 정보</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-6">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <Label className="text-sm font-medium">서비스 소속</Label>
+              <span className="text-xs text-muted-foreground">(복수 선택 가능)</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {SERVICE_TYPES.map(({ value, label, icon: Icon, color }) => {
+                const isEnrolled = serviceEnrollments.some((e) => e.service_type === value)
+                return (
+                  <Button
+                    key={value}
+                    type="button"
+                    size="sm"
+                    variant={isEnrolled ? 'default' : 'outline'}
+                    className={`gap-2 rounded-full px-3 ${isEnrolled ? 'shadow-sm' : ''}`}
+                    onClick={() => handleServiceToggle(value, !isEnrolled)}
+                  >
+                    <span className={`h-2.5 w-2.5 rounded-full ${color}`} />
+                    <Icon className="h-4 w-4" />
+                    <span>{label}</span>
+                  </Button>
+                )
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              학생이 이용하는 서비스를 선택하세요.
+            </p>
+            {serviceEnrollments.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {serviceEnrollments.map((enrollment) => {
+                  const serviceType = SERVICE_TYPES.find((s) => s.value === enrollment.service_type)
+                  return (
+                    <Badge key={enrollment.id} variant="secondary">
+                      {serviceType?.label}
+                    </Badge>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="name">이름</Label>
@@ -340,11 +325,11 @@ export function BasicInfoTab({
 
             <div>
               <Label>소속</Label>
-              {campusValues.length === 0 ? (
+              {!currentCampuses || currentCampuses.length === 0 ? (
                 <p className="text-sm text-muted-foreground mt-2">소속 정보 없음</p>
               ) : (
                 <div className="flex gap-2 flex-wrap mt-2">
-                  {campusValues.map((c, i) => (
+                  {currentCampuses.map((c, i) => (
                     <Badge key={i} variant="secondary">
                       {c}
                     </Badge>

@@ -2,6 +2,7 @@
 name = "goldpen-api"
 main = "src/index.ts"
 compatibility_date = "2024-11-19"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 
 # Hyperdrive binding for Supabase Postgres
@@ -31,7 +32,13 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOi
 # Production Environment
 [env.production]
 name = "goldpen-api-production"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = false
+
+# Hyperdrive binding for production
+[[env.production.hyperdrive]]
+binding = "HYPERDRIVE_DB"
+id = "8c1cfe4c456d460da34153acc8e0eb2c"
 
 # Custom Domain
 [[env.production.routes]]
