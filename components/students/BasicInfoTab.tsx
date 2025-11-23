@@ -7,7 +7,6 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
 import {
   Select,
   SelectContent,
@@ -246,18 +245,6 @@ export function BasicInfoTab({
             <p className="text-xs text-muted-foreground">
               학생이 이용하는 서비스를 선택하세요.
             </p>
-            {serviceEnrollments.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {serviceEnrollments.map((enrollment) => {
-                  const serviceType = SERVICE_TYPES.find((s) => s.value === enrollment.service_type)
-                  return (
-                    <Badge key={enrollment.id} variant="secondary">
-                      {serviceType?.label}
-                    </Badge>
-                  )
-                })}
-              </div>
-            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -321,21 +308,6 @@ export function BasicInfoTab({
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div>
-              <Label>소속</Label>
-              {!currentCampuses || currentCampuses.length === 0 ? (
-                <p className="text-sm text-muted-foreground mt-2">소속 정보 없음</p>
-              ) : (
-                <div className="flex gap-2 flex-wrap mt-2">
-                  {currentCampuses.map((c, i) => (
-                    <Badge key={i} variant="secondary">
-                      {c}
-                    </Badge>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div>

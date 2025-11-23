@@ -27,6 +27,17 @@ const createLessonSchema = z.object({
   status: z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
 })
 
+const parseDurationHours = (lessonTime?: string | null) => {
+  if (!lessonTime) return 0
+  const [start, end] = lessonTime.split('-').map((t) => t?.trim())
+  if (!start || !end) return 0
+  const startDate = new Date(`1970-01-01T${start}:00`)
+  const endDate = new Date(`1970-01-01T${end}:00`)
+  const diffMs = endDate.getTime() - startDate.getTime()
+  if (Number.isNaN(diffMs) || diffMs <= 0) return 0
+  return diffMs / (1000 * 60 * 60)
+}
+
 export async function GET(request: Request) {
   try {
     const supabase = await createAuthenticatedClient(request)
@@ -364,6 +375,47 @@ export async function POST(request: Request) {
             )
           if (subError) {
             console.error('[Lessons POST] Homework submissions insert error:', subError)
+          }
+        }
+      }
+    }
+
+    // 3) 수업 크레딧 차감 (해당 반의 학생들에게 수업 시간만큼 차감)
+    const durationHours = parseDurationHours(validated.lesson_time)
+    if (validated.class_id && durationHours > 0) {
+      const { data: enrollments, error: enrollError } = await supabase
+        .from('class_enrollments')
+        .select('student_id, status')
+        .eq('org_id', userProfile.org_id)
+        .eq('class_id', validated.class_id)
+
+      if (enrollError) {
+        console.error('[Lessons POST] class_enrollments 조회 오류:', enrollError)
+      } else if (enrollments?.length) {
+        for (const enrollment of enrollments) {
+          if (enrollment.status && enrollment.status !== 'active') continue
+
+          const { data: studentRow, error: studentError } = await supabase
+            .from('students')
+            .select('credit')
+            .eq('org_id', userProfile.org_id)
+            .eq('id', enrollment.student_id)
+            .single()
+
+          if (studentError || !studentRow) {
+            console.error('[Lessons POST] 학생 조회 실패:', enrollment.student_id, studentError)
+            continue
+          }
+
+          const nextCredit = (studentRow.credit ?? 0) - durationHours
+          const { error: updateError } = await supabase
+            .from('students')
+            .update({ credit: nextCredit })
+            .eq('org_id', userProfile.org_id)
+            .eq('id', enrollment.student_id)
+
+          if (updateError) {
+            console.error('[Lessons POST] 학생 크레딧 차감 실패:', enrollment.student_id, updateError)
           }
         }
       }
