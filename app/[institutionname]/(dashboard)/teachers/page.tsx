@@ -3,7 +3,7 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
@@ -24,6 +24,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { useToast } from '@/hooks/use-toast'
 import { Plus, Edit, Trash2, UserCheck, Users, DollarSign, Clock, BookOpen, Link2, Copy, CheckCircle2, UserPlus, Search, Eye } from 'lucide-react'
 import {
@@ -128,22 +136,33 @@ export default function TeachersPage() {
   const [isTeacherDetailModalOpen, setIsTeacherDetailModalOpen] = useState(false)
   const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<Teacher | null>(null)
   const [classes, setClasses] = useState<any[]>([])
+  const [selectedTeacherFilter, setSelectedTeacherFilter] = useState<string>('all') // 강사 필터 상태
+  const [displayCount, setDisplayCount] = useState(10) // 무한 스크롤 표시 개수
+  const classesObserverTarget = useRef<HTMLDivElement>(null) // 무한 스크롤 센티넬
 
   const normalizeStatus = (status?: string) => normalizeStatusValue(status)
 
-  // Chart data (fallback-safe)
+  // Chart data - 실제 DB 데이터 사용
   const teacherHoursData = teachers.map((t) => ({
     name: t.name || '미등록',
-    hours: (t as any).weekly_hours ?? (t as any).hours ?? t.total_hours_worked ?? 0,
+    hours: (t as any).monthly_total_hours ?? 0,
   }))
 
-  const teacherStudentsData = teachers.map((t) => ({
-    name: t.name || '미등록',
-    students:
-      (t as any).student_count ??
-      (t as any).students ??
-      (t.assigned_students ? t.assigned_students.length : 0),
-  }))
+  // 강사별 담당 반 수강생 수 계산 (강사 → 반 → 학생수 합산)
+  const teacherStudentsData = teachers.map((teacher) => {
+    // 강사가 담당하는 반 찾기
+    const teacherClasses = classes.filter(c => c.teacher_id === teacher.id)
+
+    // 각 반의 학생 수 합산 (current_students 또는 capacity 사용)
+    const totalStudents = teacherClasses.reduce((sum, cls) => {
+      return sum + (cls.current_students ?? cls.capacity ?? 0)
+    }, 0)
+
+    return {
+      name: teacher.name || '미등록',
+      students: totalStudents
+    }
+  })
 
   const employmentCounts = teachers.reduce(
     (acc, t) => {
@@ -253,6 +272,51 @@ export default function TeachersPage() {
     })
     setTeachers(updated)
   }, [rawTeachers, allStudents])
+
+  // 필터 변경 시 displayCount 초기화
+  useEffect(() => {
+    setDisplayCount(10)
+  }, [selectedTeacherFilter])
+
+  // 무한 스크롤 IntersectionObserver
+  useEffect(() => {
+    // 전체 담당반 데이터 계산
+    const allTeacherClasses = teachers
+      .filter((t) => t.status === 'active')
+      .filter((t) => selectedTeacherFilter === 'all' || t.id === selectedTeacherFilter)
+      .flatMap((teacher) =>
+        classes
+          .filter((c) => c.teacher_id === teacher.id)
+          .map((c) => ({
+            teacher_id: c.teacher_id,
+            class_id: c.id,
+            class_name: c.name,
+            subject: c.subject,
+            student_count: c.current_students ?? c.capacity ?? 0,
+            teacher_name: teacher.name,
+          }))
+      )
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && displayCount < allTeacherClasses.length) {
+          setDisplayCount(prev => Math.min(prev + 10, allTeacherClasses.length))
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = classesObserverTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [displayCount, teachers, classes, selectedTeacherFilter])
 
   const handleCreateTeacher = () => {
     setIsEditing(false)
@@ -587,27 +651,6 @@ export default function TeachersPage() {
       },
     },
     {
-      id: 'student_assignment',
-      header: '학생 배정',
-      cell: ({ row }) => {
-        const teacher = row.original
-        const assignedCount = teacher.assigned_students?.length || 0
-        return (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleOpenAssignStudentDialog(teacher)}
-            className="gap-2"
-          >
-            <UserPlus className="h-3 w-3" />
-            <span className="text-xs">
-              {assignedCount > 0 ? `${assignedCount}명 배정됨` : '배정하기'}
-            </span>
-          </Button>
-        )
-      },
-    },
-    {
       id: 'actions',
       header: '작업',
       cell: ({ row }) => {
@@ -642,8 +685,15 @@ export default function TeachersPage() {
     },
   ]
 
-  // Teacher classes columns
-  const classColumns: ColumnDef<TeacherClass>[] = [
+  // Teacher classes columns (통합 테이블용)
+  const classColumns: ColumnDef<TeacherClass & { teacher_name: string }>[] = [
+    {
+      accessorKey: 'teacher_name',
+      header: '강사',
+      cell: ({ row }) => (
+        <span className="font-medium">{row.getValue('teacher_name')}</span>
+      ),
+    },
     {
       accessorKey: 'class_name',
       header: '반 이름',
@@ -660,6 +710,9 @@ export default function TeachersPage() {
     {
       accessorKey: 'subject',
       header: '과목',
+      cell: ({ row }) => (
+        <Badge variant="outline">{row.getValue('subject')}</Badge>
+      ),
     },
     {
       accessorKey: 'student_count',
@@ -765,55 +818,107 @@ export default function TeachersPage() {
           </Card>
         </TabsContent>
 
-        {/* Teacher Classes Tab */}
+        {/* Teacher Classes Tab - 통합 테이블 */}
         <TabsContent value="classes" className="space-y-4">
-          <div className="grid gap-4">
-            {teachers
-              .filter((t) => t.status === 'active')
-              .map((teacher) => {
-                const teacherClasses = classes.filter((c) => c.teacher_id === teacher.id)
-                const classCount = teacherClasses.length
-                const studentCount = teacherClasses.reduce(
-                  (sum, c) => sum + (c.student_count ?? 0),
-                  0
-                )
-                return (
-                  <Card key={teacher.id}>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Avatar>
-                            <AvatarFallback>
-                              {teacher.name?.split('').slice(0, 2).join('') || ''}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <CardTitle>{teacher.name}</CardTitle>
-                            <CardDescription>
-                              {teacher.subjects?.join(', ') || ''}
-                              {' · '}
-                              {classCount}개 반 · {studentCount}명
-                            </CardDescription>
-                          </div>
-                        </div>
-                        <div className="flex gap-2">
-                          {teacher.subjects?.map((subject) => (
-                            <Badge key={subject} variant="outline">
-                              {subject}
-                            </Badge>
-                          ))}
-                        </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>담당반 현황</CardTitle>
+              <CardDescription>전체 강사의 담당 반 목록</CardDescription>
+              {/* 강사 필터 버튼 */}
+              <div className="flex gap-2 flex-wrap pt-4">
+                <Button
+                  size="sm"
+                  variant={selectedTeacherFilter === 'all' ? 'default' : 'outline'}
+                  onClick={() => setSelectedTeacherFilter('all')}
+                >
+                  전체
+                </Button>
+                {teachers
+                  .filter((t) => t.status === 'active')
+                  .map((teacher) => (
+                    <Button
+                      key={teacher.id}
+                      size="sm"
+                      variant={selectedTeacherFilter === teacher.id ? 'default' : 'outline'}
+                      onClick={() => setSelectedTeacherFilter(teacher.id)}
+                    >
+                      {teacher.name}
+                    </Button>
+                  ))}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {(() => {
+                // 모든 강사의 담당반을 통합하여 배열 생성
+                const allTeacherClasses = teachers
+                  .filter((t) => t.status === 'active')
+                  .filter((t) => selectedTeacherFilter === 'all' || t.id === selectedTeacherFilter)
+                  .flatMap((teacher) =>
+                    classes
+                      .filter((c) => c.teacher_id === teacher.id)
+                      .map((c) => ({
+                        teacher_id: c.teacher_id,
+                        class_id: c.id,
+                        class_name: c.name,
+                        subject: c.subject,
+                        student_count: c.current_students ?? c.capacity ?? 0,
+                        teacher_name: teacher.name,
+                      }))
+                  )
+
+                return allTeacherClasses.length > 0 ? (
+                  <div className="rounded-md border max-h-[500px] overflow-y-auto">
+                    <Table>
+                      <TableHeader className="sticky top-0 bg-background z-10">
+                        <TableRow>
+                          <TableHead>강사</TableHead>
+                          <TableHead>반 이름</TableHead>
+                          <TableHead>과목</TableHead>
+                          <TableHead>학생 수</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {allTeacherClasses.slice(0, displayCount).map((classItem, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="font-medium">{classItem.teacher_name}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <BookOpen className="h-4 w-4 text-muted-foreground" />
+                                <span className="font-medium">{classItem.class_name || '미정'}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{classItem.subject}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Users className="h-4 w-4 text-muted-foreground" />
+                                <span>{classItem.student_count}명</span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+
+                    {/* 무한 스크롤 센티넬 */}
+                    <div ref={classesObserverTarget} className="h-4" />
+
+                    {/* 모든 데이터 로드 완료 */}
+                    {displayCount >= allTeacherClasses.length && (
+                      <div className="text-center py-4 text-sm text-muted-foreground">
+                        모든 담당 반을 불러왔습니다. (총 {allTeacherClasses.length}개)
                       </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="text-center py-6 text-muted-foreground">
-                        담당 반 정보가 없습니다
-                      </div>
-                    </CardContent>
-                  </Card>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-12 text-muted-foreground">
+                    담당 반 정보가 없습니다
+                  </div>
                 )
-              })}
-          </div>
+              })()}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Statistics Tab */}
@@ -821,19 +926,32 @@ export default function TeachersPage() {
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader>
-                <CardTitle>강사별 월 수업 시수</CardTitle>
-                <CardDescription>이번 달 강사별 진행 시수</CardDescription>
+                <CardTitle>강사별 학생 담당 분포도</CardTitle>
+                <CardDescription>전체 학생 중 각 강사가 담당하는 비율</CardDescription>
               </CardHeader>
               <CardContent className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={teacherHoursData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
+                  <PieChart>
+                    <Pie
+                      data={teacherStudentsData.filter(d => d.students > 0)}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      outerRadius={100}
+                      fill="#8884d8"
+                      dataKey="students"
+                    >
+                      {teacherStudentsData.filter(d => d.students > 0).map((entry, index) => (
+                        <Cell key={`cell-${entry.name}-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
                     <Tooltip />
-                    <Bar dataKey="hours" fill="#3b82f6" name="수업 시수" />
-                  </BarChart>
+                  </PieChart>
                 </ResponsiveContainer>
+                {teacherStudentsData.filter(d => d.students > 0).length === 0 && (
+                  <p className="mt-4 text-sm text-muted-foreground text-center">배정된 학생이 없습니다.</p>
+                )}
               </CardContent>
             </Card>
 

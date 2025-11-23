@@ -35,6 +35,165 @@ Read: CLAUDE.md
 
 ---
 
+## 🔐 보안 규칙 (최우선 - 절대 위반 금지!)
+
+**🚨 CRITICAL: Supabase 키, DB 비밀번호, API 토큰을 절대 파일에 하드코딩하지 마세요!**
+
+### ❌ 절대 금지 - 스크립트 파일에 키 하드코딩
+
+```javascript
+// ❌ 절대 금지! - scripts/ 폴더에 이런 파일 생성 금지
+// scripts/run-migration.mjs
+const supabaseUrl = 'https://ipqhhqduppzvsqwwzjkp.supabase.co'
+const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'  // ❌
+const dbPassword = 'rhfemvps123'  // ❌
+
+// 이 파일이 Git에 커밋되면 GitHub에 영구 노출!
+```
+
+**실제 발생한 사고**:
+- `scripts/check-enrollments.mjs`와 `scripts/run-migration.mjs`에 키 하드코딩
+- GitHub에 푸시되어 키 노출
+- 즉시 파일 삭제했지만 Git history에 남음
+
+### ✅ 올바른 방법 - GoldPen 프로젝트
+
+#### 1. Supabase 클라이언트 사용 (환경 변수)
+
+```typescript
+// ✅ 올바름 - 환경 변수 사용
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!  // .env.local에서 읽기
+)
+```
+
+#### 2. Node.js pg 직접 연결 (--eval 사용)
+
+```bash
+# ✅ 올바름 - 파일 생성 없이 직접 실행
+node --input-type=module --eval "
+import pg from 'pg';
+const { Client } = pg;
+
+const client = new Client({
+  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+});
+
+await client.connect();
+const result = await client.query('SELECT * FROM students LIMIT 5');
+console.log(result.rows);
+await client.end();
+"
+```
+
+**장점**:
+- 파일이 생성되지 않음 → Git 커밋 불가
+- 일회성 실행 후 사라짐
+- 터미널 히스토리에만 남음 (GitHub 노출 안 됨)
+
+#### 3. SQL 파일 실행 (마이그레이션)
+
+```bash
+# ✅ 올바름 - 연결 문자열만 --eval로 전달, SQL은 파일로 읽기
+node --input-type=module --eval "
+import pg from 'pg';
+import fs from 'fs';
+
+const client = new pg.Client({
+  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+});
+
+await client.connect();
+const sql = fs.readFileSync('/Users/kiyoungtack/Desktop/goldpen/supabase/migrations/20251123_add_enrollments_fk.sql', 'utf8');
+await client.query(sql);
+await client.end();
+"
+```
+
+**중요**: SQL 파일 자체에는 키 없음, 연결 문자열만 --eval로 전달
+
+### 🔍 사전 체크리스트 (GoldPen 전용)
+
+**스크립트 작성 전 반드시 확인**:
+```
+[ ] scripts/ 폴더에 .mjs/.js 파일 생성하는가?
+    → YES: 키 절대 하드코딩 금지! (환경 변수 또는 --eval 사용)
+    → NO: 진행
+
+[ ] Supabase Service Role Key 또는 DB 비밀번호가 필요한가?
+    → YES: node --eval로 직접 실행 (파일 생성 금지)
+    → NO: 파일 생성 허용
+
+[ ] 이 파일이 .gitignore에 포함되어 있는가?
+    → NO: 절대 키 넣지 말 것!
+    → YES: 그래도 키 넣지 말 것! (실수로 커밋 가능)
+```
+
+### 📝 .env.local 관리
+
+**안전한 키 (.env.local에 저장 가능)**:
+```bash
+# ✅ 공개 가능 (RLS로 보호됨)
+NEXT_PUBLIC_SUPABASE_URL=https://ipqhhqduppzvsqwwzjkp.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGc...  # Anon Key는 안전
+
+# ⚠️ 민감 정보 (.env.local만 저장, Git 커밋 금지)
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGc...  # Service Role은 절대 노출 금지!
+DATABASE_URL=postgresql://...  # 비밀번호 포함되어 있음
+```
+
+**중요**: `.env.local`은 `.gitignore`에 포함되어 있지만, **절대 Git에 커밋하지 마세요!**
+
+### ⚠️ 이미 키가 노출된 경우 (긴급 조치)
+
+**즉시 실행**:
+```bash
+# 1. 노출된 파일 삭제
+rm scripts/check-enrollments.mjs scripts/run-migration.mjs
+
+# 2. Git history에서 완전 제거 (BFG 사용)
+brew install bfg
+bfg --delete-files 'check-enrollments.mjs' --delete-files 'run-migration.mjs'
+git reflog expire --expire=now --all
+git gc --prune=now --aggressive
+
+# 3. Force push (위험하지만 필수)
+git push origin main --force
+```
+
+**Supabase 대시보드 조치**:
+1. https://supabase.com/dashboard/project/ipqhhqduppzvsqwwzjkp/settings/api
+2. "Reset service_role secret" 클릭
+3. 새 키를 `.env.local`에 업데이트
+
+### 🎯 실전 예시 (이 프로젝트에서 사용)
+
+**✅ 성공 사례 - 마이그레이션 실행**:
+```bash
+# Foreign Key 추가 마이그레이션
+node --input-type=module --eval "
+import pg from 'pg';
+import fs from 'fs';
+
+const client = new pg.Client({
+  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+});
+
+await client.connect();
+const sql = fs.readFileSync('./supabase/migrations/20251123_add_enrollments_fk.sql', 'utf8');
+await client.query(sql);
+console.log('✅ 마이그레이션 완료');
+await client.end();
+"
+```
+
+**파일 생성 없음** → Git 커밋 불가 → 안전!
+
+---
+
 ## 🚨 필수 준수 사항: Cloudflare 스택 사용
 
 ### ⚡ Edge Runtime 필수 사용 규칙
@@ -615,5 +774,5 @@ export default {
 
 ---
 
-**마지막 업데이트**: 2025-11-21
-**버전**: 0.2.0 (배포/인프라 가이드 추가)
+**마지막 업데이트**: 2025-11-23
+**버전**: 0.2.1 (보안 규칙 강화 - Supabase 키/DB 비밀번호 하드코딩 절대 금지)

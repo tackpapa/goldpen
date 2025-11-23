@@ -25,10 +25,6 @@ export async function GET(
       schedulesResult,
       attendanceResult,
       paymentsResult,
-      creditsResult,
-      creditUsagesResult,
-      passesResult,
-      usagesResult,
     ] = await Promise.all([
       // 학생 기본 정보
       supabase
@@ -77,35 +73,6 @@ export async function GET(
         .select('*')
         .eq('student_id', studentId)
         .order('payment_date', { ascending: false }),
-
-      // 수업 크레딧
-      supabase
-        .from('class_credits')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false }),
-
-      // 크레딧 사용 내역 (별도 조회 - credit_id가 null일 수 있으므로 student_id로 조회)
-      supabase
-        .from('credit_usages')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('date', { ascending: false }),
-
-      // 독서실 이용권
-      supabase
-        .from('study_room_passes')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('created_at', { ascending: false }),
-
-      // 독서실 이용 기록 (최근 50건)
-      supabase
-        .from('study_room_usages')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('check_in_time', { ascending: false })
-        .limit(50),
     ])
 
     // 에러 체크
@@ -121,9 +88,6 @@ export async function GET(
       (s) => s.status === 'active'
     )
 
-    // 활성 독서실 이용권 찾기
-    const activePass = passesResult.data?.find((p) => p.status === 'active')
-
     return NextResponse.json({
       student: studentResult.data,
       subscriptions: subscriptionsResult.data || [],
@@ -133,11 +97,10 @@ export async function GET(
       schedules: schedulesResult.data || [],
       attendance: attendanceResult.data || [],
       payments: paymentsResult.data || [],
-      credits: creditsResult.data || [],
-      creditUsages: creditUsagesResult.data || [],
-      passes: passesResult.data || [],
-      activePass,
-      usages: usagesResult.data || [],
+      credits: [], // 이제 students.credit 사용
+      creditUsages: [], // payments에서 확인 가능
+      passes: [], // 이제 students.seatsremainingtime 사용
+      usages: [], // 사용 내역은 별도 관리
     })
   } catch (error) {
     console.error('Student modal API error:', error)

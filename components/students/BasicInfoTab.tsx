@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import type { Student, ServiceEnrollment, Class } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Building2, GraduationCap, BookOpen, User, Loader2 } from 'lucide-react'
+import { Building2, GraduationCap, BookOpen, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface BasicInfoTabProps {
@@ -66,6 +66,9 @@ const GRADE_OPTIONS = [
   { value: '고2', label: '고2' },
   { value: '고3', label: '고3' },
   { value: '재수', label: '재수' },
+  { value: '삼수', label: '삼수' },
+  { value: '사수', label: '사수' },
+  { value: 'N수', label: 'N수' },
 ]
 
 export function BasicInfoTab({
@@ -81,59 +84,31 @@ export function BasicInfoTab({
   const [localStudent, setLocalStudent] = useState(student)
   const [saving, setSaving] = useState(false)
   const [studentCodeError, setStudentCodeError] = useState<string | null>(null)
-  const [enrolledClasses, setEnrolledClasses] = useState<Array<Class & { enrollment_id?: string; teacher_name?: string }>>([])
-  const prevStudentKey = useRef<string>('')
-  const prevCampusKey = useRef<string>('')
   const branchValue = student.branch_name || parseBranch(student.notes) || 'demoSchool'
   const campusValues = student.campuses || parseCampuses(student.notes)
   const placeholderClass = 'placeholder:text-muted-foreground/60'
 
   // Sync local state when student prop changes (including campuses)
   useEffect(() => {
-    const campusKey = JSON.stringify(student.campuses || [])
-    const studentKey = `${student.id}|${student.updated_at || ''}|${student.name}|${student.grade || ''}|${campusKey}`
-
-    // 동일 데이터면 state 업데이트 스킵 (불필요한 rerender 방지)
-    if (studentKey !== prevStudentKey.current) {
-      prevStudentKey.current = studentKey
-      setLocalStudent(student)
-    }
-
-    if (campusKey !== prevCampusKey.current) {
-      prevCampusKey.current = campusKey
-      const campuses = student.campuses || []
-      const mapToService = (campus: string): ServiceEnrollment | null => {
-        const value =
-          campus === '학원' ? 'academy' :
-          campus === '독서실' ? 'study_room' :
-          campus === '공부방' ? 'study_center' : null
-        if (!value) return null
-        return {
-          id: `enroll-${student.id}-${value}`,
-          created_at: new Date().toISOString(),
-          student_id: student.id,
-          service_type: value as ServiceEnrollment['service_type'],
-          status: 'active',
-          enrolled_at: new Date().toISOString(),
-        }
+    setLocalStudent(student)
+    const campuses = student.campuses || []
+    const mapToService = (campus: string): ServiceEnrollment | null => {
+      const value =
+        campus === '학원' ? 'academy' :
+        campus === '독서실' ? 'study_room' :
+        campus === '공부방' ? 'study_center' : null
+      if (!value) return null
+      return {
+        id: `enroll-${student.id}-${value}`,
+        created_at: new Date().toISOString(),
+        student_id: student.id,
+        service_type: value as ServiceEnrollment['service_type'],
+        status: 'active',
+        enrolled_at: new Date().toISOString(),
       }
-      setServiceEnrollments(campuses.map(mapToService).filter(Boolean) as ServiceEnrollment[])
     }
+    setServiceEnrollments(campuses.map(mapToService).filter(Boolean) as ServiceEnrollment[])
   }, [student])
-
-  // enrollments from API (modal data)
-  useEffect(() => {
-    if (enrollments && enrollments.length > 0) {
-      const mapped = enrollments.map((e: any) => ({
-        ...e.classes,
-        enrollment_id: e.id,
-        teacher_name: e.classes?.teachers?.name || e.classes?.teacher_name || '',
-      })).filter(Boolean)
-      setEnrolledClasses(mapped)
-    } else {
-      setEnrolledClasses([])
-    }
-  }, [enrollments])
 
   const handleServiceToggle = (serviceType: 'academy' | 'study_room' | 'study_center', checked: boolean) => {
     // campuses 값을 직접 관리
@@ -182,6 +157,7 @@ export function BasicInfoTab({
     const numericOnly = value.replace(/[^0-9]/g, '')
     setLocalStudent({ ...localStudent, [field]: numericOnly })
   }
+
 
   const handleSave = async () => {
     setSaving(true)
@@ -292,57 +268,6 @@ export function BasicInfoTab({
           )}
         </CardContent>
       </Card>
-
-      {/* 수강 수업 섹션은 임시 비활성화 (무한 업데이트 루프 방지) */}
-      {/*
-      <Card>
-        <CardHeader>
-          <CardTitle>수강 수업</CardTitle>
-          <CardDescription>학생이 등록된 수업 목록</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {enrolledClasses.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>등록된 수업이 없습니다</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {enrolledClasses.map((classData) => (
-                <div
-                  key={classData.id}
-                  className="grid grid-cols-[1.5fr_1fr_1fr] gap-3 items-center p-3 border rounded-lg bg-muted/50"
-                >
-                  <div className="flex items-center gap-2">
-                    <BookOpen className="h-5 w-5 text-primary" />
-                    <div>
-                      <h4 className="font-semibold">{classData.name}</h4>
-                      <p className="text-sm text-muted-foreground">{classData.subject}</p>
-                    </div>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <User className="h-3 w-3" />
-                      <span>{classData.teacher_name || '-'}</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-1 text-xs text-muted-foreground">
-                    {(Array.isArray(classData.schedule) ? classData.schedule : []).map((s, idx) => (
-                      <Badge key={idx} variant="outline" className="text-xs">
-                        {s.day} {s.start_time}-{s.end_time}
-                      </Badge>
-                    ))}
-                    {classData.room && (
-                      <Badge variant="outline" className="text-xs">강의실 {classData.room}</Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-      */}
 
       {/* 기본 정보 */}
       <Card>
@@ -501,6 +426,49 @@ export function BasicInfoTab({
               className={placeholderClass}
             />
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 수강 수업 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>수강 수업</CardTitle>
+          <CardDescription>학생이 등록된 수업 목록</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {!enrollments || enrollments.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <BookOpen className="h-12 w-12 mx-auto mb-3 opacity-50" />
+              <p>등록된 수업이 없습니다</p>
+            </div>
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-sm">반이름</th>
+                    <th className="text-left px-4 py-3 font-medium text-sm">과목</th>
+                    <th className="text-left px-4 py-3 font-medium text-sm">강사</th>
+                    <th className="text-left px-4 py-3 font-medium text-sm">강의실</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {enrollments.map((enrollment: any) => {
+                    const classData = enrollment.classes
+                    if (!classData) return null
+                    return (
+                      <tr key={enrollment.id} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-3">{classData.name}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{classData.subject}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{classData.teachers?.name || classData.teacher_name || '-'}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{classData.room || '-'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
 

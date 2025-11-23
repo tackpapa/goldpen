@@ -1,129 +1,233 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Teacher } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { BookOpen, Users, Calendar, Clock } from 'lucide-react'
+import { BookOpen, Loader2 } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface ClassHistoryTabProps {
   teacher: Teacher
 }
 
-// Mock class history data
-const generateDummyClassHistory = () => {
-  const subjects = ['수학', '영어', '과학', '국어', '사회']
-  const classTypes = ['정규반', '특강', '개인과외', '그룹과외']
-  const history = []
+interface Lesson {
+  id: string
+  date: string
+  subject: string
+  class_name?: string
+  lesson_time?: string
+  student_count?: number
+  duration_minutes: number
+  duration_hours: number
+  content: string
+  attendance_count?: number
+  homework?: string
+  created_at: string
+}
 
-  for (let i = 0; i < 30; i++) {
-    const daysAgo = Math.floor(i / 2)
-    const date = new Date()
-    date.setDate(date.getDate() - daysAgo)
-
-    const startHour = [9, 11, 13, 14, 16, 18][Math.floor(Math.random() * 6)]
-    const duration = [1, 1.5, 2, 2.5][Math.floor(Math.random() * 4)]
-
-    history.push({
-      id: `class-${i}`,
-      date: date.toISOString().split('T')[0],
-      subject: subjects[Math.floor(Math.random() * subjects.length)],
-      classType: classTypes[Math.floor(Math.random() * classTypes.length)],
-      startTime: `${startHour.toString().padStart(2, '0')}:00`,
-      duration,
-      studentCount: Math.floor(Math.random() * 15) + 1,
-      completed: daysAgo > 0,
-    })
+interface LessonsResponse {
+  lessons: Lesson[]
+  pagination: {
+    limit: number
+    offset: number
+    total: number
+    has_more: boolean
   }
-
-  return history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 }
 
 export function ClassHistoryTab({ teacher }: ClassHistoryTabProps) {
-  const [classHistory] = useState(generateDummyClassHistory())
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [lessons, setLessons] = useState<Lesson[]>([])
+  const [hasMore, setHasMore] = useState(true)
+  const [total, setTotal] = useState(0)
+  const observerTarget = useRef<HTMLDivElement>(null)
+  const ITEMS_PER_PAGE = 10
 
-  const totalClasses = classHistory.filter((c) => c.completed).length
-  const totalHours = classHistory.filter((c) => c.completed).reduce((sum, c) => sum + c.duration, 0)
-  const totalStudents = classHistory.filter((c) => c.completed).reduce((sum, c) => sum + c.studentCount, 0)
+  const fetchLessons = async (offset: number = 0, append: boolean = false) => {
+    try {
+      if (append) {
+        setLoadingMore(true)
+      } else {
+        setLoading(true)
+      }
+      setError(null)
+
+      const response = await fetch(
+        `/api/teachers/${teacher.id}/lessons?limit=${ITEMS_PER_PAGE}&offset=${offset}`
+      )
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error || '수업 이력 조회 실패')
+      }
+
+      const data = await response.json()
+
+      if (append) {
+        setLessons(prev => [...prev, ...data.lessons])
+      } else {
+        setLessons(data.lessons)
+      }
+
+      setTotal(data.pagination.total)
+      setHasMore(data.pagination.has_more)
+    } catch (err) {
+      console.error('[ClassHistoryTab] Error fetching lessons:', err)
+      setError(err instanceof Error ? err.message : '알 수 없는 오류')
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }
+
+  useEffect(() => {
+    if (teacher.id) {
+      fetchLessons(0, false)
+    }
+  }, [teacher.id])
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore && !loading) {
+          fetchLessons(lessons.length, true)
+        }
+      },
+      { threshold: 0.1 }
+    )
+
+    const currentTarget = observerTarget.current
+    if (currentTarget) {
+      observer.observe(currentTarget)
+    }
+
+    return () => {
+      if (currentTarget) {
+        observer.unobserve(currentTarget)
+      }
+    }
+  }, [lessons.length, hasMore, loadingMore, loading])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <span className="ml-2 text-muted-foreground">수업 이력 로딩 중...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64">
+        <p className="text-destructive mb-2">❌ 오류: {error}</p>
+        <p className="text-sm text-muted-foreground">수업 이력을 불러올 수 없습니다.</p>
+      </div>
+    )
+  }
+
+  const totalHours = lessons.reduce((sum, l) => sum + l.duration_hours, 0)
 
   return (
     <div className="space-y-6">
-      {/* Statistics */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 수업 횟수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalClasses}회</div>
-          </CardContent>
-        </Card>
+      {/* Summary Card */}
+      <Card className="bg-primary/5">
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">전체 수업 횟수</p>
+              <p className="text-2xl font-bold text-primary">{total}회</p>
+            </div>
+            <div className="text-center border-x">
+              <p className="text-sm text-muted-foreground">총 수업 시간</p>
+              <p className="text-2xl font-bold text-primary">
+                {Math.round(totalHours * 10) / 10}시간
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">최근 수업</p>
+              <p className="text-lg font-semibold">
+                {lessons[0]?.date || '-'}
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">총 수업 시간</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalHours.toFixed(1)}시간</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">누적 학생 수</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalStudents}명</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Class History List */}
+      {/* Lessons List */}
       <Card>
         <CardHeader>
           <CardTitle>수업 이력</CardTitle>
-          <CardDescription>최근 수업 기록 ({classHistory.length}건)</CardDescription>
+          <CardDescription>수업일지가 작성된 수업 목록 (스크롤하여 더 보기)</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2 max-h-[500px] overflow-y-auto">
-            {classHistory.map((classRecord) => (
-              <div
-                key={classRecord.id}
-                className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <BookOpen className="h-4 w-4 text-primary" />
-                    <Badge variant="outline" className="font-semibold">
-                      {classRecord.subject}
-                    </Badge>
-                    <span className="font-medium">{classRecord.classType}</span>
-                    {!classRecord.completed && (
-                      <Badge variant="secondary">예정</Badge>
-                    )}
-                  </div>
+          {lessons.length === 0 && !loading ? (
+            <div className="text-center py-12">
+              <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">아직 작성된 수업일지가 없습니다.</p>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-md border max-h-[500px] overflow-y-auto">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead>날짜</TableHead>
+                      <TableHead>반</TableHead>
+                      <TableHead>과목</TableHead>
+                      <TableHead>수업시간</TableHead>
+                      <TableHead>학생수</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {lessons.map((lesson) => {
+                      return (
+                        <TableRow key={lesson.id}>
+                          <TableCell className="font-medium">{lesson.date}</TableCell>
+                          <TableCell>{lesson.class_name || '-'}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{lesson.subject}</Badge>
+                          </TableCell>
+                          <TableCell>
+                            {lesson.duration_hours}시간
+                          </TableCell>
+                          <TableCell>{lesson.student_count || 0}명</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                </Table>
 
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground ml-6">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {new Date(classRecord.date).toLocaleDateString('ko-KR', {
-                        month: 'long',
-                        day: 'numeric',
-                      })}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {classRecord.startTime} ({classRecord.duration}시간)
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Users className="h-3 w-3" />
-                      {classRecord.studentCount}명
-                    </span>
+                {/* Infinite Scroll Trigger */}
+                <div ref={observerTarget} className="h-4" />
+
+                {/* Loading More Indicator */}
+                {loadingMore && (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                    <span className="ml-2 text-sm text-muted-foreground">더 불러오는 중...</span>
                   </div>
-                </div>
+                )}
+
+                {/* No More Data */}
+                {!hasMore && lessons.length > 0 && (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    모든 수업 이력을 불러왔습니다. (총 {total}건)
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

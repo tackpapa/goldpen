@@ -7,7 +7,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -53,21 +52,13 @@ export function StudentDetailModal({
 
   if (!student) return null
 
-  const descriptionId = 'student-detail-description'
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        aria-describedby={descriptionId}
-        className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col fixed top-[5vh] translate-y-0"
-      >
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden flex flex-col fixed top-[5vh] translate-y-0">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <DialogTitle className="text-2xl">{currentStudent.name}</DialogTitle>
-              <DialogDescription id={descriptionId} className="text-sm text-muted-foreground">
-                학생의 현재 출결, 결제, 독서실 이용 내역을 확인하고 수정합니다.
-              </DialogDescription>
               <Badge variant={currentStudent.status === 'active' ? 'default' : 'secondary'}>
                 {currentStudent.status === 'active' ? '재학' : currentStudent.status === 'graduated' ? '졸업' : '휴학'}
               </Badge>
@@ -120,90 +111,74 @@ export function StudentDetailModal({
           </TabsList>
 
           <div className="flex-1 overflow-y-auto mt-4">
-            {activeTab === 'info' && (
-              <TabsContent value="info" className="mt-0">
-                <BasicInfoTab
-                  student={currentStudent}
-                  onUpdate={onUpdate}
-                  services={modalData?.services}
-                  enrollments={modalData?.enrollments}
-                  loading={loading}
-                  onRefresh={refetch}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="info" className="mt-0">
+              <BasicInfoTab
+                student={currentStudent}
+                onUpdate={onUpdate}
+                services={modalData?.services}
+                enrollments={modalData?.enrollments}
+                loading={loading}
+                onRefresh={refetch}
+              />
+            </TabsContent>
 
-            {activeTab === 'files' && (
-              <TabsContent value="files" className="mt-0">
-                <StudentFilesTab student={currentStudent} onUpdate={onUpdate} onRefresh={refetch} />
-              </TabsContent>
-            )}
+            <TabsContent value="files" className="mt-0">
+              <StudentFilesTab student={currentStudent} onUpdate={onUpdate} onRefresh={refetch} />
+            </TabsContent>
 
-            {activeTab === 'schedule' && (
-              <TabsContent value="schedule" className="mt-0">
-                <AttendanceScheduleTab
-                  student={currentStudent}
-                  schedules={modalData?.schedules}
-                  loading={loading}
-                  onRefresh={refetch}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="schedule" className="mt-0">
+              <AttendanceScheduleTab
+                student={currentStudent}
+                schedules={modalData?.schedules}
+                loading={loading}
+                onRefresh={refetch}
+              />
+            </TabsContent>
 
-            {activeTab === 'attendance' && (
-              <TabsContent value="attendance" className="mt-0">
-                <AttendanceHistoryTab
-                  student={currentStudent}
-                  attendance={modalData?.attendance}
-                  loading={loading}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="attendance" className="mt-0">
+              <AttendanceHistoryTab
+                student={currentStudent}
+                attendance={modalData?.attendance}
+                loading={loading}
+              />
+            </TabsContent>
 
-            {activeTab === 'payment' && (
-              <TabsContent value="payment" className="mt-0">
-                <PaymentTab
-                  student={currentStudent}
-                  subscriptions={modalData?.subscriptions}
-                  activeSubscription={modalData?.activeSubscription}
-                  loading={loading}
-                  onPaymentComplete={handlePaymentComplete}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="payment" className="mt-0">
+              <PaymentTab
+                student={currentStudent}
+                subscriptions={modalData?.subscriptions}
+                activeSubscription={modalData?.activeSubscription}
+                loading={loading}
+                onPaymentComplete={handlePaymentComplete}
+              />
+            </TabsContent>
 
-            {activeTab === 'payment-history' && (
-              <TabsContent value="payment-history" className="mt-0">
-                <PaymentHistoryTab
-                  student={currentStudent}
-                  payments={modalData?.payments}
-                  loading={loading}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="payment-history" className="mt-0">
+              <PaymentHistoryTab
+                student={currentStudent}
+                payments={modalData?.payments}
+                loading={loading}
+              />
+            </TabsContent>
 
-            {activeTab === 'class-credits' && (
-              <TabsContent value="class-credits" className="mt-0">
-                <ClassCreditsTab
-                  student={currentStudent}
-                  credits={modalData?.credits}
-                  creditUsages={modalData?.creditUsages}
-                  loading={loading}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="class-credits" className="mt-0">
+              <ClassCreditsTab
+                student={currentStudent}
+                credits={modalData?.credits}
+                creditUsages={modalData?.creditUsages}
+                loading={loading}
+              />
+            </TabsContent>
 
-            {activeTab === 'study-room' && (
-              <TabsContent value="study-room" className="mt-0">
-                <StudyRoomTab
-                  student={currentStudent}
-                  passes={modalData?.passes}
-                  activePass={modalData?.activePass}
-                  usages={modalData?.usages}
-                  loading={loading}
-                />
-              </TabsContent>
-            )}
+            <TabsContent value="study-room" className="mt-0">
+              <StudyRoomTab
+                student={currentStudent}
+                passes={modalData?.passes}
+                activePass={modalData?.activePass}
+                usages={modalData?.usages}
+                loading={loading}
+              />
+            </TabsContent>
           </div>
         </Tabs>
       </DialogContent>
