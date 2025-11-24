@@ -21,9 +21,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Calendar, CheckCircle, XCircle, Clock, User, ExternalLink } from 'lucide-react'
+import { Calendar, CheckCircle, XCircle, Clock, User, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Attendance } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 
@@ -75,6 +75,7 @@ export default function AttendancePage() {
   const [weeklyStats, setWeeklyStats] = useState<WeeklyStatItem[]>([])
   const [classAttendanceRate, setClassAttendanceRate] = useState<ClassAttendanceRateItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -104,72 +105,133 @@ export default function AttendancePage() {
 
   const resetTodayPaging = useCallback(() => setTodayPage(1), [])
 
+  const formatSelectedDateLabel = useCallback((dateStr: string) => {
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return ''
+    return format(d, 'yyyy년 MM월 dd일 (eee)')
+  }, [])
+
+  const shiftDate = useCallback((delta: number) => {
+    const next = addDays(new Date(selectedDate), delta)
+    const nextStr = format(next, 'yyyy-MM-dd')
+    setSelectedDate(nextStr)
+    setHasMore(true)
+    setIsLoadingMore(false)
+    setPage(0)
+    setTodayPage(1)
+    setAttendanceHistory([])
+    setTodayAttendance([])
+    setWeeklyStats([])
+    setClassAttendanceRate([])
+  }, [selectedDate])
+
+  const resetToToday = useCallback(() => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    if (todayStr === selectedDate) return
+    setSelectedDate(todayStr)
+    setHasMore(true)
+    setIsLoadingMore(false)
+    setPage(0)
+    setTodayPage(1)
+    setAttendanceHistory([])
+    setTodayAttendance([])
+    setWeeklyStats([])
+    setClassAttendanceRate([])
+  }, [selectedDate])
+
   // 통계 fallback 계산 (데이터 없을 때 로컬 계산)
-  const computeWeeklyFromHistory = useCallback(() => {
-    const map: Record<string, { date: string; present: number; late: number; absent: number; excused: number }> = {}
-    attendanceHistory.forEach((r) => {
-      if (!map[r.date]) map[r.date] = { date: r.date, present: 0, late: 0, absent: 0, excused: 0 }
-      if (r.status === 'present') map[r.date].present++
-      else if (r.status === 'late') map[r.date].late++
-      else if (r.status === 'absent') map[r.date].absent++
-      else if (r.status === 'excused') map[r.date].excused++
-    })
-    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
-  }, [attendanceHistory])
-
-  const computeClassRatesFromHistory = useCallback(() => {
-    const agg: Record<string, { name: string; present: number; late: number; absent: number; excused: number }> = {}
-    attendanceHistory.forEach((r) => {
-      const key = r.class_id || 'unknown'
-      const name = (r as any).class?.name || r.class_id || '미지정 반'
-      if (!agg[key]) agg[key] = { name, present: 0, late: 0, absent: 0, excused: 0 }
-      if (r.status === 'present') agg[key].present++
-      else if (r.status === 'late') agg[key].late++
-      else if (r.status === 'absent') agg[key].absent++
-      else if (r.status === 'excused') agg[key].excused++
-    })
-    return Object.values(agg)
-      .map((v) => {
-        const total = v.present + v.late + v.absent + v.excused
-        const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
-        return { ...v, rate }
+  const computeWeeklyFromHistory = useCallback(
+    (source: Attendance[] = attendanceHistory) => {
+      const map: Record<string, { date: string; present: number; late: number; absent: number; excused: number }> = {}
+      source.forEach((r) => {
+        if (!map[r.date]) map[r.date] = { date: r.date, present: 0, late: 0, absent: 0, excused: 0 }
+        if (r.status === 'present') map[r.date].present++
+        else if (r.status === 'late') map[r.date].late++
+        else if (r.status === 'absent') map[r.date].absent++
+        else if (r.status === 'excused') map[r.date].excused++
       })
-      .sort((a, b) => b.rate - a.rate)
-  }, [attendanceHistory])
+      return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
+    },
+    [attendanceHistory]
+  )
 
-  const fetchAttendancePage = useCallback(async (pageToLoad: number) => {
-    const params = new URLSearchParams({
-      limit: HISTORY_PAGE_SIZE.toString(),
-      offset: (pageToLoad * HISTORY_PAGE_SIZE).toString(),
-    })
-    const response = await fetch(`/api/attendance?${params.toString()}`, { credentials: 'include' })
-    const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[] }
-
-    if (!response.ok) {
-      throw new Error(data?.error || '출결 데이터 로드 실패')
-    }
-
-    const fetchedCount = data.attendance?.length || 0
-    console.log('[history] page', pageToLoad, 'fetched', fetchedCount, 'hasMore?', fetchedCount === HISTORY_PAGE_SIZE)
-    const merged = pageToLoad === 0 ? (data.attendance || []) : [...attendanceHistory, ...(data.attendance || [])]
-    setAttendanceHistory(merged)
-
-    // 첫 페이지에서만 오늘/통계 세트업
-    if (pageToLoad === 0) {
-      const sortedToday = (data.todayStudents || []).slice().sort((a, b) => {
-        const pa = statusPriority[a.status] ?? 99
-        const pb = statusPriority[b.status] ?? 99
-        if (pa !== pb) return pa - pb
-        return (a.student_name || '').localeCompare(b.student_name || '')
+  const computeClassRatesFromHistory = useCallback(
+    (source: Attendance[] = attendanceHistory) => {
+      const agg: Record<string, { name: string; present: number; late: number; absent: number; excused: number }> = {}
+      source.forEach((r) => {
+        const key = r.class_id || 'unknown'
+        const name = (r as any).class?.name || r.class_id || '미지정 반'
+        if (!agg[key]) agg[key] = { name, present: 0, late: 0, absent: 0, excused: 0 }
+        if (r.status === 'present') agg[key].present++
+        else if (r.status === 'late') agg[key].late++
+        else if (r.status === 'absent') agg[key].absent++
+        else if (r.status === 'excused') agg[key].excused++
       })
-      setTodayAttendance(sortedToday)
-      setWeeklyStats((data.weeklyStats && data.weeklyStats.length > 0) ? data.weeklyStats : computeWeeklyFromHistory())
-      setClassAttendanceRate(computeClassRatesFromHistory())
-    }
+      return Object.values(agg)
+        .map((v) => {
+          const total = v.present + v.late + v.absent + v.excused
+          const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
+          return { ...v, rate }
+        })
+        .sort((a, b) => b.rate - a.rate)
+    },
+    [attendanceHistory]
+  )
 
-    // hasMore 판단
-    setHasMore(fetchedCount === HISTORY_PAGE_SIZE)
-  }, [HISTORY_PAGE_SIZE, attendanceHistory, computeWeeklyFromHistory, computeClassRatesFromHistory])
+  const fetchAttendancePage = useCallback(
+    async (pageToLoad: number, targetDate: string) => {
+      const params = new URLSearchParams({
+        limit: HISTORY_PAGE_SIZE.toString(),
+        offset: (pageToLoad * HISTORY_PAGE_SIZE).toString(),
+      })
+      params.set('target_date', targetDate)
+      const response = await fetch(`/api/attendance?${params.toString()}`, { credentials: 'include' })
+      const data = (await response.json()) as {
+        attendance?: Attendance[]
+        todayStudents?: TodayStudent[]
+        weeklyStats?: WeeklyStatItem[]
+        studentRates?: StudentAttendanceRateItem[]
+        selectedDate?: string
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.error || '출결 데이터 로드 실패')
+      }
+
+      const fetchedCount = data.attendance?.length || 0
+      const serverHasMore = (data as any).hasMore
+      console.log(
+        '[history] page',
+        pageToLoad,
+        'fetched',
+        fetchedCount,
+        'hasMore?',
+        serverHasMore ?? fetchedCount === HISTORY_PAGE_SIZE
+      )
+
+      setAttendanceHistory((prev) => {
+        const merged = pageToLoad === 0 ? data.attendance || [] : [...prev, ...(data.attendance || [])]
+
+        if (pageToLoad === 0) {
+          const sortedToday = (data.todayStudents || []).slice().sort((a, b) => {
+            const pa = statusPriority[a.status] ?? 99
+            const pb = statusPriority[b.status] ?? 99
+            if (pa !== pb) return pa - pb
+            return (a.student_name || '').localeCompare(b.student_name || '')
+          })
+          setTodayAttendance(sortedToday)
+          const weeklyFallback = computeWeeklyFromHistory(merged)
+          setWeeklyStats(data.weeklyStats && data.weeklyStats.length > 0 ? data.weeklyStats : weeklyFallback)
+          setClassAttendanceRate(computeClassRatesFromHistory(merged))
+        }
+
+        return merged
+      })
+
+      setHasMore(serverHasMore ?? fetchedCount === HISTORY_PAGE_SIZE)
+    },
+    [HISTORY_PAGE_SIZE, computeWeeklyFromHistory, computeClassRatesFromHistory, statusPriority]
+  )
 
   // attendanceHistory 변경 시 반별 출결률 갱신
   useEffect(() => {
@@ -180,17 +242,23 @@ export default function AttendancePage() {
     const load = async () => {
       setIsLoading(true)
       try {
-        await fetchAttendancePage(0)
+        await fetchAttendancePage(0, selectedDate)
         setPage(0)
         setTodayPage(1)
       } catch (err) {
-        toast({ title: '출결 데이터 로드 실패', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
+        toast({
+          title: '출결 데이터 로드 실패',
+          description: err instanceof Error ? err.message : undefined,
+          variant: 'destructive',
+        })
       } finally {
         setIsLoading(false)
       }
     }
     load()
-  }, [fetchAttendancePage, toast])
+    // fetchAttendancePage는 의존성에 넣으면 attendanceHistory 변화 시마다 재호출되어 무한 루프가 되어 제외
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, toast])
 
   // Infinite scroll observer
   useEffect(() => {
@@ -202,7 +270,7 @@ export default function AttendancePage() {
           setIsLoadingMore(true)
           try {
             const nextPage = page + 1
-            await fetchAttendancePage(nextPage)
+            await fetchAttendancePage(nextPage, selectedDate)
             setPage(nextPage)
           } catch (err) {
             toast({ title: '추가 로드 실패', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
@@ -215,7 +283,7 @@ export default function AttendancePage() {
     )
     observer.observe(historySentinel)
     return () => observer.disconnect()
-  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel])
+  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel, selectedDate])
 
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [userRole, setUserRole] = useState<string | null>(null)
@@ -533,12 +601,24 @@ export default function AttendancePage() {
         <TabsContent value="today" className="space-y-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <CardTitle>오늘 출결 현황</CardTitle>
-                  <CardDescription>
-                    {format(new Date(), 'yyyy년 MM월 dd일')} - 실시간 출결 체크
-                  </CardDescription>
+                  <CardDescription>선택한 날짜 기준 실시간 출결</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" onClick={() => shiftDate(-1)} aria-label="이전 날짜">
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="text-lg font-semibold whitespace-nowrap">
+                    {formatSelectedDateLabel(selectedDate)}
+                  </div>
+                  <Button variant="outline" size="icon" onClick={() => shiftDate(1)} aria-label="다음 날짜">
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={resetToToday} disabled={selectedDate === format(new Date(), 'yyyy-MM-dd')}>
+                    오늘
+                  </Button>
                 </div>
               </div>
             </CardHeader>

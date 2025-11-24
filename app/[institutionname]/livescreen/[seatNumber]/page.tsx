@@ -64,6 +64,8 @@ export default function LiveScreenPage({ params }: PageProps) {
   const [studentId, setStudentId] = useState<string | null>(null)
   const [studentName, setStudentName] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
+  const [orgId, setOrgId] = useState<string | null>(null)
   const [isPlannerOpen, setIsPlannerOpen] = useState(false)
   const [isOutingModalOpen, setIsOutingModalOpen] = useState(false)
   const [dailyPlanner, setDailyPlanner] = useState<DailyPlanner | null>(null)
@@ -80,13 +82,24 @@ export default function LiveScreenPage({ params }: PageProps) {
         if (response.ok) {
           const data = await response.json()
           const assignment = data.assignments?.find((a: any) => a.seatNumber === parseInt(seatNumber))
-          if (assignment) {
+          if (assignment && assignment.studentId) {
             setStudentId(assignment.studentId)
             setStudentName(assignment.studentName || '학생')
+            setOrgId(assignment.orgId || null)
+            setAssignmentError(null)
+          } else {
+            setStudentId(null)
+            setStudentName('')
+            setOrgId(null)
+            setAssignmentError('이 좌석에 배정된 학생이 없습니다. 좌석 배정 후 사용하세요.')
           }
+        } else if (response.status === 401) {
+          setAssignmentError('인증이 필요합니다. 다시 로그인해 주세요.')
         }
       } catch (error) {
         console.error('Failed to fetch student info:', error)
+        setAssignmentError('좌석 정보를 불러올 수 없습니다.')
+        setOrgId(null)
       } finally {
         setLoading(false)
       }
@@ -96,7 +109,7 @@ export default function LiveScreenPage({ params }: PageProps) {
 
   // Fetch all data when studentId is available
   useEffect(() => {
-    if (!studentId) return
+    if (!studentId || !orgId) return
 
     const getTodayDate = () => new Date().toISOString().split('T')[0]
 
@@ -128,7 +141,7 @@ export default function LiveScreenPage({ params }: PageProps) {
     }
 
     fetchAllData()
-  }, [studentId])
+  }, [studentId, orgId])
 
   // Use Supabase Realtime hook for live screen state
   const {
@@ -140,7 +153,7 @@ export default function LiveScreenPage({ params }: PageProps) {
     endSleep,
     startOuting,
     endOuting,
-  } = useLivescreenState(studentId || '', parseInt(seatNumber))
+  } = useLivescreenState(studentId || '', parseInt(seatNumber), orgId)
 
   const [sleepRemainingSeconds, setSleepRemainingSeconds] = useState(0)
   const [activeView, setActiveView] = useState<'timer' | 'planner' | 'ranking' | 'stats'>('timer')
@@ -402,16 +415,26 @@ export default function LiveScreenPage({ params }: PageProps) {
     }
   }, [currentSleep])
 
-  // Subscribe to call_records for this student
+  // Subscribe to call_records for this student (org 스코프)
   useEffect(() => {
     const supabase = createClient()
     const today = new Date().toISOString().split('T')[0]
+    let orgId: string | null = null
 
-    // Initial fetch
+    const fetchOrg = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        const json = await res.json()
+        orgId = json?.org_id || json?.orgId || null
+      } catch {}
+    }
+
     const fetchCurrentCall = async () => {
+      if (!orgId) return
       const { data, error } = await supabase
         .from('call_records')
         .select('*')
+        .eq('org_id', orgId)
         .eq('student_id', studentId)
         .eq('seat_number', parseInt(seatNumber))
         .eq('date', today)
@@ -428,39 +451,50 @@ export default function LiveScreenPage({ params }: PageProps) {
       setCurrentCall(data)
     }
 
-    fetchCurrentCall()
-
-    // Subscribe to changes
-    const channel = supabase
-      .channel(`call-${studentId}-${seatNumber}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'call_records',
-          filter: `student_id=eq.${studentId}`,
-        },
-        (payload) => {
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const record = payload.new as CallRecord
-            // Check if this call is for this seat and today
-            if (
-              record.seat_number === parseInt(seatNumber) &&
-              record.date === today &&
-              record.status === 'calling'
-            ) {
-              setCurrentCall(record)
-            } else if (record.status === 'acknowledged') {
-              setCurrentCall(null)
+    let channel: any
+    const setup = async () => {
+      await fetchOrg()
+      await fetchCurrentCall()
+      if (!orgId) return
+      channel = supabase
+        .channel(`call-${studentId}-${seatNumber}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'call_records',
+            filter: `org_id=eq.${orgId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const record = payload.new as CallRecord
+              if (
+                record.org_id === orgId &&
+                record.student_id === studentId &&
+                record.seat_number === parseInt(seatNumber) &&
+                record.date === today &&
+                record.status === 'calling'
+              ) {
+                setCurrentCall(record)
+              } else if (record.status === 'acknowledged') {
+                setCurrentCall(null)
+              }
+            } else if (payload.eventType === 'DELETE') {
+              const record = payload.old as CallRecord
+              if (record.student_id === studentId && record.seat_number === parseInt(seatNumber)) {
+                setCurrentCall(null)
+              }
             }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+    }
+
+    setup()
 
     return () => {
-      channel.unsubscribe()
+      channel?.unsubscribe()
     }
   }, [studentId, seatNumber])
 
@@ -598,11 +632,16 @@ export default function LiveScreenPage({ params }: PageProps) {
     try {
       const today = new Date().toISOString().split('T')[0]
       const supabase = createClient()
+      if (!orgId || !studentId) {
+        toast({ title: '호출 불가', description: '배정된 학생/기관 정보가 없습니다.', variant: 'destructive' })
+        return
+      }
 
       const insertData = {
         student_id: studentId,
         seat_number: parseInt(seatNumber),
         student_name: studentName,
+        org_id: orgId,
         date: today,
         call_time: new Date().toISOString(),
         status: 'calling' as const,
@@ -638,6 +677,28 @@ export default function LiveScreenPage({ params }: PageProps) {
   }
 
   const sleepButtonDisabled = screenState.sleep_count >= 2 || currentSleep !== null
+
+  if (assignmentError) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-white text-center p-8">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">좌석 미배정</h1>
+          <p className="text-muted-foreground">{assignmentError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (assignmentError) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-white text-center p-8">
+        <div>
+          <h1 className="text-2xl font-bold mb-2">좌석 미배정</h1>
+          <p className="text-muted-foreground">{assignmentError}</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>

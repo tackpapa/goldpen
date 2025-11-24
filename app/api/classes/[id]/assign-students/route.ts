@@ -1,5 +1,5 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { ZodError, z } from 'zod'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -11,24 +11,16 @@ const schema = z.object({
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-    if (profileError || !profile) return Response.json({ error: '프로필 없음' }, { status: 404 })
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const classId = params.id
 
     // 1) class_enrollments 기준으로 조회
-    const { data: enrollments, error: enrollErr } = await supabase
+    const { data: enrollments, error: enrollErr } = await db
       .from('class_enrollments')
       .select('student_id')
       .eq('class_id', classId)
+      .eq('org_id', orgId)
 
     let studentIds: string[] = []
     if (!enrollErr && enrollments) {
@@ -37,11 +29,11 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
     // 2) fallback: students.class_id 기준 (만약 enrollments 비어 있을 때)
     if (studentIds.length === 0) {
-      const { data: studentRows, error: studentErr } = await supabase
+      const { data: studentRows, error: studentErr } = await db
         .from('students')
         .select('id')
         .eq('class_id', classId)
-        .eq('org_id', profile.org_id)
+        .eq('org_id', orgId)
       if (!studentErr && studentRows) {
         studentIds = studentRows.map((s) => s.id)
       }
@@ -55,40 +47,32 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-    if (profileError || !profile) return Response.json({ error: '프로필 없음' }, { status: 404 })
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const classId = params.id
     const body = await request.json()
     const { student_ids } = schema.parse(body)
 
     // 학생 이름 로드
-    const { data: studentRows, error: studentErr } = await supabase
+    const { data: studentRows, error: studentErr } = await db
       .from('students')
       .select('id, name')
       .in('id', student_ids)
     if (studentErr) return Response.json({ error: '학생 조회 실패', details: studentErr.message }, { status: 500 })
 
     // 기존 배정 삭제 (해당 반)
-    await supabase.from('class_enrollments').delete().eq('class_id', classId)
+    await db.from('class_enrollments').delete().eq('class_id', classId).eq('org_id', orgId)
 
     // 새 배정 삽입
     if (student_ids.length) {
       const enrollPayload = studentRows.map((s) => ({
+        org_id: orgId,
         class_id: classId,
         student_id: s.id,
         student_name: s.name,
         status: 'active',
       }))
-      const { error: insertErr } = await supabase.from('class_enrollments').insert(enrollPayload)
+      const { error: insertErr } = await db.from('class_enrollments').insert(enrollPayload)
       if (insertErr) {
         return Response.json({ error: '배정 저장 실패', details: insertErr.message }, { status: 500 })
       }
@@ -97,25 +81,25 @@ export async function POST(request: Request, { params }: { params: { id: string 
     // students.class_id 업데이트
     // 선택된 학생들: class_id 설정, 그 외 이 반에 있던 학생은 null
     if (student_ids.length) {
-      await supabase
+      await db
         .from('students')
         .update({ class_id: classId })
         .in('id', student_ids)
-        .eq('org_id', profile.org_id)
-      await supabase
+        .eq('org_id', orgId)
+      await db
         .from('students')
         .update({ class_id: null })
         .eq('class_id', classId)
         .not('id', 'in', student_ids)
     } else {
-      await supabase
+      await db
         .from('students')
         .update({ class_id: null })
         .eq('class_id', classId)
     }
 
     // current_students 업데이트
-    const { error: countErr } = await supabase
+    const { error: countErr } = await db
       .from('classes')
       .update({ current_students: student_ids.length })
       .eq('id', classId)

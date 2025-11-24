@@ -1,5 +1,4 @@
 import type { RevenueCategory } from '@/lib/types/database'
-import { DEFAULT_REVENUE_CATEGORIES } from '@/lib/types/database'
 
 const STORAGE_KEY = 'revenue_categories'
 
@@ -17,9 +16,9 @@ export const revenueCategoryManager = {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (!stored) {
-        // 초기 데이터 설정
-        this.initializeDefaultCategories()
-        return this.getCategories()
+        // 기본 제공 없이 비워둠 (사용자가 직접 추가)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
+        return []
       }
 
       const categories = JSON.parse(stored) as RevenueCategory[]
@@ -44,19 +43,18 @@ export const revenueCategoryManager = {
     return this.getCategories().find(cat => cat.id === id)
   },
 
+  /** 저장소 전체 덮어쓰기 */
+  setCategories(categories: RevenueCategory[]): void {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(categories))
+  },
+
   /**
    * 기본 수입 항목으로 초기화
    */
   initializeDefaultCategories(): void {
     if (typeof window === 'undefined') return
-
-    const defaultCategories: RevenueCategory[] = DEFAULT_REVENUE_CATEGORIES.map((cat, index) => ({
-      ...cat,
-      id: `revenue-cat-${Date.now()}-${index}`,
-      created_at: new Date().toISOString(),
-    }))
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultCategories))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
   },
 
   /**

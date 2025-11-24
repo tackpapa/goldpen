@@ -283,38 +283,26 @@ export default function LiveAttendancePage() {
         const response = await fetch('/api/seat-assignments', { credentials: 'include' })
         if (response.ok) {
           const data = await response.json()
-          // Also fetch student codes
-          const studentsResponse = await fetch('/api/students', { credentials: 'include' })
-          if (studentsResponse.ok) {
-            const studentsData = await studentsResponse.json()
-            const studentCodeMap: Record<string, string> = {}
-            const studentMinutesMap: Record<string, number> = {}
-            studentsData.students?.forEach((s: any) => {
-              if (s.student_code) studentCodeMap[s.id] = s.student_code
-              if (s.seatsremainingtime != null) studentMinutesMap[s.id] = s.seatsremainingtime
-            })
+          const assignmentsWithCodes = data.assignments?.map((a: any) => ({
+            seatNumber: a.seatNumber,
+            studentId: a.studentId,
+            studentCode: a.studentCode || '',
+            studentName: a.studentName || '',
+            status: a.status,
+            sessionStartTime: a.sessionStartTime,
+            remainingMinutes: a.remainingMinutes ?? null,
+          })) || []
 
-            const assignmentsWithCodes = data.assignments?.map((a: any) => ({
-              seatNumber: a.seatNumber,
-              studentId: a.studentId,
-              studentCode: studentCodeMap[a.studentId] || '',
-              studentName: a.studentName || '',
-              status: a.status,
-              sessionStartTime: a.sessionStartTime,
-              remainingMinutes: a.remainingMinutes ?? studentMinutesMap[a.studentId] ?? null,
-            })) || []
+          setSeatAssignments(assignmentsWithCodes)
 
-            setSeatAssignments(assignmentsWithCodes)
-
-            // Initialize attendance status from assignments
-            const statusMap: Record<string, 'checked_in' | 'checked_out'> = {}
-            assignmentsWithCodes.forEach((a: any) => {
-              if (a.studentCode && (a.status === 'checked_in' || a.status === 'checked_out')) {
-                statusMap[a.studentCode] = a.status
-              }
-            })
-            setAttendanceStatus(statusMap)
-          }
+          // Initialize attendance status from assignments
+          const statusMap: Record<string, 'checked_in' | 'checked_out'> = {}
+          assignmentsWithCodes.forEach((a: any) => {
+            if (a.studentCode && (a.status === 'checked_in' || a.status === 'checked_out')) {
+              statusMap[a.studentCode] = a.status
+            }
+          })
+          setAttendanceStatus(statusMap)
         }
       } catch (error) {
         console.error('Failed to fetch seat assignments:', error)
@@ -333,16 +321,19 @@ export default function LiveAttendancePage() {
     const fetchOrg = async () => {
       try {
         const res = await fetch(`/api/organizations/${institutionName}`)
-        if (!res.ok) return
-        const data = await res.json()
-        if (data.organization) {
-          setOrganization((prev) => ({
-            name: data.organization.name || prev.name,
-            logo_url: data.organization.logo_url ?? prev.logo_url,
-          }))
+        if (res.ok) {
+          const data = await res.json()
+          if (data.organization) {
+            setOrganization((prev) => ({
+              name: data.organization.name || prev.name,
+              logo_url: data.organization.logo_url ?? prev.logo_url,
+            }))
+          }
+        } else {
+          setOrganization((prev) => ({ ...prev, name: institutionName }))
         }
       } catch (e) {
-        // ignore errors, keep defaults
+        setOrganization((prev) => ({ ...prev, name: institutionName }))
       }
     }
     if (institutionName) fetchOrg()
@@ -375,62 +366,47 @@ export default function LiveAttendancePage() {
   }
 
   const handleCheckInOut = async () => {
-    if (studentId.length !== 4 || isLoading) {
-      return
-    }
+    if (studentId.length !== 4 || isLoading) return
 
-    // Find student by code from seat assignments
-    const assignment = seatAssignments.find(a => a.studentCode === studentId)
+    // Optimistic: 바로 이름/메시지 표시 후 비동기 반영
+    const optimisticStatus = attendanceStatus[studentId] === 'checked_in' ? 'checked_out' : 'checked_in'
+    setIsLoading(true)
+    setWelcomeName(studentId) // API 응답 전에라도 코드 표시
+    setWelcomeMessage(optimisticStatus === 'checked_in' ? '오늘도 열공하세요!' : '안녕히 가세요!')
+    setShowWelcome(true)
+    setAttendanceStatus((prev) => ({ ...prev, [studentId]: optimisticStatus }))
 
-    if (assignment) {
-      setIsLoading(true)
-      try {
-        // Fetch current status from DB to ensure accuracy
-        const statusResponse = await fetch('/api/seat-assignments', { credentials: 'include' })
-        const statusData = await statusResponse.json()
-        const currentAssignment = statusData.assignments?.find((a: any) => a.seatNumber === assignment.seatNumber)
-        const currentStatus = currentAssignment?.status || 'checked_out'
-        const newStatus = currentStatus === 'checked_in' ? 'checked_out' : 'checked_in'
+    try {
+      const response = await fetch('/api/attendance/logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          code: studentId,
+          action: optimisticStatus === 'checked_in' ? 'check_in' : 'check_out',
+        }),
+      })
 
-        // Call API to update status
-        const response = await fetch('/api/seat-assignments', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            seatNumber: assignment.seatNumber,
-            status: newStatus,
-          }),
-        })
-
-        if (response.ok) {
-          // Update local state
-          setAttendanceStatus(prev => ({
-            ...prev,
-            [studentId]: newStatus,
-          }))
-
-          setWelcomeName(assignment.studentName)
-          setWelcomeMessage(newStatus === 'checked_in' ? '오늘도 열공하세요!' : '안녕히 가세요!')
-          setShowWelcome(true)
-
-          setTimeout(() => {
-            setShowWelcome(false)
-            setStudentId('')
-          }, 3000)
-        } else {
-          console.error('Failed to update attendance')
-          setStudentId('')
-        }
-      } catch (error) {
-        console.error('Error updating attendance:', error)
-        setStudentId('')
-      } finally {
-        setIsLoading(false)
+      if (response.ok) {
+        const data = await response.json()
+        // 이름 보정
+        if (data.student?.name) setWelcomeName(data.student.name)
+        // 상태는 이미 옵티 적용됨
+      } else {
+        // 실패 시 롤백
+        setAttendanceStatus((prev) => ({ ...prev, [studentId]: attendanceStatus[studentId] || 'checked_out' }))
+        setWelcomeMessage('처리 실패')
+        setTimeout(() => setShowWelcome(false), 800)
       }
-    } else {
-      // 학생을 찾지 못한 경우 (좌석 배정 안됨)
+    } catch (error) {
+      console.error('Error updating attendance logs:', error)
+      setAttendanceStatus((prev) => ({ ...prev, [studentId]: attendanceStatus[studentId] || 'checked_out' }))
+      setWelcomeMessage('처리 실패')
+      setTimeout(() => setShowWelcome(false), 800)
+    } finally {
+      setIsLoading(false)
       setStudentId('')
+      setTimeout(() => setShowWelcome(false), 1200)
     }
   }
 

@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare, CreditCard, Wallet as WalletIcon, Check, Zap, Crown } from 'lucide-react'
-import { navigationItems, getEnabledMenuIds, setEnabledMenuIds } from '@/lib/config/navigation'
+import { navigationItems, setEnabledMenuIds, setMenuOrder as persistMenuOrder } from '@/lib/config/navigation'
 import {
   Dialog,
   DialogContent,
@@ -39,10 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { Organization, Branch, Room, RevenueCategory, ExpenseCategory } from '@/lib/types/database'
-import type { UserAccount, UserRole, PageId } from '@/lib/types/permissions'
-import { accountManager, permissionManager } from '@/lib/utils/permissions'
-import { revenueCategoryManager } from '@/lib/utils/revenue-categories'
-import { expenseCategoryManager } from '@/lib/utils/expense-categories'
+import type { UserRole, PageId } from '@/lib/types/permissions'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
 
@@ -147,18 +144,28 @@ export default function SettingsPage() {
   })
 
   // Account management state
-  const [accounts, setAccounts] = useState<UserAccount[]>([])
+  type Account = {
+    id: string
+    email: string
+    name: string
+    role: UserRole
+    phone?: string | null
+    created_at?: string
+  }
+
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
-  const [editingAccount, setEditingAccount] = useState<UserAccount | null>(null)
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null)
   const [accountForm, setAccountForm] = useState({
     username: '',
     password: '',
     name: '',
-    role: 'staff' as UserRole,
+    role: 'manager' as UserRole, // 기본값: manager (staff 통합)
   })
 
   // Menu visibility state
   const [enabledMenus, setEnabledMenus] = useState<string[]>([])
+  const [menuOrder, setMenuOrder] = useState<string[]>([])
 
   // Page permissions state
   const [pagePermissions, setPagePermissions] = useState<Record<string, { staff: boolean; teacher: boolean }>>({})
@@ -185,49 +192,104 @@ export default function SettingsPage() {
     color: '#6b7280',
   })
 
+  // 기관 슬러그 (URL 1번째 segment)
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
+  const basePath = `/api/settings`
+  const withSlug = (path: string) => (path.includes('?') ? `${path}&slug=${slug}` : `${path}?slug=${slug}`)
+
+  const fetchJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
+    const res = await fetch(path, { credentials: 'include', ...init })
+    const data = await res.json()
+    if (!res.ok) {
+      throw new Error(data?.error || '요청 실패')
+    }
+    return data as T
+  }
+
+  const loadAll = async () => {
+    try {
+      setInstitutionName('goldpen')
+      const [orgRes, roomsRes, branchesRes] = await Promise.all([
+        fetchJson<{ organization?: Organization }>(withSlug(basePath)),
+        fetchJson<{ rooms?: Room[] }>('/api/rooms').catch(() => ({ rooms: [] })),
+        fetchJson<{ branches?: Branch[] }>(withSlug(`${basePath}/branches`)).catch(() => ({ branches: [] })),
+      ])
+
+      if (orgRes.organization) {
+        setOrganization({
+          ...defaultOrganization,
+          ...orgRes.organization,
+          settings: {
+            ...defaultOrganization.settings,
+            ...(orgRes.organization.settings || {}),
+          },
+        })
+        const orgSettings = orgRes.organization.settings || {}
+        setEnabledMenus(orgSettings.enabledMenus || navigationItems.map((i) => i.id))
+        setMenuOrder(orgSettings.menuOrder || navigationItems.map((i) => i.id))
+      }
+      setBranches(branchesRes.branches || [])
+      setRooms(roomsRes.rooms || [])
+      setAccounts([])
+
+      // permissions payload might come as array; normalize to record
+      setPagePermissions({})
+
+      // 즉시 수입/지출 카테고리와 사용량 로드
+      const [rev, exp] = await Promise.all([
+        fetchJson<{ categories: any[] }>(withSlug(`${basePath}/revenue-categories`)).catch(() => ({ categories: [] })),
+        fetchJson<{ categories: any[] }>(withSlug(`${basePath}/expense-categories`)).catch(() => ({ categories: [] })),
+      ])
+      setRevenueCategories(rev.categories || [])
+      setExpenseCategories(exp.categories || [])
+      setKakaoTalkUsages([])
+      setServiceUsages([])
+    } catch (e) {
+      console.error('설정 로드 실패', e)
+      toast({
+        title: '설정 로드 실패',
+        description: e instanceof Error ? e.message : undefined,
+        variant: 'destructive',
+      })
+    }
+  }
+
   // Load accounts and menu settings on mount
   useEffect(() => {
-    // Set institution name (hardcoded for now)
-    setInstitutionName('goldpen')
-
-    const loadedAccounts = accountManager.getAccounts()
-    setAccounts(loadedAccounts)
-
-    const enabledIds = getEnabledMenuIds()
-    setEnabledMenus(enabledIds)
-
-    // Load page permissions
-    const permissions = permissionManager.getPermissions()
-    setPagePermissions(permissions)
-
-    // Load revenue categories
-    const categories = revenueCategoryManager.getCategories()
-    setRevenueCategories(categories)
-
-    // Load expense categories
-    const expenseCategs = expenseCategoryManager.getCategories()
-    setExpenseCategories(expenseCategs)
+    loadAll()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const logoUrl = reader.result as string
-        setOrganization({ ...organization, logo_url: logoUrl })
+      const form = new FormData()
+      form.append('file', file)
+      try {
+        const res = await fetch('/api/settings/logo', {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data?.error || '로고 업로드 실패')
+
+        const logoUrl = data.url || data.path
+        setOrganization((prev) => ({ ...prev, logo_url: logoUrl }))
         localStorage.setItem('organization_logo', logoUrl)
         localStorage.setItem('organization_name', organization.name)
 
-        // Dispatch event to update sidebar
         window.dispatchEvent(new Event('organizationSettingsChanged'))
-
+        toast({ title: '로고 업로드 완료', description: '로고가 저장되었습니다.' })
+      } catch (err) {
         toast({
-          title: '로고 업로드 완료',
-          description: '로고가 업로드되었습니다.',
+          title: '로고 업로드 실패',
+          description: err instanceof Error ? err.message : undefined,
+          variant: 'destructive',
         })
       }
-      reader.readAsDataURL(file)
     }
   }
 
@@ -244,35 +306,75 @@ export default function SettingsPage() {
     })
   }
 
-  const handleSaveOrganization = () => {
-    localStorage.setItem('organization_name', organization.name)
-
-    // Dispatch event to update sidebar
-    window.dispatchEvent(new Event('organizationSettingsChanged'))
-
-    toast({
-      title: '저장 완료',
-      description: '기관 정보가 저장되었습니다.',
+  const persistOrganization = async (payload: Partial<Organization>) => {
+    const res = await fetch(withSlug(basePath), {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: payload.name,
+        owner_name: payload.owner_name,
+        address: payload.address,
+        phone: payload.phone,
+        email: payload.email,
+        logo_url: payload.logo_url,
+        settings: payload.settings,
+      }),
     })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data?.error || '저장 실패')
+    if (data.organization) {
+      setOrganization({
+        ...defaultOrganization,
+        ...data.organization,
+        settings: {
+          ...defaultOrganization.settings,
+          ...(data.organization.settings || {}),
+        },
+      })
+    }
   }
 
-  const handleToggleSetting = (key: keyof Organization['settings']) => {
-    setOrganization({
-      ...organization,
-      settings: {
-        ...organization.settings,
-        [key]: !organization.settings[key],
-      },
-    })
+  const handleSaveOrganization = async () => {
+    try {
+      await persistOrganization({
+        name: organization.name,
+        owner_name: organization.owner_name,
+        address: organization.address,
+        phone: organization.phone,
+        email: organization.email,
+        logo_url: organization.logo_url,
+        settings: organization.settings,
+      })
+      window.dispatchEvent(new Event('organizationSettingsChanged'))
+      toast({ title: '저장 완료', description: '기관 정보가 저장되었습니다.' })
+    } catch (e) {
+      toast({ title: '저장 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    }
+  }
+
+  const handleToggleSetting = async (key: keyof Organization['settings']) => {
+    const nextSettings = {
+      ...organization.settings,
+      [key]: !organization.settings[key],
+    }
+    setOrganization({ ...organization, settings: nextSettings })
+    try {
+      await persistOrganization({ settings: nextSettings })
+    } catch (e) {
+      // ignore rollback for now
+    }
     toast({
       title: '설정 변경',
       description: `${key === 'auto_sms' ? 'SMS 자동 발송' : key === 'auto_email' ? '이메일 자동 발송' : '알림'} 설정이 변경되었습니다.`,
     })
   }
 
-  const statusMap = {
-    active: { label: '활성', variant: 'default' as const },
-    inactive: { label: '비활성', variant: 'secondary' as const },
+  const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' }> = {
+    active: { label: '활성', variant: 'default' },
+    available: { label: '사용 가능', variant: 'success' },
+    inactive: { label: '비활성', variant: 'secondary' },
+    maintenance: { label: '점검 중', variant: 'outline' },
   }
 
   const handleAddRoom = () => {
@@ -287,55 +389,54 @@ export default function SettingsPage() {
     setIsRoomDialogOpen(true)
   }
 
-  const handleSaveRoom = () => {
+  const handleSaveRoom = async () => {
     if (!roomForm.name.trim()) {
-      toast({
-        title: '입력 오류',
-        description: '교실명을 입력해주세요.',
-        variant: 'destructive',
-      })
+      toast({ title: '입력 오류', description: '교실명을 입력해주세요.', variant: 'destructive' })
       return
     }
-
-    if (editingRoom) {
-      // Update existing room
-      setRooms(rooms.map(r =>
-        r.id === editingRoom.id
-          ? { ...r, ...roomForm, notes: roomForm.notes || undefined }
-          : r
-      ))
-      toast({
-        title: '교실 수정 완료',
-        description: `${roomForm.name} 교실이 수정되었습니다.`,
+    try {
+      const res = await fetch(`/api/rooms`, {
+        method: editingRoom ? 'PATCH' : 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingRoom?.id,
+          name: roomForm.name,
+          capacity: roomForm.capacity,
+          status: editingRoom?.status || 'available',
+          notes: roomForm.notes || null,
+        }),
       })
-    } else {
-      // Add new room
-      const newRoom: Room = {
-        id: `room-${Date.now()}`,
-        created_at: new Date().toISOString(),
-        org_id: 'org-1',
-        name: roomForm.name,
-        capacity: roomForm.capacity,
-        status: 'active',
-        notes: roomForm.notes || undefined,
-      }
-      setRooms([...rooms, newRoom])
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || '교실 저장 실패')
+      await loadAll()
       toast({
-        title: '교실 추가 완료',
-        description: `${roomForm.name} 교실이 추가되었습니다.`,
+        title: editingRoom ? '교실 수정 완료' : '교실 추가 완료',
+        description: `${roomForm.name} 교실이 ${editingRoom ? '수정' : '추가'}되었습니다.`,
       })
+      setIsRoomDialogOpen(false)
+    } catch (e) {
+      toast({ title: '교실 저장 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
-
-    setIsRoomDialogOpen(false)
   }
 
-  const handleDeleteRoom = (roomId: string) => {
+  const handleDeleteRoom = async (roomId: string) => {
     const room = rooms.find(r => r.id === roomId)
-    setRooms(rooms.filter(r => r.id !== roomId))
-    toast({
-      title: '교실 삭제 완료',
-      description: `${room?.name} 교실이 삭제되었습니다.`,
-    })
+    if (!confirm(`${room?.name} 교실을 삭제하시겠습니까?`)) return
+    try {
+      const res = await fetch(`/api/rooms`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: roomId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || '교실 삭제 실패')
+      await loadAll()
+      toast({ title: '교실 삭제 완료', description: `${room?.name} 교실이 삭제되었습니다.` })
+    } catch (e) {
+      toast({ title: '교실 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    }
   }
 
   // Branch management functions
@@ -357,54 +458,47 @@ export default function SettingsPage() {
     setIsBranchDialogOpen(true)
   }
 
-  const handleSaveBranch = () => {
-    // Validation
+  const handleSaveBranch = async () => {
     if (!branchForm.name.trim() || !branchForm.address.trim() || !branchForm.phone.trim()) {
-      toast({
-        title: '입력 오류',
-        description: '모든 필수 항목을 입력해주세요.',
-        variant: 'destructive',
-      })
+      toast({ title: '입력 오류', description: '모든 필수 항목을 입력해주세요.', variant: 'destructive' })
       return
     }
-
-    if (editingBranch) {
-      // Update existing branch
-      const updatedBranches = branches.map(b =>
-        b.id === editingBranch.id
-          ? { ...b, ...branchForm }
-          : b
-      )
-      setBranches(updatedBranches)
-      toast({
-        title: '지점 수정 완료',
-        description: `${branchForm.name} 지점이 수정되었습니다.`,
+    try {
+      const res = await fetch(withSlug(`${basePath}/branches`), {
+        method: editingBranch ? 'PATCH' : 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...(editingBranch ? { id: editingBranch.id } : {}), ...branchForm }),
       })
-    } else {
-      // Add new branch
-      const newBranch: Branch = {
-        id: Date.now().toString(),
-        org_id: organization.id,
-        ...branchForm,
-      }
-      setBranches([...branches, newBranch])
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || '지점 저장 실패')
+      await loadAll()
       toast({
-        title: '지점 추가 완료',
-        description: `${branchForm.name} 지점이 추가되었습니다.`,
+        title: editingBranch ? '지점 수정 완료' : '지점 추가 완료',
+        description: `${branchForm.name} 지점이 ${editingBranch ? '수정' : '추가'}되었습니다.`,
       })
+      setIsBranchDialogOpen(false)
+    } catch (e) {
+      toast({ title: '지점 저장 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
-
-    setIsBranchDialogOpen(false)
   }
 
-  const handleDeleteBranch = (branchId: string) => {
+  const handleDeleteBranch = async (branchId: string) => {
     const branch = branches.find(b => b.id === branchId)
-    if (confirm(`${branch?.name} 지점을 삭제하시겠습니까?`)) {
-      setBranches(branches.filter(b => b.id !== branchId))
-      toast({
-        title: '지점 삭제 완료',
-        description: `${branch?.name} 지점이 삭제되었습니다.`,
+    if (!confirm(`${branch?.name} 지점을 삭제하시겠습니까?`)) return
+    try {
+      const res = await fetch(withSlug(`${basePath}/branches`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: branchId }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || '지점 삭제 실패')
+      await loadAll()
+      toast({ title: '지점 삭제 완료', description: `${branch?.name} 지점이 삭제되었습니다.` })
+    } catch (e) {
+      toast({ title: '지점 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
   }
 
@@ -415,82 +509,93 @@ export default function SettingsPage() {
     setIsAccountDialogOpen(true)
   }
 
-  const handleEditAccount = (account: UserAccount) => {
-    setEditingAccount(account)
+  const handleEditAccount = (account: Account) => {
+    setEditingAccount(account as any)
     setAccountForm({
-      username: account.username,
-      password: account.password,
+      username: account.email,
+      password: '',
       name: account.name,
       role: account.role,
     })
     setIsAccountDialogOpen(true)
   }
 
-  const handleSaveAccount = () => {
-    // Validation
-    if (!accountForm.username.trim() || !accountForm.password.trim() || !accountForm.name.trim()) {
-      toast({
-        title: '입력 오류',
-        description: '모든 필수 항목을 입력해주세요.',
-        variant: 'destructive',
-      })
+  const handleSaveAccount = async () => {
+    if (!accountForm.username.trim() || !accountForm.name.trim()) {
+      toast({ title: '입력 오류', description: '모든 필수 항목을 입력해주세요.', variant: 'destructive' })
       return
     }
-
-    // Check username uniqueness
-    if (accountManager.isUsernameTaken(accountForm.username, editingAccount?.id)) {
-      toast({
-        title: '중복 오류',
-        description: '이미 사용 중인 아이디입니다.',
-        variant: 'destructive',
+    try {
+    const res = await fetch(withSlug(`${basePath}/accounts`), {
+        method: editingAccount ? 'PATCH' : 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingAccount?.id,
+          email: accountForm.username,
+          password: accountForm.password || undefined,
+          name: accountForm.name,
+          role: accountForm.role,
+        }),
       })
-      return
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || '계정 저장 실패')
+      await loadAll()
+      toast({
+        title: editingAccount ? '계정 수정 완료' : '계정 추가 완료',
+        description: `${accountForm.name} 계정이 ${editingAccount ? '수정' : '추가'}되었습니다.`,
+      })
+      setIsAccountDialogOpen(false)
+    } catch (e) {
+      toast({ title: '계정 저장 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
-
-    if (editingAccount) {
-      // Update existing account
-      accountManager.updateAccount(editingAccount.id, accountForm)
-      setAccounts(accountManager.getAccounts())
-      toast({
-        title: '계정 수정 완료',
-        description: `${accountForm.name} 계정이 수정되었습니다.`,
-      })
-    } else {
-      // Add new account
-      accountManager.addAccount(accountForm)
-      setAccounts(accountManager.getAccounts())
-      toast({
-        title: '계정 추가 완료',
-        description: `${accountForm.name} 계정이 추가되었습니다.`,
-      })
-    }
-
-    setIsAccountDialogOpen(false)
   }
 
-  const handleDeleteAccount = (accountId: string) => {
+  const handleDeleteAccount = async (accountId: string) => {
     const account = accounts.find(a => a.id === accountId)
-    if (confirm(`${account?.name} 계정을 삭제하시겠습니까?`)) {
-      accountManager.deleteAccount(accountId)
-      setAccounts(accountManager.getAccounts())
-      toast({
-        title: '계정 삭제 완료',
-        description: `${account?.name} 계정이 삭제되었습니다.`,
+    if (!confirm(`${account?.name} 계정을 삭제하시겠습니까?`)) return
+    try {
+    const res = await fetch(withSlug(`${basePath}/accounts`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: accountId }),
       })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data?.error || '계정 삭제 실패')
+      await loadAll()
+      toast({ title: '계정 삭제 완료', description: `${account?.name} 계정이 삭제되었습니다.` })
+    } catch (e) {
+      toast({ title: '계정 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
   }
 
   // Menu visibility functions
+  const saveMenuSettings = async (menus: string[], order?: string[]) => {
+    setEnabledMenus(menus)
+    if (order) setMenuOrder(order)
+
+    // 로컬 스토리지에 즉시 반영하여 사이드바가 바로 갱신되도록 함
+    setEnabledMenuIds(menus)
+    if (order) persistMenuOrder(order)
+    const nextSettings = {
+      ...(organization.settings || {}),
+      enabledMenus: menus,
+      menuOrder: order || menuOrder,
+    }
+    setOrganization({ ...organization, settings: nextSettings })
+    try {
+      await persistOrganization({ settings: nextSettings })
+      window.dispatchEvent(new Event('menuSettingsChanged'))
+    } catch (_) {}
+  }
+
   const handleToggleMenu = (menuId: string) => {
     const newEnabledMenus = enabledMenus.includes(menuId)
       ? enabledMenus.filter(id => id !== menuId)
       : [...enabledMenus, menuId]
 
-    setEnabledMenus(newEnabledMenus)
-    setEnabledMenuIds(newEnabledMenus)
-
-    // Dispatch custom event to update sidebars
-    window.dispatchEvent(new Event('menuSettingsChanged'))
+    saveMenuSettings(newEnabledMenus)
 
     const menuName = navigationItems.find(item => item.id === menuId)?.name || menuId
     toast({
@@ -501,9 +606,7 @@ export default function SettingsPage() {
 
   const handleEnableAllMenus = () => {
     const allMenuIds = navigationItems.map(item => item.id)
-    setEnabledMenus(allMenuIds)
-    setEnabledMenuIds(allMenuIds)
-    window.dispatchEvent(new Event('menuSettingsChanged'))
+    saveMenuSettings(allMenuIds)
     toast({
       title: '모든 메뉴 활성화',
       description: '모든 메뉴가 활성화되었습니다.',
@@ -511,11 +614,8 @@ export default function SettingsPage() {
   }
 
   const handleDisableAllMenus = () => {
-    // Keep only settings menu enabled
     const essentialMenus = ['settings']
-    setEnabledMenus(essentialMenus)
-    setEnabledMenuIds(essentialMenus)
-    window.dispatchEvent(new Event('menuSettingsChanged'))
+    saveMenuSettings(essentialMenus)
     toast({
       title: '메뉴 비활성화',
       description: '설정 메뉴를 제외한 모든 메뉴가 비활성화되었습니다.',
@@ -523,15 +623,28 @@ export default function SettingsPage() {
   }
 
   // Page permission handlers
-  const handlePermissionChange = (pageId: string, role: 'staff' | 'teacher', checked: boolean) => {
-    permissionManager.updatePagePermission(pageId as PageId, role, checked)
-    setPagePermissions(prev => ({
-      ...prev,
+  const handlePermissionChange = async (pageId: string, role: 'staff' | 'teacher', checked: boolean) => {
+    const next = {
+      ...pagePermissions,
       [pageId]: {
-        ...prev[pageId],
-        [role]: checked
-      }
-    }))
+        ...(pagePermissions[pageId] || { staff: false, teacher: false }),
+        [role]: checked,
+      },
+    }
+    setPagePermissions(next)
+    try {
+      const payload = Object.entries(next).map(([pid, val]) => ({
+        page_id: pid,
+        staff: val.staff,
+        teacher: val.teacher,
+      }))
+    await fetch(withSlug(`${basePath}/permissions`), {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions: payload }),
+      })
+    } catch (_) {}
 
     const roleName = role === 'staff' ? '직원' : '강사'
     toast({
@@ -553,104 +666,107 @@ export default function SettingsPage() {
     setIsRevenueCategoryDialogOpen(true)
   }
 
-  const handleSaveRevenueCategory = () => {
+  const refreshRevenueCategories = async () => {
+    const data = await fetchJson<{ categories: any[] }>(withSlug(`${basePath}/revenue-categories`)).catch(() => ({ categories: [] }))
+    setRevenueCategories(data.categories || [])
+  }
+
+  const handleSaveRevenueCategory = async () => {
     if (!revenueCategoryForm.name.trim()) {
-      toast({
-        title: '입력 오류',
-        description: '항목명을 입력해주세요.',
-        variant: 'destructive',
-      })
+      toast({ title: '입력 오류', description: '항목명을 입력해주세요.', variant: 'destructive' })
       return
     }
-
-    if (revenueCategoryManager.isNameDuplicate(revenueCategoryForm.name, editingRevenueCategory?.id)) {
-      toast({
-        title: '중복 오류',
-        description: '이미 존재하는 항목명입니다.',
-        variant: 'destructive',
+    try {
+      const method = editingRevenueCategory ? 'PATCH' : 'POST'
+      await fetch(withSlug(`${basePath}/revenue-categories`), {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingRevenueCategory?.id,
+          name: revenueCategoryForm.name,
+          description: revenueCategoryForm.description || null,
+          display_order: editingRevenueCategory?.display_order,
+          is_active: editingRevenueCategory?.is_active ?? true,
+        }),
       })
-      return
+      await refreshRevenueCategories()
+      toast({
+        title: editingRevenueCategory ? '수입 항목 수정 완료' : '수입 항목 추가 완료',
+        description: `${revenueCategoryForm.name} 항목이 ${editingRevenueCategory ? '수정' : '추가'}되었습니다.`,
+      })
+      setIsRevenueCategoryDialogOpen(false)
+    } catch (e) {
+      toast({ title: '수입 항목 저장 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
-
-    if (editingRevenueCategory) {
-      revenueCategoryManager.updateCategory(editingRevenueCategory.id, {
-        name: revenueCategoryForm.name,
-        description: revenueCategoryForm.description || undefined,
-      })
-      toast({
-        title: '수입 항목 수정 완료',
-        description: `${revenueCategoryForm.name} 항목이 수정되었습니다.`,
-      })
-    } else {
-      revenueCategoryManager.addCategory({
-        name: revenueCategoryForm.name,
-        description: revenueCategoryForm.description || undefined,
-      })
-      toast({
-        title: '수입 항목 추가 완료',
-        description: `${revenueCategoryForm.name} 항목이 추가되었습니다.`,
-      })
-    }
-
-    setRevenueCategories(revenueCategoryManager.getCategories())
-    setIsRevenueCategoryDialogOpen(false)
   }
 
-  const handleToggleRevenueCategory = (id: string) => {
-    revenueCategoryManager.toggleCategory(id)
-    setRevenueCategories(revenueCategoryManager.getCategories())
-
+  const handleToggleRevenueCategory = async (id: string) => {
     const category = revenueCategories.find(c => c.id === id)
-    toast({
-      title: '수입 항목 변경',
-      description: `${category?.name} 항목이 ${category?.is_active ? '비활성화' : '활성화'}되었습니다.`,
-    })
-  }
-
-  const handleDeleteRevenueCategory = (id: string) => {
-    const category = revenueCategories.find(c => c.id === id)
-    if (confirm(`${category?.name} 항목을 삭제하시겠습니까?`)) {
-      revenueCategoryManager.deleteCategory(id)
-      setRevenueCategories(revenueCategoryManager.getCategories())
-      toast({
-        title: '수입 항목 삭제 완료',
-        description: `${category?.name} 항목이 삭제되었습니다.`,
+    if (!category) return
+    try {
+      await fetch(withSlug(`${basePath}/revenue-categories`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...category, is_active: !category.is_active }),
       })
+      await refreshRevenueCategories()
+      toast({
+        title: '수입 항목 변경',
+        description: `${category.name} 항목이 ${category.is_active ? '비활성화' : '활성화'}되었습니다.`,
+      })
+    } catch (e) {
+      toast({ title: '수입 항목 변경 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
   }
 
-  const handleMoveRevenueCategory = (id: string, direction: 'up' | 'down') => {
-    const currentIndex = revenueCategories.findIndex(c => c.id === id)
-    if (
-      (direction === 'up' && currentIndex === 0) ||
-      (direction === 'down' && currentIndex === revenueCategories.length - 1)
-    ) {
-      return
+  const handleDeleteRevenueCategory = async (id: string) => {
+    const category = revenueCategories.find(c => c.id === id)
+    if (!confirm(`${category?.name} 항목을 삭제하시겠습니까?`)) return
+    try {
+      await fetch(withSlug(`${basePath}/revenue-categories`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      await refreshRevenueCategories()
+      toast({ title: '수입 항목 삭제 완료', description: `${category?.name} 항목이 삭제되었습니다.` })
+    } catch (e) {
+      toast({ title: '수입 항목 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
+  }
 
+  const handleMoveRevenueCategory = async (id: string, direction: 'up' | 'down') => {
+    const idx = revenueCategories.findIndex(c => c.id === id)
+    if (idx < 0) return
+    const target = direction === 'up' ? idx - 1 : idx + 1
+    if (target < 0 || target >= revenueCategories.length) return
     const newCategories = [...revenueCategories]
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    ;[newCategories[currentIndex], newCategories[targetIndex]] = [newCategories[targetIndex], newCategories[currentIndex]]
-
-    const newOrder = newCategories.map(c => c.id)
-    revenueCategoryManager.reorderCategories(newOrder)
-    setRevenueCategories(revenueCategoryManager.getCategories())
-
-    toast({
-      title: '순서 변경 완료',
-      description: '수입 항목 순서가 변경되었습니다.',
-    })
+    ;[newCategories[idx], newCategories[target]] = [newCategories[target], newCategories[idx]]
+    // update display_order in DB
+    try {
+      await Promise.all(
+        newCategories.map((c, order) =>
+          fetch(withSlug(`${basePath}/revenue-categories`), {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: c.id, display_order: order }),
+          })
+        )
+      )
+      setRevenueCategories(newCategories.map((c, order) => ({ ...c, display_order: order })))
+      toast({ title: '순서 변경 완료', description: '수입 항목 순서가 변경되었습니다.' })
+    } catch (e) {
+      toast({ title: '순서 변경 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    }
   }
 
-  const handleResetRevenueCategories = () => {
-    if (confirm('모든 수입 항목을 기본값으로 초기화하시겠습니까?')) {
-      revenueCategoryManager.reset()
-      setRevenueCategories(revenueCategoryManager.getCategories())
-      toast({
-        title: '초기화 완료',
-        description: '수입 항목이 기본값으로 초기화되었습니다.',
-      })
-    }
+  const handleResetRevenueCategories = async () => {
+    await refreshRevenueCategories()
+    toast({ title: '초기화 완료', description: '수입 항목을 다시 불러왔습니다.' })
   }
 
   // Expense category handlers
@@ -670,106 +786,107 @@ export default function SettingsPage() {
     setIsExpenseCategoryDialogOpen(true)
   }
 
-  const handleSaveExpenseCategory = () => {
+  const refreshExpenseCategories = async () => {
+    const data = await fetchJson<{ categories: any[] }>(withSlug(`${basePath}/expense-categories`))
+    setExpenseCategories(data.categories || [])
+  }
+
+  const handleSaveExpenseCategory = async () => {
     if (!expenseCategoryForm.name.trim()) {
-      toast({
-        title: '입력 오류',
-        description: '항목명을 입력해주세요.',
-        variant: 'destructive',
-      })
+      toast({ title: '입력 오류', description: '항목명을 입력해주세요.', variant: 'destructive' })
       return
     }
-
-    if (expenseCategoryManager.isNameDuplicate(expenseCategoryForm.name, editingExpenseCategory?.id)) {
-      toast({
-        title: '중복 오류',
-        description: '이미 존재하는 항목명입니다.',
-        variant: 'destructive',
+    try {
+      const method = editingExpenseCategory ? 'PATCH' : 'POST'
+      await fetch(withSlug(`${basePath}/expense-categories`), {
+        method,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingExpenseCategory?.id,
+          name: expenseCategoryForm.name,
+          description: expenseCategoryForm.description || null,
+          color: expenseCategoryForm.color,
+          display_order: editingExpenseCategory?.display_order,
+          is_active: editingExpenseCategory?.is_active ?? true,
+        }),
       })
-      return
+      await refreshExpenseCategories()
+      toast({
+        title: editingExpenseCategory ? '지출 항목 수정 완료' : '지출 항목 추가 완료',
+        description: `${expenseCategoryForm.name} 항목이 ${editingExpenseCategory ? '수정' : '추가'}되었습니다.`,
+      })
+      setIsExpenseCategoryDialogOpen(false)
+    } catch (e) {
+      toast({ title: '지출 항목 저장 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
-
-    if (editingExpenseCategory) {
-      expenseCategoryManager.updateCategory(editingExpenseCategory.id, {
-        name: expenseCategoryForm.name,
-        description: expenseCategoryForm.description || undefined,
-        color: expenseCategoryForm.color,
-      })
-      toast({
-        title: '지출 항목 수정 완료',
-        description: `${expenseCategoryForm.name} 항목이 수정되었습니다.`,
-      })
-    } else {
-      expenseCategoryManager.addCategory({
-        name: expenseCategoryForm.name,
-        description: expenseCategoryForm.description || undefined,
-        color: expenseCategoryForm.color,
-      })
-      toast({
-        title: '지출 항목 추가 완료',
-        description: `${expenseCategoryForm.name} 항목이 추가되었습니다.`,
-      })
-    }
-
-    setExpenseCategories(expenseCategoryManager.getCategories())
-    setIsExpenseCategoryDialogOpen(false)
   }
 
-  const handleToggleExpenseCategory = (id: string) => {
-    expenseCategoryManager.toggleCategory(id)
-    setExpenseCategories(expenseCategoryManager.getCategories())
-
+  const handleToggleExpenseCategory = async (id: string) => {
     const category = expenseCategories.find(c => c.id === id)
-    toast({
-      title: '지출 항목 변경',
-      description: `${category?.name} 항목이 ${category?.is_active ? '비활성화' : '활성화'}되었습니다.`,
-    })
-  }
-
-  const handleDeleteExpenseCategory = (id: string) => {
-    const category = expenseCategories.find(c => c.id === id)
-    if (confirm(`${category?.name} 항목을 삭제하시겠습니까?`)) {
-      expenseCategoryManager.deleteCategory(id)
-      setExpenseCategories(expenseCategoryManager.getCategories())
-      toast({
-        title: '지출 항목 삭제 완료',
-        description: `${category?.name} 항목이 삭제되었습니다.`,
+    if (!category) return
+    try {
+      await fetch(withSlug(`${basePath}/expense-categories`), {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...category, is_active: !category.is_active }),
       })
+      await refreshExpenseCategories()
+      toast({
+        title: '지출 항목 변경',
+        description: `${category.name} 항목이 ${category.is_active ? '비활성화' : '활성화'}되었습니다.`,
+      })
+    } catch (e) {
+      toast({ title: '지출 항목 변경 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
   }
 
-  const handleMoveExpenseCategory = (id: string, direction: 'up' | 'down') => {
-    const currentIndex = expenseCategories.findIndex(c => c.id === id)
-    if (
-      (direction === 'up' && currentIndex === 0) ||
-      (direction === 'down' && currentIndex === expenseCategories.length - 1)
-    ) {
-      return
+  const handleDeleteExpenseCategory = async (id: string) => {
+    const category = expenseCategories.find(c => c.id === id)
+    if (!confirm(`${category?.name} 항목을 삭제하시겠습니까?`)) return
+    try {
+      await fetch(withSlug(`${basePath}/expense-categories`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      await refreshExpenseCategories()
+      toast({ title: '지출 항목 삭제 완료', description: `${category?.name} 항목이 삭제되었습니다.` })
+    } catch (e) {
+      toast({ title: '지출 항목 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
     }
+  }
 
+  const handleMoveExpenseCategory = async (id: string, direction: 'up' | 'down') => {
+    const idx = expenseCategories.findIndex(c => c.id === id)
+    if (idx < 0) return
+    const target = direction === 'up' ? idx - 1 : idx + 1
+    if (target < 0 || target >= expenseCategories.length) return
     const newCategories = [...expenseCategories]
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1
-    ;[newCategories[currentIndex], newCategories[targetIndex]] = [newCategories[targetIndex], newCategories[currentIndex]]
-
-    const newOrder = newCategories.map(c => c.id)
-    expenseCategoryManager.reorderCategories(newOrder)
-    setExpenseCategories(expenseCategoryManager.getCategories())
-
-    toast({
-      title: '순서 변경 완료',
-      description: '지출 항목 순서가 변경되었습니다.',
-    })
+    ;[newCategories[idx], newCategories[target]] = [newCategories[target], newCategories[idx]]
+    try {
+      await Promise.all(
+        newCategories.map((c, order) =>
+          fetch(withSlug(`${basePath}/expense-categories`), {
+            method: 'PATCH',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: c.id, display_order: order }),
+          })
+        )
+      )
+      setExpenseCategories(newCategories.map((c, order) => ({ ...c, display_order: order })))
+      toast({ title: '순서 변경 완료', description: '지출 항목 순서가 변경되었습니다.' })
+    } catch (e) {
+      toast({ title: '순서 변경 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    }
   }
 
-  const handleResetExpenseCategories = () => {
-    if (confirm('모든 지출 항목을 기본값으로 초기화하시겠습니까?')) {
-      expenseCategoryManager.reset()
-      setExpenseCategories(expenseCategoryManager.getCategories())
-      toast({
-        title: '초기화 완료',
-        description: '지출 항목이 기본값으로 초기화되었습니다.',
-      })
-    }
+  const handleResetExpenseCategories = async () => {
+    await refreshExpenseCategories()
+    toast({ title: '초기화 완료', description: '지출 항목을 다시 불러왔습니다.' })
   }
 
   const roomColumns: ColumnDef<Room>[] = [
@@ -797,8 +914,8 @@ export default function SettingsPage() {
       accessorKey: 'status',
       header: '상태',
       cell: ({ row }) => {
-        const status = row.getValue('status') as Room['status']
-        const statusInfo = statusMap[status]
+        const status = (row.getValue('status') as Room['status']) ?? 'active'
+        const statusInfo = statusMap[status] ?? { label: '미정', variant: 'outline' }
         return <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
       },
     },
@@ -859,8 +976,8 @@ export default function SettingsPage() {
       accessorKey: 'status',
       header: '상태',
       cell: ({ row }) => {
-        const status = row.getValue('status') as Branch['status']
-        const statusInfo = statusMap[status]
+        const status = (row.getValue('status') as Branch['status']) ?? 'active'
+        const statusInfo = statusMap[status] ?? { label: '미정', variant: 'outline' }
         return <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
       },
     },
@@ -895,14 +1012,21 @@ export default function SettingsPage() {
   ]
 
   // Account columns
-  const accountColumns: ColumnDef<UserAccount>[] = [
+  const accountColumns: ColumnDef<Account>[] = [
     {
-      accessorKey: 'username',
+      accessorKey: 'email',
       header: '아이디',
+      filterFn: (row, id, value) => {
+        const term = String(value || '').toLowerCase()
+        if (!term) return true
+        const email = String(row.getValue('email') || '').toLowerCase()
+        const name = String(row.getValue('name') || '').toLowerCase()
+        return email.includes(term) || name.includes(term)
+      },
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Shield className="h-4 w-4 text-muted-foreground" />
-          <span className="font-medium font-mono">{row.getValue('username')}</span>
+          <span className="font-medium font-mono">{row.getValue('email')}</span>
         </div>
       ),
     },
@@ -915,12 +1039,15 @@ export default function SettingsPage() {
       header: '역할',
       cell: ({ row }) => {
         const role = row.getValue('role') as UserRole
-        const roleMap = {
-          admin: { label: '원장', variant: 'default' as const, color: 'bg-yellow-100 text-yellow-800' },
-          teacher: { label: '강사', variant: 'secondary' as const, color: 'bg-blue-100 text-blue-800' },
-          staff: { label: '직원', variant: 'outline' as const, color: 'bg-green-100 text-green-800' },
+        const roleMap: Record<string, { label: string; color: string }> = {
+          owner: { label: '원장', color: 'bg-yellow-100 text-yellow-800' },
+          manager: { label: '매니저', color: 'bg-blue-100 text-blue-800' },
+          staff: { label: '스태프', color: 'bg-blue-100 text-blue-800' },
+          teacher: { label: '강사', color: 'bg-green-100 text-green-800' },
+          admin: { label: '관리자', color: 'bg-purple-100 text-purple-800' },
+          super_admin: { label: '슈퍼관리자', color: 'bg-purple-100 text-purple-800' },
         }
-        const roleInfo = roleMap[role]
+        const roleInfo = roleMap[role] ?? { label: role || '미정', color: 'bg-slate-100 text-slate-800' }
         return (
           <Badge className={roleInfo.color}>
             {roleInfo.label}
@@ -982,7 +1109,6 @@ export default function SettingsPage() {
           <TabsTrigger value="organization">기관 정보</TabsTrigger>
           <TabsTrigger value="branches">지점 관리</TabsTrigger>
           <TabsTrigger value="rooms">교실 관리</TabsTrigger>
-          <TabsTrigger value="accounts">계정 관리</TabsTrigger>
           <TabsTrigger value="revenue">수입관리</TabsTrigger>
           <TabsTrigger value="expense">지출관리</TabsTrigger>
           <TabsTrigger value="menus">메뉴 관리</TabsTrigger>
@@ -1141,28 +1267,16 @@ export default function SettingsPage() {
 
         {/* Branches Tab */}
         <TabsContent value="branches" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <div>
-                <CardTitle>지점 관리</CardTitle>
-                <CardDescription>등록된 지점을 관리하세요</CardDescription>
-              </div>
-              <Button onClick={handleAddBranch}>
-                <Plus className="mr-2 h-4 w-4" />
-                지점 추가
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={branchColumns}
-                data={branches}
-                searchKey="name"
-                searchPlaceholder="지점명으로 검색..."
-              />
-            </CardContent>
-          </Card>
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <CardTitle>지점 관리</CardTitle>
+              <CardDescription>등록된 지점을 관리하세요</CardDescription>
+            </div>
+            <Button onClick={handleAddBranch}>
+              <Plus className="mr-2 h-4 w-4" /> 지점 추가
+            </Button>
+          </div>
 
-          {/* Branch Stats */}
           <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1173,33 +1287,128 @@ export default function SettingsPage() {
                 <p className="text-xs text-muted-foreground">등록된 전체 지점</p>
               </CardContent>
             </Card>
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">활성 지점</CardTitle>
+                <CardTitle className="text-sm font-medium">운영 지점</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {branches.filter((b) => b.status === 'active').length}개
-                </div>
-                <p className="text-xs text-muted-foreground">운영 중인 지점</p>
+                <div className="text-2xl font-bold text-blue-600">{branches.filter(b => b.status === 'active').length}개</div>
+                <p className="text-xs text-muted-foreground">운영 중 지점</p>
               </CardContent>
             </Card>
+
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">비활성 지점</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
-                  {branches.filter((b) => b.status === 'inactive').length}개
-                </div>
-                <p className="text-xs text-muted-foreground">운영 중단 지점</p>
+                <div className="text-2xl font-bold text-muted-foreground">{branches.filter(b => b.status !== 'active').length}개</div>
+                <p className="text-xs text-muted-foreground">미운영/중단 지점</p>
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">지점 목록</CardTitle>
+              <Button variant="outline" size="sm" onClick={handleAddBranch}>
+                <Plus className="mr-2 h-4 w-4" /> 지점 추가
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground border-b">
+                      <th className="py-2">지점명</th>
+                      <th className="py-2">주소</th>
+                      <th className="py-2">전화번호</th>
+                      <th className="py-2">담당자</th>
+                      <th className="py-2">상태</th>
+                      <th className="py-2 text-right">작업</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {branches.map((branch) => (
+                      <tr key={branch.id} className="border-b last:border-0">
+                        <td className="py-2 font-medium">{branch.name}</td>
+                        <td className="py-2 text-muted-foreground">{branch.address}</td>
+                        <td className="py-2 text-muted-foreground">{branch.phone}</td>
+                        <td className="py-2 text-muted-foreground">{branch.manager_name || '-'}</td>
+                        <td className="py-2">
+                          <Badge variant={branch.status === 'active' ? 'default' : 'secondary'}>
+                            {branch.status === 'active' ? '운영중' : '미운영'}
+                          </Badge>
+                        </td>
+                        <td className="py-2 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => handleEditBranch(branch)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDeleteBranch(branch.id)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {branches.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-muted-foreground">
+                          등록된 지점이 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Rooms Tab */}
         <TabsContent value="rooms" className="space-y-4">
+          {/* Room Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 교실</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{rooms.length}개</div>
+                <p className="text-xs text-muted-foreground">등록된 전체 교실</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">활성 교실</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {
+                    rooms.filter((r) => {
+                      const s = (r.status || '').toString().toLowerCase()
+                      return s === 'active' || s === 'available' || s === '사용 가능'
+                    }).length
+                  }개
+                </div>
+                <p className="text-xs text-muted-foreground">운영 중인 교실</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 수용 인원</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">
+                  {rooms.reduce((sum, r) => sum + r.capacity, 0)}명
+                </div>
+                <p className="text-xs text-muted-foreground">전체 교실 수용 가능 인원</p>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
@@ -1221,66 +1430,11 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Room Stats */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">총 교실</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{rooms.length}개</div>
-                <p className="text-xs text-muted-foreground">등록된 전체 교실</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">활성 교실</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {rooms.filter((r) => r.status === 'active').length}개
-                </div>
-                <p className="text-xs text-muted-foreground">운영 중인 교실</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">총 수용 인원</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {rooms.reduce((sum, r) => sum + r.capacity, 0)}명
-                </div>
-                <p className="text-xs text-muted-foreground">전체 교실 수용 가능 인원</p>
-              </CardContent>
-            </Card>
-          </div>
         </TabsContent>
 
         {/* Accounts Tab */}
         <TabsContent value="accounts" className="space-y-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-              <div>
-                <CardTitle>계정 관리</CardTitle>
-                <CardDescription>시스템 사용자 계정을 관리하세요</CardDescription>
-              </div>
-              <Button onClick={handleAddAccount}>
-                <UserPlus className="mr-2 h-4 w-4" />
-                계정 추가
-              </Button>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                columns={accountColumns}
-                data={accounts}
-                searchKey="name"
-                searchPlaceholder="이름 또는 아이디로 검색..."
-              />
-            </CardContent>
-          </Card>
-
-          {/* Account Stats */}
+          {/* Account Stats (탭 바로 아래) */}
           <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1308,12 +1462,33 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">
-                  {accounts.filter((a) => a.role === 'staff').length}개
+                  {accounts.filter((a) => a.role === 'staff' || a.role === 'manager').length}개
                 </div>
                 <p className="text-xs text-muted-foreground">직원 전용 계정</p>
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>계정 관리</CardTitle>
+                <CardDescription>시스템 사용자 계정을 관리하세요</CardDescription>
+              </div>
+              <Button onClick={handleAddAccount}>
+                <UserPlus className="mr-2 h-4 w-4" />
+                계정 추가
+              </Button>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={accountColumns}
+              data={accounts}
+              searchKey="email"
+              searchPlaceholder="이름 또는 아이디로 검색..."
+            />
+          </CardContent>
+        </Card>
 
           {/* Account Info */}
           <Card>
@@ -1357,6 +1532,44 @@ export default function SettingsPage() {
 
         {/* Revenue Categories Tab */}
         <TabsContent value="revenue" className="space-y-4">
+          {/* Revenue Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 항목</CardTitle>
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{revenueCategories.length}개</div>
+                <p className="text-xs text-muted-foreground">전체 수입 항목</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">활성 항목</CardTitle>
+                <DollarSign className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">
+                  {revenueCategories.filter(c => c.is_active).length}개
+                </div>
+                <p className="text-xs text-muted-foreground">사용 가능한 항목</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">비활성 항목</CardTitle>
+                <DollarSign className="h-4 w-4 text-gray-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-600">
+                  {revenueCategories.filter(c => !c.is_active).length}개
+                </div>
+                <p className="text-xs text-muted-foreground">사용하지 않는 항목</p>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
@@ -1477,18 +1690,13 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {revenueCategories.length > 0 && (
-                <div className="mt-4 p-3 border border-blue-200 bg-blue-50 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <strong>참고:</strong> 활성화된 수입 항목만 매출정산 페이지에서 사용할 수 있습니다.
-                    순서는 위아래 화살표 버튼으로 조정할 수 있습니다.
-                  </p>
-                </div>
-              )}
             </CardContent>
           </Card>
+        </TabsContent>
 
-          {/* Revenue Stats */}
+        {/* Expense Management Tab */}
+        <TabsContent value="expense" className="space-y-4">
+          {/* Expense Stats */}
           <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -1496,18 +1704,18 @@ export default function SettingsPage() {
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{revenueCategories.length}개</div>
-                <p className="text-xs text-muted-foreground">전체 수입 항목</p>
+                <div className="text-2xl font-bold">{expenseCategories.length}개</div>
+                <p className="text-xs text-muted-foreground">전체 지출 항목</p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">활성 항목</CardTitle>
-                <DollarSign className="h-4 w-4 text-green-600" />
+                <DollarSign className="h-4 w-4 text-orange-600" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">
-                  {revenueCategories.filter(c => c.is_active).length}개
+                <div className="text-2xl font-bold text-orange-600">
+                  {expenseCategories.filter(c => c.is_active).length}개
                 </div>
                 <p className="text-xs text-muted-foreground">사용 가능한 항목</p>
               </CardContent>
@@ -1519,42 +1727,13 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-gray-600">
-                  {revenueCategories.filter(c => !c.is_active).length}개
+                  {expenseCategories.filter(c => !c.is_active).length}개
                 </div>
                 <p className="text-xs text-muted-foreground">사용하지 않는 항목</p>
               </CardContent>
             </Card>
           </div>
 
-          {/* Default Categories Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle>기본 수입 항목</CardTitle>
-              <CardDescription>시스템에서 제공하는 기본 수입 항목입니다</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  { name: '수강료', description: '학생 수강료 수입', icon: '📚' },
-                  { name: '자릿세', description: '독서실 좌석 이용료', icon: '🪑' },
-                  { name: '룸이용료', description: '스터디룸 대여료', icon: '🚪' },
-                  { name: '교재판매', description: '교재 및 교구 판매 수입', icon: '📖' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-3 p-3 border rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50">
-                    <span className="text-2xl">{item.icon}</span>
-                    <div>
-                      <p className="font-semibold text-blue-900">{item.name}</p>
-                      <p className="text-sm text-blue-700">{item.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Expense Management Tab */}
-        <TabsContent value="expense" className="space-y-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
@@ -1698,81 +1877,46 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Expense Stats */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">총 항목</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{expenseCategories.length}개</div>
-                <p className="text-xs text-muted-foreground">전체 지출 항목</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">활성 항목</CardTitle>
-                <DollarSign className="h-4 w-4 text-orange-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-orange-600">
-                  {expenseCategories.filter(c => c.is_active).length}개
-                </div>
-                <p className="text-xs text-muted-foreground">사용 가능한 항목</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">비활성 항목</CardTitle>
-                <DollarSign className="h-4 w-4 text-gray-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-600">
-                  {expenseCategories.filter(c => !c.is_active).length}개
-                </div>
-                <p className="text-xs text-muted-foreground">사용하지 않는 항목</p>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Default Categories Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle>기본 지출 항목</CardTitle>
-              <CardDescription>시스템에서 제공하는 기본 지출 항목입니다</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  { name: '강사 급여', description: '정규직 및 시간강사 급여', icon: '👨‍🏫', color: '#3b82f6' },
-                  { name: '임대료', description: '건물/시설 임대료', icon: '🏢', color: '#8b5cf6' },
-                  { name: '관리비', description: '전기/수도/인터넷 등', icon: '💡', color: '#ec4899' },
-                  { name: '교재/교구', description: '교재 및 교구 구입비', icon: '📚', color: '#f59e0b' },
-                  { name: '마케팅', description: '광고/홍보 비용', icon: '📢', color: '#10b981' },
-                  { name: '기타', description: '기타 운영 비용', icon: '📦', color: '#6b7280' },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-3 p-3 border rounded-lg bg-gradient-to-r from-orange-50 to-red-50">
-                    <span className="text-2xl">{item.icon}</span>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-orange-900">{item.name}</p>
-                        <div
-                          className="h-3 w-3 rounded-full border"
-                          style={{ backgroundColor: item.color }}
-                        />
-                      </div>
-                      <p className="text-sm text-orange-700">{item.description}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
         </TabsContent>
 
         {/* Menus Tab */}
         <TabsContent value="menus" className="space-y-4">
+          {/* Menu Stats */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">총 메뉴</CardTitle>
+                <Menu className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{navigationItems.length}개</div>
+                <p className="text-xs text-muted-foreground">전체 메뉴 개수</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">활성화된 메뉴</CardTitle>
+                <Menu className="h-4 w-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{enabledMenus.length}개</div>
+                <p className="text-xs text-muted-foreground">사이드바에 표시</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">비활성화된 메뉴</CardTitle>
+                <Menu className="h-4 w-4 text-gray-400" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-gray-600">
+                  {navigationItems.length - enabledMenus.length}개
+                </div>
+                <p className="text-xs text-muted-foreground">사이드바에 숨김</p>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
@@ -1897,41 +2041,6 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Menu Stats */}
-          <div className="grid gap-4 md:grid-cols-3">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">총 메뉴</CardTitle>
-                <Menu className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{navigationItems.length}개</div>
-                <p className="text-xs text-muted-foreground">전체 메뉴 개수</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">활성화된 메뉴</CardTitle>
-                <Menu className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">{enabledMenus.length}개</div>
-                <p className="text-xs text-muted-foreground">사이드바에 표시</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">비활성화된 메뉴</CardTitle>
-                <Menu className="h-4 w-4 text-gray-400" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-gray-600">
-                  {navigationItems.length - enabledMenus.length}개
-                </div>
-                <p className="text-xs text-muted-foreground">사이드바에 숨김</p>
-              </CardContent>
-            </Card>
-          </div>
         </TabsContent>
 
         {/* Automation Tab */}
@@ -2917,12 +3026,20 @@ export default function SettingsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 py-4">
+          <form
+            className="grid gap-4 py-4"
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSaveAccount()
+            }}
+          >
             <div className="space-y-2">
               <Label htmlFor="account-username">아이디 *</Label>
               <Input
                 id="account-username"
                 placeholder="예: teacher01"
+                autoComplete="username"
                 value={accountForm.username}
                 onChange={(e) => setAccountForm({ ...accountForm, username: e.target.value })}
                 disabled={!!editingAccount}
@@ -2938,6 +3055,7 @@ export default function SettingsPage() {
                 id="account-password"
                 type="password"
                 placeholder="비밀번호"
+                autoComplete="new-password"
                 value={accountForm.password}
                 onChange={(e) => setAccountForm({ ...accountForm, password: e.target.value })}
               />
@@ -2963,24 +3081,24 @@ export default function SettingsPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="teacher">강사</SelectItem>
-                  <SelectItem value="staff">직원</SelectItem>
+                <SelectItem value="teacher">강사</SelectItem>
+                <SelectItem value="manager">매니저</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
                 역할에 따라 접근 가능한 페이지가 달라집니다.
               </p>
             </div>
-          </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAccountDialogOpen(false)}>
-              취소
-            </Button>
-            <Button onClick={handleSaveAccount}>
-              {editingAccount ? '수정' : '추가'}
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsAccountDialogOpen(false)}>
+                취소
+              </Button>
+              <Button type="submit">
+                {editingAccount ? '수정' : '추가'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

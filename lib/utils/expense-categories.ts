@@ -1,5 +1,4 @@
 import type { ExpenseCategory } from '@/lib/types/database'
-import { DEFAULT_EXPENSE_CATEGORIES } from '@/lib/types/database'
 
 const STORAGE_KEY = 'expense_categories'
 
@@ -17,9 +16,9 @@ export const expenseCategoryManager = {
     try {
       const stored = localStorage.getItem(STORAGE_KEY)
       if (!stored) {
-        // 초기 데이터 설정
-        this.initializeDefaultCategories()
-        return this.getCategories()
+        // 기본 제공 없이 비워둠 (사용자가 직접 추가)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
+        return []
       }
 
       const categories = JSON.parse(stored) as ExpenseCategory[]
@@ -37,19 +36,18 @@ export const expenseCategoryManager = {
     return this.getCategories().filter(cat => cat.is_active)
   },
 
+  /** 저장소 전체 덮어쓰기 */
+  setCategories(categories: ExpenseCategory[]): void {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(categories))
+  },
+
   /**
    * 기본 지출 항목으로 초기화
    */
   initializeDefaultCategories(): void {
     if (typeof window === 'undefined') return
-
-    const defaultCategories: ExpenseCategory[] = DEFAULT_EXPENSE_CATEGORIES.map((cat, index) => ({
-      ...cat,
-      id: `expense-cat-${Date.now()}-${index}`,
-      created_at: new Date().toISOString(),
-    }))
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultCategories))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([]))
   },
 
   /**

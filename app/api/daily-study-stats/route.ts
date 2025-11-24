@@ -24,6 +24,7 @@ export async function GET(request: Request) {
       .from('daily_study_stats')
       .select('*')
       .eq('student_id', studentId)
+      .eq('org_id', userProfile.org_id)
       .eq('date', date)
 
     if (error) {
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', existing.id)
+        .eq('org_id', userProfile.org_id)
         .select()
         .single()
 

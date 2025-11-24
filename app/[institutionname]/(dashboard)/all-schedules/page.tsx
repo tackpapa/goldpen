@@ -138,7 +138,11 @@ export default function AllSchedulesPage() {
 
   // Statistics
   const totalSchedules = filteredSchedules.length
-  const activeRooms = rooms.filter(r => r.status === 'available' || r.status === 'active').length
+  // status가 비어 있는 교실도 운영 중으로 간주하여 집계
+  const activeRooms = rooms.filter(r =>
+    r.status === undefined || r.status === null || r.status === '' ||
+    r.status === 'available' || r.status === 'active'
+  ).length
   const uniqueTeachers = new Set(filteredSchedules.map(s => s.teacher_id).filter(Boolean)).size
 
   if (loading) {

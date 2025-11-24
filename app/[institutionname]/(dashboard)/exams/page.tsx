@@ -104,9 +104,11 @@ export default function ExamsPage() {
     setUserRole(role)
   }, [])
 
-  const statusMap = {
-    pending_grade: { label: '채점 전', variant: 'outline' as const },
-    graded: { label: '채점 완료', variant: 'default' as const },
+  const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' }> = {
+    scheduled: { label: '예정', variant: 'secondary' },
+    pending_grade: { label: '채점 전', variant: 'outline' },
+    graded: { label: '채점 완료', variant: 'default' },
+    cancelled: { label: '취소', variant: 'destructive' },
   }
 
   // 필터링된 시험 목록
@@ -149,7 +151,7 @@ export default function ExamsPage() {
       header: '상태',
       cell: ({ row }) => {
         const status = row.getValue('status') as Exam['status']
-        const statusInfo = statusMap[status]
+        const statusInfo = statusMap[status] || { label: '미정', variant: 'outline' as const }
         return <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
       },
     },
@@ -164,49 +166,51 @@ export default function ExamsPage() {
           <div className="flex gap-1 flex-wrap">
             {exam.status === 'graded' && hasScores && (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleViewScores(exam)}
-                >
-                  <Eye className="mr-1 h-3 w-3" />
-                  성적 보기
+                <Button variant="outline" size="sm" onClick={() => handleViewScores(exam)}>
+                  <Eye className="mr-1 h-3 w-3" /> 성적 보기
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleViewStats(exam)}
-                >
-                  <BarChart3 className="mr-1 h-3 w-3" />
-                  통계 보기
+                <Button variant="outline" size="sm" onClick={() => handleViewStats(exam)}>
+                  <BarChart3 className="mr-1 h-3 w-3" /> 통계 보기
                 </Button>
                 {(userRole === 'director' || userRole === 'admin') && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleSendNotification(exam)}
-                  >
-                    <Send className="mr-1 h-3 w-3" />
-                    알림톡 보내기
+                  <Button variant="outline" size="sm" onClick={() => handleSendNotification(exam)}>
+                    <Send className="mr-1 h-3 w-3" /> 알림톡 보내기
                   </Button>
                 )}
               </>
             )}
             {(exam.status === 'pending_grade' || (exam.status === 'graded' && !hasScores)) && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleEnterScores(exam)}
-              >
-                <PenSquare className="mr-1 h-3 w-3" />
-                성적 입력
+              <Button variant="outline" size="sm" onClick={() => handleEnterScores(exam)}>
+                <PenSquare className="mr-1 h-3 w-3" /> 성적 입력
               </Button>
             )}
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleDeleteExam(exam)}
+            >
+              <MoreHorizontal className="mr-1 h-3 w-3" /> 삭제
+            </Button>
           </div>
         )
       },
     },
   ]
+
+  const handleDeleteExam = async (exam: Exam) => {
+    if (!confirm(`시험 “${exam.title || exam.name || exam.subject}”을 삭제할까요?`)) return
+    try {
+      const res = await fetch(`/api/exams/${exam.id}`, { method: 'DELETE', credentials: 'include' })
+      if (!res.ok) {
+        toast({ title: '삭제 실패', description: '시험 삭제에 실패했습니다.', variant: 'destructive' })
+        return
+      }
+      setExams((prev) => prev.filter((e) => e.id !== exam.id))
+      toast({ title: '삭제 완료', description: '시험이 삭제되었습니다.' })
+    } catch (e) {
+      toast({ title: '삭제 실패', description: '서버 통신 오류', variant: 'destructive' })
+    }
+  }
 
   const handleViewScores = (exam: Exam) => {
     setSelectedExam(exam)

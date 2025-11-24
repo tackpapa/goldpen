@@ -60,9 +60,8 @@ export default function LoginPage() {
         window.location.href = '/admin/dashboard'
       } else {
         // Get org name from result and construct proper URL
-        const orgName = result.org?.name || 'goldpen'
-        const sanitizedOrgName = orgName.toLowerCase().replace(/\s+/g, '-')
-        window.location.href = `/${sanitizedOrgName}/overview`
+        const orgSlug = result.org?.slug || result.org?.name?.toLowerCase().replace(/\\s+/g, '-') || 'goldpen'
+        window.location.href = `/${orgSlug}/overview`
       }
     } catch (error) {
       toast({

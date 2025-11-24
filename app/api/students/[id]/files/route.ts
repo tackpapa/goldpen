@@ -2,6 +2,7 @@ import { e2eBypass } from '@/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
 import { createClient } from '@/lib/supabase/client-edge'
+import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 // GET - 학생 파일 목록 조회
@@ -11,6 +12,11 @@ export async function GET(
 ) {
   const { id: studentId } = await params
   const supabase = createClient()
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const admin = supabaseUrl && serviceKey
+    ? createAdminClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    : null
 
   const { data, error } = await supabase
     .from('student_files')
@@ -25,9 +31,10 @@ export async function GET(
   // Generate signed URLs for each file
   const filesWithUrls = await Promise.all(
     data.map(async (file) => {
-      const { data: urlData } = await supabase.storage
+      const signer = admin || supabase
+      const { data: urlData } = await signer.storage
         .from('student-files')
-        .createSignedUrl(file.storage_path, 3600) // 1 hour
+        .createSignedUrl(file.storage_path, 3600)
 
       return {
         ...file,
@@ -46,11 +53,26 @@ export async function POST(
 ) {
   const { id: studentId } = await params
   const supabase = createClient()
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
+  const admin = supabaseUrl && serviceKey
+    ? createAdminClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+    : null
+  const client = admin || supabase
 
   try {
     const formData = await request.formData()
     const file = formData.get('file') as File
-    const orgId = formData.get('org_id') as string
+    let orgId = (formData.get('org_id') as string) || ''
+    if (!orgId) {
+      // 폴백: 학생으로부터 org_id 조회
+      const { data: studentOrg } = await supabase
+        .from('students')
+        .select('org_id')
+        .eq('id', studentId)
+        .maybeSingle()
+      orgId = studentOrg?.org_id || ''
+    }
 
     if (!file || !orgId) {
       return NextResponse.json(
@@ -65,7 +87,7 @@ export async function POST(
     const storagePath = `${orgId}/${studentId}/${timestamp}.${ext}`
 
     // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await client.storage
       .from('student-files')
       .upload(storagePath, file, {
         contentType: file.type,
@@ -77,7 +99,7 @@ export async function POST(
     }
 
     // Save metadata to database
-    const { data, error: dbError } = await supabase
+    const { data, error: dbError } = await client
       .from('student_files')
       .insert({
         org_id: orgId,
@@ -92,12 +114,12 @@ export async function POST(
 
     if (dbError) {
       // Rollback - delete uploaded file
-      await supabase.storage.from('student-files').remove([storagePath])
+      await client.storage.from('student-files').remove([storagePath])
       return NextResponse.json({ error: dbError.message }, { status: 500 })
     }
 
     // Get signed URL
-    const { data: urlData } = await supabase.storage
+    const { data: urlData } = await client.storage
       .from('student-files')
       .createSignedUrl(storagePath, 3600)
 

@@ -31,6 +31,7 @@ export async function GET(request: Request) {
         .from('daily_planners')
         .select('*')
         .eq('student_id', studentId)
+        .eq('org_id', userProfile.org_id)
         .gte('date', thirtyDaysAgo.toISOString().split('T')[0])
         .order('date', { ascending: false })
 
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
         .from('daily_planners')
         .select('*')
         .eq('student_id', studentId)
+        .eq('org_id', userProfile.org_id)
         .eq('date', date)
         .single()
 
@@ -95,9 +97,10 @@ export async function POST(request: Request) {
     const { data: existing } = await supabase
       .from('daily_planners')
       .select('id')
-      .eq('student_id', studentId)
-      .eq('date', planDate)
-      .single()
+          .eq('student_id', studentId)
+          .eq('org_id', userProfile.org_id)
+          .eq('date', planDate)
+          .single()
 
     if (existing) {
       // Update existing planner
@@ -168,6 +171,7 @@ export async function PATCH(request: Request) {
       .from('daily_planners')
       .select('study_plans')
       .eq('id', plannerId)
+      .eq('org_id', userProfile.org_id)
       .single()
 
     if (fetchError || !planner) {

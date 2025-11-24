@@ -27,6 +27,7 @@ const removeSeatSchema = z.object({
 const updateStatusSchema = z.object({
   seatNumber: z.number().int().positive(),
   status: z.enum(['checked_in', 'checked_out']),
+  studentId: z.string().uuid().optional(), // 신규 upsert 시 필요할 수 있음
 })
 
 function parseTimeToMinutes(time: string) {
@@ -53,6 +54,7 @@ async function upsertAttendanceForStudent(params: {
     .from('class_enrollments')
     .select('class_id')
     .eq('student_id', studentId)
+    .eq('org_id', orgId)
     .eq('status', 'active')
 
   if (enrollError || !enrollments?.length) return
@@ -76,12 +78,23 @@ async function upsertAttendanceForStudent(params: {
   const attendanceStatus =
     status === 'checked_in' && nowMinutes > startMinutes + LATE_GRACE_MINUTES ? 'late' : 'present'
 
+  // 기존 출결을 읽어서 체크인 시간을 보존 (중복 체크아웃 시 덮어쓰기 방지)
+  const { data: existingAttendance } = await supabase
+    .from('attendance')
+    .select('check_in_time')
+    .eq('org_id', orgId)
+    .eq('student_id', studentId)
+    .eq('class_id', target.class_id)
+    .eq('date', todayStr)
+    .maybeSingle()
+
   const payload: any = {
     org_id: orgId,
     student_id: studentId,
     class_id: target.class_id,
     date: todayStr,
     status: attendanceStatus,
+    check_in_time: existingAttendance?.check_in_time || null,
   }
 
   if (status === 'checked_in') payload.check_in_time = now.toISOString()
@@ -96,31 +109,101 @@ async function upsertAttendanceForStudent(params: {
   }
 }
 
+/**
+ * Record institution-wide stay log (check-in/out) in attendance_logs table.
+ * - check_in: inserts a new row if no open session
+ * - check_out: closes the latest open session and sets duration_minutes
+ */
+async function recordAttendanceLog(orgId: string, studentId: string, status: 'checked_in' | 'checked_out') {
+  const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  const now = new Date()
+
+  // 최신 열린 세션
+  const { data: openRows, error: openErr } = await admin
+    .from('attendance_logs')
+    .select('id, check_in_time')
+    .eq('org_id', orgId)
+    .eq('student_id', studentId)
+    .is('check_out_time', null)
+    .order('check_in_time', { ascending: false })
+    .limit(1)
+
+  if (openErr) {
+    console.error('[attendance_logs] fetch open error', openErr)
+    return
+  }
+
+  if (status === 'checked_in') {
+    if (openRows && openRows.length > 0) return // 이미 열린 세션이 있으면 새로 만들지 않음
+    const { error: insErr } = await admin.from('attendance_logs').insert({
+      org_id: orgId,
+      student_id: studentId,
+      check_in_time: now.toISOString(),
+      source: 'seats',
+    })
+    if (insErr) console.error('[attendance_logs] insert error', insErr)
+    return
+  }
+
+  // checked_out
+  if (!openRows || openRows.length === 0) return
+  const open = openRows[0]
+  const durationMinutes = Math.max(
+    1,
+    Math.ceil((now.getTime() - new Date(open.check_in_time).getTime()) / (1000 * 60))
+  )
+  const { error: updErr } = await admin
+    .from('attendance_logs')
+    .update({ check_out_time: now.toISOString(), duration_minutes: durationMinutes })
+    .eq('id', open.id)
+  if (updErr) console.error('[attendance_logs] update error', updErr)
+}
+
 // GET: 좌석 배정 목록 조회
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
+    const isDev = process.env.NODE_ENV !== 'production'
+    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { searchParams } = new URL(request.url)
+    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    let supabase: any = await createAuthenticatedClient(request)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    let orgId: string | null = null
+    const orgParam = searchParams.get('org_id') || searchParams.get('orgId')
+
+    if ((!user || authError) && allowService && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      orgId = orgParam || demoOrgId
+    } else {
+      if (authError || !user) {
+        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+      }
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('org_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !userProfile) {
+        if (supabaseServiceKey) {
+          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+          orgId = orgParam || demoOrgId
+        } else {
+          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+        }
+      }
+      orgId = orgId || userProfile?.org_id
     }
 
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    if (!orgId) return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
 
     // Get all seat assignments with student info
     const { data: assignments, error: assignmentsError } = await supabase
       .from('seat_assignments')
       .select('*, students(id, name, grade, student_code, seatsremainingtime)')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .order('seat_number', { ascending: true })
 
     if (assignmentsError) {
@@ -139,8 +222,10 @@ export async function GET(request: Request) {
         status: a.status,
         checkInTime: a.check_in_time,
         sessionStartTime: a.session_start_time,
+        updatedAt: a.updated_at,
         allocatedMinutes: a.allocated_minutes,
         seatsremainingtime: a.students?.seatsremainingtime ?? null,
+        orgId: a.org_id,
       }
     })
 
@@ -235,36 +320,78 @@ export async function POST(request: Request) {
 // PUT: 좌석 상태 업데이트 (등원/하원)
 export async function PUT(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
+    const isDev = process.env.NODE_ENV !== 'production'
+    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { searchParams } = new URL(request.url)
+    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    let supabase: any = await createAuthenticatedClient(request)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    let orgId: string | null = null
+
+    if ((!user || authError) && allowService && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      orgId = demoOrgId
+    } else {
+      if (authError || !user) {
+        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+      }
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('org_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !userProfile) {
+        if (supabaseServiceKey) {
+          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+          orgId = demoOrgId
+        } else {
+          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+        }
+      } else {
+        orgId = userProfile.org_id
+      }
     }
 
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    if (!orgId) return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
 
     const body = await request.json()
     const validated = updateStatusSchema.parse(body)
+    const orgToUse = orgId
 
     // Get current assignment to access session data
     const { data: currentAssignment, error: fetchError } = await supabase
       .from('seat_assignments')
       .select('*, students(id, seatsremainingtime, student_code)')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgToUse)
       .eq('seat_number', validated.seatNumber)
       .single()
 
+    // 없으면 upsert (studentId가 없는 경우엔 더 진행하지 않고 404)
+    let workingAssignment = currentAssignment
     if (fetchError || !currentAssignment) {
-      return Response.json({ error: '좌석 배정을 찾을 수 없습니다' }, { status: 404 })
+      if (!validated.studentId) {
+        return Response.json({ error: '좌석 배정을 찾을 수 없습니다' }, { status: 404 })
+      }
+      const now = new Date().toISOString()
+      const { data: inserted, error: insertError } = await supabase
+        .from('seat_assignments')
+        .insert({
+          seat_number: validated.seatNumber,
+          student_id: validated.studentId,
+          org_id: orgToUse,
+          status: validated.status,
+          check_in_time: validated.status === 'checked_in' ? now : null,
+          session_start_time: validated.status === 'checked_in' ? now : null,
+        })
+        .select('*, students(id, seatsremainingtime, student_code)')
+        .single()
+      if (insertError || !inserted) {
+        return Response.json({ error: '좌석 배정 생성 실패', details: insertError?.message }, { status: 500 })
+      }
+      workingAssignment = inserted
     }
 
     const updateData: any = {
@@ -274,11 +401,12 @@ export async function PUT(request: Request) {
 
     // Set check_in_time and session_start_time when checking in
     if (validated.status === 'checked_in') {
-      updateData.check_in_time = new Date().toISOString()
-      updateData.session_start_time = new Date().toISOString()
+      const nowIso = new Date().toISOString()
+      updateData.check_in_time = nowIso
+      updateData.session_start_time = nowIso
     } else {
       // Check out - deduct usage time from study_room_passes
-      updateData.check_in_time = null
+      // check_in_time는 보존 (출결 기록 중복 체크인/체크아웃 시 시간 유지)
 
       if (currentAssignment.session_start_time && currentAssignment.student_id) {
         const sessionStart = new Date(currentAssignment.session_start_time).getTime()
@@ -317,7 +445,7 @@ export async function PUT(request: Request) {
     const { data: assignment, error: updateError } = await supabase
       .from('seat_assignments')
       .update(updateData)
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgToUse)
       .eq('seat_number', validated.seatNumber)
       .select()
       .single()
@@ -327,11 +455,16 @@ export async function PUT(request: Request) {
       return Response.json({ error: '상태 업데이트 실패', details: updateError.message }, { status: 500 })
     }
 
+    // attendance_logs 기록
+    if (workingAssignment?.student_id) {
+      await recordAttendanceLog(orgToUse, workingAssignment.student_id, validated.status)
+    }
+
     // 동시로 출결 테이블 업데이트 (지각/출석)
     await upsertAttendanceForStudent({
       supabase,
-      orgId: userProfile.org_id,
-      studentId: currentAssignment.student_id,
+      orgId: orgToUse,
+      studentId: workingAssignment?.student_id || null,
       status: validated.status,
       now: new Date(),
     })

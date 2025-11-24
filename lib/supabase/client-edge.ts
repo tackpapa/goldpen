@@ -64,13 +64,15 @@ export function getAuthToken(request: Request): string | null {
     const cookies = parseCookies(cookieHeader)
 
     // Supabase 세션 쿠키명 (다양한 패턴 지원)
-    const sessionToken =
+    const sessionTokenRaw =
+      cookies['sb-auth-token'] || // access+refresh JSON 패키지 우선
       cookies['sb-access-token'] ||
-      cookies['sb-auth-token'] ||
       cookies['supabase-auth-token']
 
-    if (sessionToken) {
-      return sessionToken
+    if (sessionTokenRaw) {
+      // URL 인코딩 되었을 수 있으므로 우선 decode
+      const decoded = decodeURIComponent(sessionTokenRaw)
+      return decoded
     }
 
     // Supabase SSR cookie 패턴 (sb-<project-ref>-auth-token)
@@ -85,7 +87,7 @@ export function getAuthToken(request: Request): string | null {
           }
 
           // Try to parse as JSON
-          const decoded = JSON.parse(decodedValue)
+          const decoded = JSON.parse(decodeURIComponent(decodedValue))
           if (decoded && typeof decoded === 'object') {
             // Handle object format - return the whole decoded object for setSession
             if (decoded.access_token) {
@@ -133,6 +135,43 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 export async function createAuthenticatedClient(request: Request) {
   const supabase = createClient()
 
+  // 개발 편의: 토큰이 없고 서비스 롤 키가 있으면 서비스 클라이언트로 교체 + 가짜 유저 반환
+  if (!getAuthToken(request) && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NODE_ENV !== 'production') {
+    const adminClient = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    ) as any
+
+    adminClient.auth.getUser = async () => ({
+      data: {
+        user: {
+          id: 'service-role',
+          email: 'service@goldpen.local',
+          role: 'service_role',
+        }
+      },
+      error: null,
+    })
+
+    adminClient.auth.getSession = async () => ({
+      data: {
+        session: {
+          access_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          refresh_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
+          user: {
+            id: 'service-role',
+            email: 'service@goldpen.local',
+            role: 'service_role',
+          },
+        },
+      },
+      error: null,
+    })
+
+    return adminClient
+  }
+
   // E2E/Test 모드: 서비스 롤 토큰으로 세션을 강제 주입해 인증을 우회
   if (process.env.E2E_NO_AUTH === '1' && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     await supabase.auth.setSession({
@@ -179,27 +218,24 @@ export async function createAuthenticatedClient(request: Request) {
       // Try to parse as JSON (contains both access_token and refresh_token)
       const tokenData = JSON.parse(token)
       if (tokenData.access_token && tokenData.refresh_token) {
-        const { error } = await supabase.auth.setSession({
+        await supabase.auth.setSession({
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token
         })
-
-        if (error) {
-          throw new Error(`[Supabase Edge] Auth error: ${error.message}`)
-        }
+      } else if (Array.isArray(tokenData) && tokenData.length >= 2) {
+        await supabase.auth.setSession({
+          access_token: tokenData[0],
+          refresh_token: tokenData[1]
+        })
       } else {
         throw new Error('[Supabase Edge] Invalid token format')
       }
     } catch (e) {
       // If not JSON, assume it's a raw access_token
-      const { error } = await supabase.auth.setSession({
+      await supabase.auth.setSession({
         access_token: token,
         refresh_token: ''
       })
-
-      if (error) {
-        throw new Error(`[Supabase Edge] Auth error: ${error.message}`)
-      }
     }
   }
 

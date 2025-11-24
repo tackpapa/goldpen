@@ -1,6 +1,6 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { ZodError } from 'zod'
 import * as z from 'zod'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -20,22 +20,7 @@ const createBillingSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { searchParams } = new URL(request.url)
     const student_id = searchParams.get('student_id')
@@ -43,10 +28,10 @@ export async function GET(request: Request) {
     const start_date = searchParams.get('start_date')
     const end_date = searchParams.get('end_date')
 
-    let query = supabase
+    let query = db
       .from('billing')
-      .select('*, students(name)')
-      .eq('org_id', userProfile.org_id)
+      .select('id, org_id, student_id, amount, billing_date, due_date, paid_date, payment_method, description, notes, status, created_at, updated_at, students!inner(name)')
+      .eq('org_id', orgId)
       .order('billing_date', { ascending: false })
 
     if (student_id) query = query.eq('student_id', student_id)
@@ -57,7 +42,11 @@ export async function GET(request: Request) {
     const { data: billing, error: billingError } = await query
 
     if (billingError) {
+      // 테이블 미생성 등 치명적 오류 시 빈 배열로 반환해 FE 붕괴 방지
       console.error('[Billing GET] Error:', billingError)
+      if ((billingError as any).code === '42P01') {
+        return Response.json({ billing: [], count: 0 })
+      }
       return Response.json({ error: '청구 목록 조회 실패', details: billingError.message }, { status: 500 })
     }
 
@@ -70,31 +59,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createBillingSchema.parse(body)
 
-    const { data: billing, error: createError } = await supabase
+    const { data: billing, error: createError } = await db
       .from('billing')
       .insert({
         ...validated,
-        org_id: userProfile.org_id
+        org_id: orgId
       })
       .select()
       .single()

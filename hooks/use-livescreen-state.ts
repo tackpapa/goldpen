@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { LiveScreenState, SleepRecord, OutingRecord } from '@/lib/types/database'
 
-export function useLivescreenState(studentId: string, seatNumber: number) {
+export function useLivescreenState(studentId: string, seatNumber: number, orgId: string | null) {
   const [state, setState] = useState<LiveScreenState>({
     student_id: studentId,
     seat_number: seatNumber,
@@ -21,15 +21,15 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
 
   // Load initial state
   useEffect(() => {
-    if (!studentId) return // Skip if no studentId
+    if (!studentId || !orgId) return // Skip if no studentId
     loadState()
-  }, [studentId, seatNumber])
+  }, [studentId, orgId, seatNumber])
 
   // Subscribe to realtime changes
   useEffect(() => {
-    if (!studentId) return // Skip if no studentId
+    if (!studentId || !orgId) return // Skip if no studentId
 
-    // Subscribe to livescreen_state changes
+    // Subscribe to livescreen_state changes (org 스코프)
     const stateChannel = supabase
       .channel(`livescreen-state-${studentId}-${seatNumber}`)
       .on(
@@ -38,7 +38,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
           event: '*',
           schema: 'public',
           table: 'livescreen_state',
-          filter: `student_id=eq.${studentId}`,
+          filter: `student_id=eq.${studentId},org_id=eq.${orgId}`,
         },
         (payload) => {
           if (payload.new && typeof payload.new === 'object') {
@@ -48,7 +48,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
       )
       .subscribe()
 
-    // Subscribe to sleep_records changes
+    // Subscribe to sleep_records changes (org 스코프)
     const sleepChannel = supabase
       .channel(`sleep-${studentId}-${seatNumber}`)
       .on(
@@ -57,7 +57,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
           event: '*',
           schema: 'public',
           table: 'sleep_records',
-          filter: `student_id=eq.${studentId}`,
+          filter: `student_id=eq.${studentId},org_id=eq.${orgId}`,
         },
         async (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
@@ -72,7 +72,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
       )
       .subscribe()
 
-    // Subscribe to outing_records changes
+    // Subscribe to outing_records changes (org 스코프)
     const outingChannel = supabase
       .channel(`outing-${studentId}-${seatNumber}`)
       .on(
@@ -81,7 +81,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
           event: '*',
           schema: 'public',
           table: 'outing_records',
-          filter: `student_id=eq.${studentId}`,
+          filter: `student_id=eq.${studentId},org_id=eq.${orgId}`,
         },
         async (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
@@ -101,17 +101,22 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
       supabase.removeChannel(sleepChannel)
       supabase.removeChannel(outingChannel)
     }
-  }, [studentId, seatNumber, today])
+  }, [studentId, orgId, seatNumber, today])
 
   async function loadState() {
     try {
       setLoading(true)
+      if (!studentId || !orgId) {
+        setLoading(false)
+        return
+      }
 
       // Load livescreen state
       const { data: stateData, error: stateError } = await supabase
         .from('livescreen_state')
         .select('*')
         .eq('student_id', studentId)
+        .eq('org_id', orgId)
         .eq('seat_number', seatNumber)
         .eq('date', today)
         .maybeSingle()
@@ -126,6 +131,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
           .from('livescreen_state')
           .insert({
             student_id: studentId,
+            org_id: orgId,
             seat_number: seatNumber,
             date: today,
             sleep_count: 0,
@@ -144,6 +150,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
         .from('sleep_records')
         .select('*')
         .eq('student_id', studentId)
+        .eq('org_id', orgId)
         .eq('date', today)
         .eq('status', 'sleeping')
         .maybeSingle()
@@ -155,6 +162,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
         .from('outing_records')
         .select('*')
         .eq('student_id', studentId)
+        .eq('org_id', orgId)
         .eq('date', today)
         .eq('status', 'out')
         .maybeSingle()
@@ -173,6 +181,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
         .from('livescreen_state')
         .update(updates)
         .eq('student_id', studentId)
+        .eq('org_id', orgId)
         .eq('seat_number', seatNumber)
         .eq('date', today)
 
@@ -187,7 +196,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
 
   async function startSleep() {
     console.log('🛏️ [SLEEP] Starting sleep for seat', seatNumber, 'studentId:', studentId)
-    if (!studentId) {
+    if (!studentId || !orgId) {
       console.error('❌ [SLEEP] Cannot start sleep: studentId is empty')
       throw new Error('studentId is required')
     }
@@ -197,6 +206,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
         .from('sleep_records')
         .insert({
           student_id: studentId,
+          org_id: orgId,
           seat_number: seatNumber,
           date: today,
           sleep_time: new Date().toISOString(),
@@ -242,6 +252,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
           status: 'awake',
         })
         .eq('id', currentSleep.id)
+        .eq('org_id', orgId)
 
       if (updateError) throw updateError
 
@@ -259,7 +270,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
 
   async function startOuting(reason: string) {
     console.log('🚪 [OUTING] Starting outing for seat', seatNumber, 'studentId:', studentId)
-    if (!studentId) {
+    if (!studentId || !orgId) {
       console.error('❌ [OUTING] Cannot start outing: studentId is empty')
       throw new Error('studentId is required')
     }
@@ -269,6 +280,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
         .from('outing_records')
         .insert({
           student_id: studentId,
+          org_id: orgId,
           seat_number: seatNumber,
           date: today,
           outing_time: new Date().toISOString(),
@@ -310,6 +322,7 @@ export function useLivescreenState(studentId: string, seatNumber: number) {
           status: 'returned',
         })
         .eq('id', currentOuting.id)
+        .eq('org_id', orgId)
 
       if (updateError) throw updateError
 

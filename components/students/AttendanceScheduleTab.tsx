@@ -34,6 +34,7 @@ export function AttendanceScheduleTab({
 }: AttendanceScheduleTabProps) {
   const { toast } = useToast()
   const [schedules, setSchedules] = useState<AttendanceSchedule[]>([])
+  const [saving, setSaving] = useState<string | null>(null)
 
   useEffect(() => {
     if (initialSchedules && initialSchedules.length > 0) {
@@ -54,47 +55,97 @@ export function AttendanceScheduleTab({
     field: 'start_time' | 'end_time',
     value: string
   ) => {
-    // TODO: API 호출로 DB 업데이트
-    const existingIndex = schedules.findIndex(
-      s => s.day_of_week === day
-    )
-
-    let newSchedules = [...schedules]
+    const existingIndex = schedules.findIndex((s) => s.day_of_week === day)
+    const optimistic = [...schedules]
 
     if (existingIndex >= 0) {
-      newSchedules[existingIndex] = {
-        ...newSchedules[existingIndex],
+      optimistic[existingIndex] = {
+        ...optimistic[existingIndex],
         [field]: value,
         updated_at: new Date().toISOString(),
       }
     } else {
-      const newSchedule: AttendanceSchedule = {
-        id: `schedule-${Date.now()}-${day}`,
+      optimistic.push({
+        id: `temp-${Date.now()}-${day}`,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         student_id: student.id,
         day_of_week: day,
         start_time: field === 'start_time' ? value : '',
         end_time: field === 'end_time' ? value : '',
-      }
-      newSchedules.push(newSchedule)
+      })
     }
 
-    setSchedules(newSchedules)
+    setSchedules(optimistic)
+    void persistSchedule(day, {
+      start_time: field === 'start_time' ? value : getScheduleForDay(day)?.start_time || '',
+      end_time: field === 'end_time' ? value : getScheduleForDay(day)?.end_time || '',
+    })
   }
 
   const handleRemoveSchedule = (day: typeof DAYS[number]['value']) => {
-    // TODO: API 호출로 DB에서 삭제
     setSchedules(schedules.filter(s => s.day_of_week !== day))
-
-    toast({
-      title: '삭제 완료',
-      description: `${DAYS.find(d => d.value === day)?.label}요일 스케줄이 삭제되었습니다.`,
-    })
+    void deleteSchedule(day)
   }
 
   const getScheduleForDay = (day: typeof DAYS[number]['value']) => {
     return schedules.find(s => s.day_of_week === day)
+  }
+
+  const asTime = (value?: string) => (value ? value.slice(0, 5) : '')
+
+  const persistSchedule = async (
+    day: typeof DAYS[number]['value'],
+    times: { start_time?: string; end_time?: string }
+  ) => {
+    try {
+      setSaving(day)
+      const res = await fetch(`/api/students/${student.id}/commute-schedules`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          weekday: day,
+          check_in_time: times.start_time ?? '',
+          check_out_time: times.end_time ?? '',
+        }),
+        credentials: 'include',
+      })
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const { schedule } = await res.json()
+      setSchedules((prev) => {
+        const others = prev.filter((s) => s.day_of_week !== day)
+        return [...others, schedule].sort((a,b)=> DAYS.findIndex(d=>d.value===a.day_of_week) - DAYS.findIndex(d=>d.value===b.day_of_week))
+      })
+      toast({ title: '저장 완료', description: `${DAYS.find(d=>d.value===day)?.label}요일 스케줄을 저장했습니다.` })
+      onRefresh?.()
+    } catch (error: any) {
+      console.error('[schedule] save', error)
+      toast({ title: '저장 실패', description: '스케줄 저장에 실패했습니다.', variant: 'destructive' })
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const deleteSchedule = async (day: typeof DAYS[number]['value']) => {
+    try {
+      setSaving(day)
+      const res = await fetch(`/api/students/${student.id}/commute-schedules?weekday=${day}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      toast({
+        title: '삭제 완료',
+        description: `${DAYS.find(d => d.value === day)?.label}요일 스케줄이 삭제되었습니다.`,
+      })
+      onRefresh?.()
+    } catch (error: any) {
+      console.error('[schedule] delete', error)
+      toast({ title: '삭제 실패', description: '스케줄 삭제에 실패했습니다.', variant: 'destructive' })
+    } finally {
+      setSaving(null)
+    }
   }
 
   return (
@@ -114,18 +165,20 @@ export function AttendanceScheduleTab({
               <div>
                 <Input
                   type="time"
-                  value={schedule?.start_time || ''}
+                  value={asTime(schedule?.start_time)}
                   onChange={(e) => handleTimeChange(value, 'start_time', e.target.value)}
                   placeholder="시작 시간"
+                  disabled={!!saving}
                 />
               </div>
 
               <div>
                 <Input
                   type="time"
-                  value={schedule?.end_time || ''}
+                  value={asTime(schedule?.end_time)}
                   onChange={(e) => handleTimeChange(value, 'end_time', e.target.value)}
                   placeholder="종료 시간"
+                  disabled={!!saving}
                 />
               </div>
 
@@ -135,6 +188,7 @@ export function AttendanceScheduleTab({
                     variant="ghost"
                     size="icon"
                     onClick={() => handleRemoveSchedule(value)}
+                    disabled={saving === value}
                   >
                     <X className="h-4 w-4" />
                   </Button>

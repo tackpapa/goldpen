@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Student } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -34,7 +34,11 @@ export function PaymentTab({
   loading = false
 }: PaymentTabProps) {
   const { toast } = useToast()
-  const revenueCategories = revenueCategoryManager.getActiveCategories()
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
+
+  const [revenueCategories, setRevenueCategories] = useState(revenueCategoryManager.getActiveCategories())
 
   // Payment form state
   const [amount, setAmount] = useState('')
@@ -50,6 +54,26 @@ export function PaymentTab({
 
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  const refreshRevenueCategories = async () => {
+    try {
+      const res = await fetch(`/api/settings/revenue-categories?slug=${slug}`, { credentials: 'include' })
+      const data = await res.json()
+      if (res.ok && data.categories) {
+        // 서버에서 전달된 항목 + 로컬 기본값을 병합하고 활성 항목만 표시
+        revenueCategoryManager.setCategories(data.categories)
+        setRevenueCategories(revenueCategoryManager.getActiveCategories())
+      }
+    } catch (_) {
+      // keep local cache
+      setRevenueCategories(revenueCategoryManager.getActiveCategories())
+    }
+  }
+
+  useEffect(() => {
+    refreshRevenueCategories()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const calculateExpiryDate = (type: 'hours' | 'days', amount: number): string => {
     const now = new Date()
@@ -169,7 +193,7 @@ export function PaymentTab({
               <SelectTrigger id="category">
                 <SelectValue placeholder="수입 항목을 선택하세요" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="max-h-[440px] overflow-auto">
                 {revenueCategories.map(cat => (
                   <SelectItem key={cat.id} value={cat.id}>
                     {cat.name}

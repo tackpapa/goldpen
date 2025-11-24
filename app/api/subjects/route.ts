@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       .from('subjects')
       .select('*')
       .eq('student_id', studentId)
+      .eq('org_id', userProfile.org_id)
       .eq('is_active', true)
       .order('order', { ascending: true })
 

@@ -8,9 +8,10 @@ import {
   LayoutDashboard,
   Building2,
   Users,
-  FileText,
   Settings,
   Shield,
+  Package,
+  MessageSquare,
 } from 'lucide-react'
 
 interface NavigationItem {
@@ -40,10 +41,16 @@ const navigationItems: NavigationItem[] = [
     icon: Users,
   },
   {
-    id: 'audit-logs',
-    name: '감사 로그',
-    href: '/admin/audit-logs',
-    icon: FileText,
+    id: 'plans',
+    name: '구독 플랜',
+    href: '/admin/plans',
+    icon: Package,
+  },
+  {
+    id: 'kakao',
+    name: '카카오 알림톡',
+    href: '/admin/kakao',
+    icon: MessageSquare,
   },
   {
     id: 'settings',

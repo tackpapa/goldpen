@@ -9,26 +9,29 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable } from '@/components/ui/data-table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Calendar, CheckCircle, XCircle, Clock, User, ExternalLink } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, User, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Attendance } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { addDays, format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 
 // Type definitions
 type AttendanceStatus = 'scheduled' | 'present' | 'late' | 'absent' | 'excused'
+
+interface SeatInfo {
+  seatNumber: number | null
+  checkInTime: string | null
+  sessionStartTime: string | null
+  status: string | null
+  updatedAt: string | null
+  grade: string | number | null
+}
 
 interface TodayStudentClass {
   id: string | null              // attendance record id (null or pending if 아직 없음)
@@ -55,9 +58,8 @@ interface WeeklyStatItem {
   excused: number
 }
 
-interface ClassAttendanceRateItem {
-  name: string
-  rate: number
+interface MonthlyTrendItem {
+  date: string
   present: number
   late: number
   absent: number
@@ -72,9 +74,14 @@ export default function AttendancePage() {
   const institutionName = params.institutionname as string
   const [todayAttendance, setTodayAttendance] = useState<TodayStudent[]>([])
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
-  const [weeklyStats, setWeeklyStats] = useState<WeeklyStatItem[]>([])
-  const [classAttendanceRate, setClassAttendanceRate] = useState<ClassAttendanceRateItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  const [assignedStudentIds, setAssignedStudentIds] = useState<string[]>([])
+  const [seatMap, setSeatMap] = useState<Record<string, SeatInfo>>({})
+  const [seatNameMap, setSeatNameMap] = useState<Record<string, SeatInfo>>({})
+  const [rawAssignments, setRawAssignments] = useState<any[]>([])
+  const [dailyLogs, setDailyLogs] = useState<Array<{ student_id: string; check_in_time: string | null; check_out_time: string | null }>>([])
+
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -92,22 +99,106 @@ export default function AttendancePage() {
     scheduled: 4,
   }
 
-  const classOptions = useMemo(() => {
-    const map = new Map<string, string>()
-    todayAttendance.forEach((s) => {
-      s.classes.forEach((c) => {
-        if (c.class_id) map.set(c.class_id, c.class_name || c.class_id)
-      })
-    })
-    return Array.from(map.entries())
-  }, [todayAttendance])
+  const formatSelectedDateLabel = useCallback((dateStr: string) => {
+    const d = new Date(dateStr)
+    if (Number.isNaN(d.getTime())) return ''
+    return format(d, 'yyyy년 MM월 dd일 (eee)')
+  }, [])
 
-  const resetTodayPaging = useCallback(() => setTodayPage(1), [])
+  // 등하원 일정 모달 상태
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
+  const [scheduleTarget, setScheduleTarget] = useState<{ id: string; name: string } | null>(null)
+  const [scheduleLoading, setScheduleLoading] = useState(false)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
+  const [commuteSchedules, setCommuteSchedules] = useState<
+    Array<{ id?: string; weekday: string; check_in_time: string | null; check_out_time: string | null; notes?: string | null }>
+  >([])
+
+  const shiftDate = useCallback((delta: number) => {
+    const next = addDays(new Date(selectedDate), delta)
+    const nextStr = format(next, 'yyyy-MM-dd')
+    setSelectedDate(nextStr)
+    setHasMore(true)
+    setIsLoadingMore(false)
+    setPage(0)
+    setTodayPage(1)
+    setAttendanceHistory([])
+    setTodayAttendance([])
+  }, [selectedDate])
+
+  const resetToToday = useCallback(() => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    if (todayStr === selectedDate) return
+    setSelectedDate(todayStr)
+    setHasMore(true)
+    setIsLoadingMore(false)
+    setPage(0)
+    setTodayPage(1)
+    setAttendanceHistory([])
+    setTodayAttendance([])
+  }, [selectedDate])
+
+  const weekdayKo = {
+    monday: '월요일',
+    tuesday: '화요일',
+    wednesday: '수요일',
+    thursday: '목요일',
+    friday: '금요일',
+    saturday: '토요일',
+    sunday: '일요일',
+  } as const
+
+  const fetchCommuteSchedules = useCallback(async (studentId: string, studentName: string) => {
+    setScheduleTarget({ id: studentId, name: studentName })
+    setScheduleModalOpen(true)
+    setScheduleLoading(true)
+    setScheduleError(null)
+    try {
+      // dev 환경에서는 service=1 + demo org로 강제 조회 (RLS 우회)
+      const devQs = process.env.NODE_ENV !== 'production'
+        ? `?service=1&org_id=dddd0000-0000-0000-0000-000000000000`
+        : ''
+      const res = await fetch(`/api/students/${studentId}/commute-schedules${devQs}`, { credentials: 'include' })
+      const data = await res.json()
+      if (!res.ok) {
+        setScheduleError(data?.error || '일정 불러오기 실패')
+        setCommuteSchedules([])
+        return
+      }
+      const schedules = data.schedules || data || []
+      if (!schedules || schedules.length === 0) {
+        // 더미 일정 생성 (월~금 16:00~21:00, 토 10:00~14:00)
+        const dummy = [
+          'monday','tuesday','wednesday','thursday','friday'
+        ].map((w) => ({ weekday: weekdayKo[w], check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정' }))
+        dummy.push({ weekday: weekdayKo.saturday, check_in_time: '10:00', check_out_time: '14:00', notes: '더미 일정' })
+        setCommuteSchedules(dummy)
+      } else {
+        const localized = (schedules as any[]).map((s) => ({
+          ...s,
+          weekday: weekdayKo[(s.weekday as keyof typeof weekdayKo)] || s.weekday,
+        }))
+        setCommuteSchedules(localized)
+      }
+    } catch (e: any) {
+      setScheduleError(e?.message || '네트워크 오류')
+      setCommuteSchedules([
+        { weekday: weekdayKo.monday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
+        { weekday: weekdayKo.tuesday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
+        { weekday: weekdayKo.wednesday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
+        { weekday: weekdayKo.thursday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
+        { weekday: weekdayKo.friday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
+        { weekday: weekdayKo.saturday, check_in_time: '10:00', check_out_time: '14:00', notes: '더미 일정 (오프라인)' },
+      ])
+    } finally {
+      setScheduleLoading(false)
+    }
+  }, [])
 
   // 통계 fallback 계산 (데이터 없을 때 로컬 계산)
-  const computeWeeklyFromHistory = useCallback(() => {
+  const computeWeeklyFromHistory = useCallback((source: Attendance[] = []) => {
     const map: Record<string, { date: string; present: number; late: number; absent: number; excused: number }> = {}
-    attendanceHistory.forEach((r) => {
+    source.forEach((r) => {
       if (!map[r.date]) map[r.date] = { date: r.date, present: 0, late: 0, absent: 0, excused: 0 }
       if (r.status === 'present') map[r.date].present++
       else if (r.status === 'late') map[r.date].late++
@@ -115,35 +206,37 @@ export default function AttendancePage() {
       else if (r.status === 'excused') map[r.date].excused++
     })
     return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
-  }, [attendanceHistory])
+  }, [])
 
-  const computeClassRatesFromHistory = useCallback(() => {
-    const agg: Record<string, { name: string; present: number; late: number; absent: number; excused: number }> = {}
-    attendanceHistory.forEach((r) => {
-      const key = r.class_id || 'unknown'
-      const name = (r as any).class?.name || r.class_id || '미지정 반'
-      if (!agg[key]) agg[key] = { name, present: 0, late: 0, absent: 0, excused: 0 }
-      if (r.status === 'present') agg[key].present++
-      else if (r.status === 'late') agg[key].late++
-      else if (r.status === 'absent') agg[key].absent++
-      else if (r.status === 'excused') agg[key].excused++
+  const buildMonthlyTrend = useCallback((source: Attendance[] = []) => {
+    const map: Record<string, MonthlyTrendItem> = {}
+    const today = new Date()
+    const monthAgo = new Date()
+    monthAgo.setDate(today.getDate() - 29)
+    source.forEach((r) => {
+      const d = new Date(r.date)
+      if (Number.isNaN(d.getTime())) return
+      if (d < monthAgo) return
+      const key = r.date
+      if (!map[key]) map[key] = { date: key, present: 0, late: 0, absent: 0, excused: 0 }
+      if (r.status === 'present') map[key].present++
+      else if (r.status === 'late') map[key].late++
+      else if (r.status === 'absent') map[key].absent++
+      else if (r.status === 'excused') map[key].excused++
     })
-    return Object.values(agg)
-      .map((v) => {
-        const total = v.present + v.late + v.absent + v.excused
-        const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
-        return { ...v, rate }
-      })
-      .sort((a, b) => b.rate - a.rate)
-  }, [attendanceHistory])
+    return Object.values(map).sort((a, b) => a.date.localeCompare(b.date))
+  }, [])
 
-  const fetchAttendancePage = useCallback(async (pageToLoad: number) => {
+  const fetchAttendancePage = useCallback(async (pageToLoad: number, targetDate: string) => {
     const params = new URLSearchParams({
       limit: HISTORY_PAGE_SIZE.toString(),
       offset: (pageToLoad * HISTORY_PAGE_SIZE).toString(),
     })
+    params.set('target_date', targetDate)
     const response = await fetch(`/api/attendance?${params.toString()}`, { credentials: 'include' })
-    const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[] }
+    const logsResponse = await fetch(`/api/attendance/logs?date=${targetDate}`, { credentials: 'include' })
+    const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[]; selectedDate?: string }
+    const logsData = logsResponse.ok ? await logsResponse.json() as { logs?: Array<{ student_id: string; check_in_time: string | null; check_out_time: string | null }> } : { logs: [] }
 
     if (!response.ok) {
       throw new Error(data?.error || '출결 데이터 로드 실패')
@@ -154,6 +247,11 @@ export default function AttendancePage() {
     const merged = pageToLoad === 0 ? (data.attendance || []) : [...attendanceHistory, ...(data.attendance || [])]
     setAttendanceHistory(merged)
 
+    // 오늘 날짜 로그 저장 (중복 등하원 스택용)
+    if (logsData?.logs) {
+      setDailyLogs(logsData.logs)
+    }
+
     // 첫 페이지에서만 오늘/통계 세트업
     if (pageToLoad === 0) {
       const sortedToday = (data.todayStudents || []).slice().sort((a, b) => {
@@ -163,24 +261,17 @@ export default function AttendancePage() {
         return (a.student_name || '').localeCompare(b.student_name || '')
       })
       setTodayAttendance(sortedToday)
-      setWeeklyStats((data.weeklyStats && data.weeklyStats.length > 0) ? data.weeklyStats : computeWeeklyFromHistory())
-      setClassAttendanceRate(computeClassRatesFromHistory())
     }
 
     // hasMore 판단
     setHasMore(fetchedCount === HISTORY_PAGE_SIZE)
-  }, [HISTORY_PAGE_SIZE, attendanceHistory, computeWeeklyFromHistory, computeClassRatesFromHistory])
-
-  // attendanceHistory 변경 시 반별 출결률 갱신
-  useEffect(() => {
-    setClassAttendanceRate(computeClassRatesFromHistory())
-  }, [attendanceHistory, computeClassRatesFromHistory])
+  }, [HISTORY_PAGE_SIZE, attendanceHistory, computeWeeklyFromHistory])
 
   useEffect(() => {
     const load = async () => {
       setIsLoading(true)
       try {
-        await fetchAttendancePage(0)
+        await fetchAttendancePage(0, selectedDate)
         setPage(0)
         setTodayPage(1)
       } catch (err) {
@@ -190,7 +281,75 @@ export default function AttendancePage() {
       }
     }
     load()
-  }, [fetchAttendancePage, toast])
+    // fetchAttendancePage를 의존성에 포함하면 attendanceHistory 변경 시마다 재호출되어 루프가 생겨 제외
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, toast])
+
+  // 좌석 배정된 학생 목록 불러오기 (학생용 출결 페이지와 동일 엔드포인트 활용)
+  useEffect(() => {
+    const loadSeatAssignments = async () => {
+      try {
+        const res = await fetch('/api/seat-assignments', { credentials: 'include' })
+        if (!res.ok) return
+        const data = await res.json()
+        const ids: string[] = []
+        const map: Record<string, SeatInfo> = {}
+        const nameMap: Record<string, SeatInfo> = {}
+        for (const a of data.assignments || []) {
+          const studentId = a.studentId || (a as any).student_id
+          if (!studentId) continue
+
+          const seatNumberRaw = (a.seatNumber ?? (a as any).seat_number) ?? null
+          const seatNumber =
+            seatNumberRaw === null || seatNumberRaw === undefined
+              ? null
+              : typeof seatNumberRaw === 'number'
+                ? seatNumberRaw
+                : Number.isFinite(Number(seatNumberRaw))
+                  ? Number(seatNumberRaw)
+                  : null
+          const grade = a.studentGrade ?? (a as any).student_grade ?? null
+          const newEntry: SeatInfo = {
+            seatNumber,
+            checkInTime: a.checkInTime ?? null,
+            sessionStartTime: a.sessionStartTime ?? null,
+            status: a.status ?? null,
+            updatedAt: a.updatedAt ?? null,
+            grade,
+          }
+
+          const existing = map[studentId]
+          const isValidSeat = typeof seatNumber === 'number' && seatNumber > 0 && seatNumber !== 99
+          const existingValid = existing && typeof existing.seatNumber === 'number' && existing.seatNumber > 0 && existing.seatNumber !== 99
+
+          // only overwrite if no existing, or new has valid seat and existing is invalid/empty
+          if (!existing || (isValidSeat && !existingValid)) {
+            map[studentId] = newEntry
+          }
+
+          const studentName = a.studentName || (a as any).student_name
+          if (studentName) {
+            const existingName = nameMap[studentName]
+            if (!existingName || (isValidSeat && !(existingName.seatNumber && existingName.seatNumber !== 99))) {
+              nameMap[studentName] = newEntry
+            }
+          }
+
+          if (isValidSeat) {
+            ids.push(studentId)
+          }
+        }
+        setAssignedStudentIds(Array.from(new Set(ids)))
+        setSeatMap(map)
+        setSeatNameMap(nameMap)
+        setRawAssignments(data.assignments || [])
+      } catch (e) {
+        // 실패해도 전체 목록 표시 (필터 없이)
+        setAssignedStudentIds([])
+      }
+    }
+    loadSeatAssignments()
+  }, [])
 
   // Infinite scroll observer
   useEffect(() => {
@@ -202,7 +361,7 @@ export default function AttendancePage() {
           setIsLoadingMore(true)
           try {
             const nextPage = page + 1
-            await fetchAttendancePage(nextPage)
+            await fetchAttendancePage(nextPage, selectedDate)
             setPage(nextPage)
           } catch (err) {
             toast({ title: '추가 로드 실패', description: err instanceof Error ? err.message : undefined, variant: 'destructive' })
@@ -215,9 +374,8 @@ export default function AttendancePage() {
     )
     observer.observe(historySentinel)
     return () => observer.disconnect()
-  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel])
+  }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel, selectedDate])
 
-  const [selectedClass, setSelectedClass] = useState<string>('all')
   const [userRole, setUserRole] = useState<string | null>(null)
   const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null)
 
@@ -235,7 +393,7 @@ export default function AttendancePage() {
   }, [])
 
   const statusMap = {
-    scheduled: { label: '수업예정', variant: 'outline' as const, icon: Calendar, color: 'text-gray-600' },
+    scheduled: { label: '수업예정', variant: 'outline' as const, icon: Clock, color: 'text-gray-600' },
     present: { label: '출석', variant: 'default' as const, icon: CheckCircle, color: 'text-green-600' },
     late: { label: '지각', variant: 'secondary' as const, icon: Clock, color: 'text-orange-600' },
     absent: { label: '결석', variant: 'destructive' as const, icon: XCircle, color: 'text-red-600' },
@@ -295,125 +453,193 @@ export default function AttendancePage() {
     }
   }
 
+  const formatTime = (iso: string | null | undefined) => {
+    if (!iso) return '-'
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return '-'
+    return format(d, 'HH:mm')
+  }
+
+  const formatSeatNumber = (seat?: number | null) => {
+    if (!seat || seat === 99) return '-'
+    return seat
+  }
+
+  const getSeatInfo = (studentId?: string | null, studentName?: string | null) => {
+    if (studentId && seatMap[studentId]) return seatMap[studentId]
+    if (studentName && seatNameMap[studentName]) return seatNameMap[studentName]
+    // fallback: search raw assignments by name
+    if (studentName && rawAssignments.length > 0) {
+      const found = rawAssignments.find((a) => (a.studentName || a.student_name) === studentName)
+      if (found) {
+        return {
+          seatNumber: found.seatNumber ?? found.seat_number ?? null,
+          checkInTime: found.checkInTime ?? null,
+          sessionStartTime: found.sessionStartTime ?? null,
+          status: found.status ?? null,
+          updatedAt: found.updatedAt ?? null,
+          grade: found.studentGrade ?? found.student_grade ?? null,
+        }
+      }
+    }
+    return undefined
+  }
+
+  const getAttendanceTimes = (studentId?: string | null) => {
+    if (!studentId) return { checkIn: null, checkOut: null }
+    const att = attendanceByStudent[studentId]
+    return {
+      checkIn: (att as any)?.check_in_time || null,
+      checkOut: (att as any)?.check_out_time || null,
+    }
+  }
+
   const todayColumns: ColumnDef<TodayStudent>[] = [
-  {
-    accessorKey: 'student_name',
-    header: '학생 이름',
-    cell: ({ row }) => (
-      <div className="flex items-center gap-2">
-        <User className="h-4 w-4 text-muted-foreground" />
-        <span className="font-medium">{row.getValue('student_name')}</span>
-      </div>
-    ),
-  },
     {
-      accessorKey: 'classes',
-      header: '반',
+      accessorKey: 'student_name',
+      header: '학생 이름',
+      cell: ({ row }) => (
+        <button
+          type="button"
+          onClick={() => fetchCommuteSchedules(row.original.student_id, row.original.student_name)}
+          className="flex items-center gap-2 hover:text-primary"
+        >
+          <User className="h-4 w-4 text-muted-foreground" />
+          <span className="font-medium underline decoration-dotted underline-offset-4">
+            {row.getValue('student_name')}
+          </span>
+        </button>
+      ),
+    },
+    {
+      id: 'grade',
+      header: '학년',
       cell: ({ row }) => {
-        const classes = row.original.classes
+        const seat = getSeatInfo(row.original.student_id, row.original.student_name)
+        if (!seat?.grade && seat?.grade !== 0) return '-'
+        return <span>{seat.grade}학년</span>
+      },
+    },
+    {
+      id: 'check_in',
+      header: '등원 시간',
+      cell: ({ row }) => {
+        const logs = dailyLogsByStudent[row.original.student_id] || []
+        const seat = getSeatInfo(row.original.student_id, row.original.student_name)
+        const fallback = formatTime(getAttendanceTimes(row.original.student_id).checkIn || seat?.checkInTime || seat?.sessionStartTime)
+        if (logs.length === 0) return <span>{fallback}</span>
         return (
-          <div className="flex flex-col gap-1">
-            {classes.map((c) => (
-              <Badge key={c.class_id} variant="secondary">{c.class_name}</Badge>
+          <div className="flex flex-col gap-0.5">
+            {logs.map((l, idx) => (
+              <span key={idx}>{formatTime(l.in)}</span>
             ))}
           </div>
         )
+      },
     },
-  },
-  {
-    id: 'teacher_name',
-    header: '선생님',
-    cell: ({ row }) => {
-      const classes = row.original.classes
-      return (
-        <div className="flex flex-col gap-1 text-sm">
-          {classes.map((c) => (
-            <span key={c.class_id}>{c.teacher_name || '-'}</span>
-          ))}
-        </div>
-      )
-    },
-  },
-  {
-    id: 'scheduled_time',
-    header: '수업 시간',
-    cell: ({ row }) => {
-      const classes = row.original.classes
-      return (
-        <div className="flex flex-col gap-1 text-sm">
-          {classes.map((c) => (
-            <div key={c.class_id} className="flex items-center gap-2">
-              <Calendar className="h-3 w-3 text-muted-foreground" />
-              <span>{c.scheduled_time || '-'}</span>
-            </div>
-          ))}
-        </div>
-      )
-    },
-  },
-  {
-    id: 'status',
-    header: '출결 상태',
-    cell: ({ row }) => {
-      const classes = row.original.classes
-      return (
-        <div className="flex flex-col gap-1">
-          {classes.map((c) => {
-            const s = c.status as keyof typeof statusMap
-            const statusInfo = statusMap[s]
-            const Icon = statusInfo.icon
-            return (
-              <Badge key={c.class_id} variant={statusInfo.variant} className="gap-1 w-fit">
-                <Icon className="h-3 w-3" />
-                {statusInfo.label}
-              </Badge>
-            )
-          })}
-        </div>
-      )
-    },
-  },
-  {
-    id: 'actions',
-    header: '상태 변경',
-    cell: ({ row }) => {
-      const classes = row.original.classes
-      return (
-        <div className="flex flex-col gap-1">
-          {classes.map((c) => (
-            <Select
-              key={c.class_id}
-              value={c.status}
-              onValueChange={(value) =>
-                handleStatusChange(c.id, row.original.student_id, c.class_id, value as AttendanceStatus)
-              }
-            >
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="scheduled">수업예정</SelectItem>
-                <SelectItem value="present">출석</SelectItem>
-                <SelectItem value="late">지각</SelectItem>
-                <SelectItem value="absent">결석</SelectItem>
-                <SelectItem value="excused">인정결석</SelectItem>
-              </SelectContent>
-            </Select>
-          ))}
-        </div>
-      )
-    },
-  },
-]
-
-  const teacherFilteredAttendance = todayAttendance
-
-  const filteredTodayAttendance =
-    selectedClass === 'all'
-      ? teacherFilteredAttendance
-      : teacherFilteredAttendance.filter((record) =>
-          record.classes.some((c) => c.class_id === selectedClass)
+    {
+      id: 'check_out',
+      header: '하원 시간',
+      cell: ({ row }) => {
+        const logs = dailyLogsByStudent[row.original.student_id] || []
+        const seat = getSeatInfo(row.original.student_id, row.original.student_name)
+        const times = getAttendanceTimes(row.original.student_id)
+        const fallbackIsOut = Boolean(times.checkOut) || seat?.status === 'checked_out'
+        const fallbackTime = times.checkOut || seat?.updatedAt || seat?.sessionStartTime
+        if (logs.length === 0) return <span>{fallbackIsOut ? formatTime(fallbackTime) : '-'}</span>
+        return (
+          <div className="flex flex-col gap-0.5">
+            {logs.map((l, idx) => (
+              <span key={idx}>{l.out ? formatTime(l.out) : '-'}</span>
+            ))}
+          </div>
         )
+      },
+    },
+    {
+      id: 'seat',
+      header: '좌석 번호',
+      cell: ({ row }) => {
+        const seat = getSeatInfo(row.original.student_id, row.original.student_name)
+        return <span>{formatSeatNumber(seat?.seatNumber ?? null)}</span>
+      },
+    },
+  ]
+
+  // 좌석 배정 정보가 있으면 그 학생들로 필터, 없으면 전체 표시
+  const seatFilteredAttendance = useMemo(() => {
+    if (assignedStudentIds.length === 0) return todayAttendance
+    const set = new Set(assignedStudentIds)
+    return todayAttendance.filter((record) => set.has(record.student_id))
+  }, [assignedStudentIds, todayAttendance])
+
+  const filteredAttendanceHistory = useMemo(() => {
+    if (assignedStudentIds.length === 0) return attendanceHistory
+    const set = new Set(assignedStudentIds)
+    return attendanceHistory.filter((r) => set.has(r.student_id))
+  }, [attendanceHistory, assignedStudentIds])
+
+  const weeklyStats = useMemo(() => computeWeeklyFromHistory(filteredAttendanceHistory), [filteredAttendanceHistory, computeWeeklyFromHistory])
+  const monthlyTrend = useMemo(() => buildMonthlyTrend(filteredAttendanceHistory), [filteredAttendanceHistory, buildMonthlyTrend])
+
+  const attendanceByStudent = useMemo(() => {
+    const map: Record<string, Attendance> = {}
+    filteredAttendanceHistory.forEach((r) => {
+      if (!r.student_id) return
+      if (!map[r.student_id]) map[r.student_id] = r
+    })
+    return map
+  }, [filteredAttendanceHistory])
+
+  // 학생별, 선택 날짜별 복수 등/하원 시각 스택용 맵
+  const dailyLogsByStudent = useMemo(() => {
+    const map: Record<string, { in: string | null; out: string | null }[]> = {}
+    const isSameLocalDate = (iso: string | null | undefined) => {
+      if (!iso) return false
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return false
+      const local = d.toISOString().slice(0, 10) // still UTC; adjust by timezone offset manually
+      const offsetMs = d.getTimezoneOffset() * 60 * 1000
+      const localDate = new Date(d.getTime() - offsetMs).toISOString().slice(0, 10)
+      return localDate === selectedDate
+    }
+
+    // attendance_logs 우선 (여러 회차 존재)
+    dailyLogs.forEach((l) => {
+      if (!l.student_id) return
+      if (!isSameLocalDate(l.check_in_time)) return
+      if (!map[l.student_id]) map[l.student_id] = []
+      map[l.student_id].push({ in: l.check_in_time, out: l.check_out_time })
+    })
+
+    // attendance 테이블로 보강 (중복 방지)
+    filteredAttendanceHistory
+      .filter((r) => r.date === selectedDate)
+      .forEach((r) => {
+        if (!r.student_id) return
+        if (!map[r.student_id]) map[r.student_id] = []
+        const exists = map[r.student_id].some((l) => l.in === (r as any).check_in_time && l.out === (r as any).check_out_time)
+        if (!exists) {
+          map[r.student_id].push({
+            in: (r as any).check_in_time ?? null,
+            out: (r as any).check_out_time ?? null,
+          })
+        }
+      })
+
+    // 정렬: 등원 시간 오름차순
+    Object.keys(map).forEach((k) => {
+      map[k].sort((a, b) => {
+        const ta = a.in ? new Date(a.in).getTime() : 0
+        const tb = b.in ? new Date(b.in).getTime() : 0
+        return ta - tb
+      })
+    })
+
+    return map
+  }, [dailyLogs, filteredAttendanceHistory, selectedDate])
+
+  const filteredTodayAttendance = seatFilteredAttendance
 
   // name search (옵션) - 기존 검색 인풋 값 사용 가능 시 여기에 적용할 수 있음
   const visibleTodayAttendance = useMemo(() => {
@@ -439,19 +665,32 @@ export default function AttendancePage() {
     return () => observer.disconnect()
   }, [hasMoreToday])
 
-  const todayStats = {
-    total: teacherFilteredAttendance.length,
-    scheduled: teacherFilteredAttendance.filter((r) => r.status === 'scheduled').length,
-    present: teacherFilteredAttendance.filter((r) => r.status === 'present').length,
-    late: teacherFilteredAttendance.filter((r) => r.status === 'late').length,
-    absent: teacherFilteredAttendance.filter((r) => r.status === 'absent').length,
-    excused: teacherFilteredAttendance.filter((r) => r.status === 'excused').length,
-    rate: Math.round(
-      (teacherFilteredAttendance.filter((r) => r.status === 'present' || r.status === 'excused').length /
-        teacherFilteredAttendance.length) *
-        100
-    ),
-  }
+  const todayStats = useMemo(() => {
+    const uniqueStudents = Array.from(new Set(filteredTodayAttendance.map((r) => r.student_id))).filter(Boolean)
+    // 로그가 있는 학생은 출석으로 간주, 없고 status absent면 결석
+    const presentSet = new Set<string>()
+    const absentSet = new Set<string>()
+    uniqueStudents.forEach((id) => {
+      if (!id) return
+      const logs = dailyLogsByStudent[id] || []
+      if (logs.length > 0 && logs.some((l) => l.in)) {
+        presentSet.add(id)
+      } else {
+        const status = filteredTodayAttendance.find((r) => r.student_id === id)?.status
+        if (status === 'absent') absentSet.add(id)
+      }
+    })
+
+    const total = uniqueStudents.length
+    const present = presentSet.size
+    const absent = Math.max(0, total - present)
+    const late = 0 // 더미 데이터: 지각 판정 미구현
+    const excused = 0
+    const scheduled = Math.max(0, total - present - absent)
+    const rate = total === 0 ? 0 : Math.round(((present + excused) / total) * 100)
+
+    return { total, present, late, absent, excused, scheduled, rate }
+  }, [filteredTodayAttendance, dailyLogsByStudent])
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -525,50 +764,35 @@ export default function AttendancePage() {
       <Tabs defaultValue="today">
         <TabsList>
           <TabsTrigger value="today">오늘 출결</TabsTrigger>
-          <TabsTrigger value="history">출결 기록</TabsTrigger>
-          <TabsTrigger value="stats">통계</TabsTrigger>
         </TabsList>
 
         {/* 오늘 출결 Tab */}
         <TabsContent value="today" className="space-y-4">
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div>
                   <CardTitle>오늘 출결 현황</CardTitle>
-                  <CardDescription>
-                    {format(new Date(), 'yyyy년 MM월 dd일')} - 실시간 출결 체크
-                  </CardDescription>
+                  <CardDescription>선택한 날짜 기준 실시간 출결</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" onClick={() => shiftDate(-1)} aria-label="이전 날짜">
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <div className="text-lg font-semibold whitespace-nowrap">
+                    {formatSelectedDateLabel(selectedDate)}
+                  </div>
+                  <Button variant="outline" size="icon" onClick={() => shiftDate(1)} aria-label="다음 날짜">
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={resetToToday} disabled={selectedDate === format(new Date(), 'yyyy-MM-dd')}>
+                    오늘
+                  </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              {/* 반 필터 버튼 */}
-              <div className="flex flex-wrap gap-2 mb-4">
-                <Button
-                  variant={selectedClass === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => {
-                    setSelectedClass('all')
-                    resetTodayPaging()
-                  }}
-                >
-                  전체 반
-                </Button>
-                {classOptions.map(([id, name]) => (
-                  <Button
-                    key={id}
-                    variant={selectedClass === id ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => {
-                      setSelectedClass(id)
-                      resetTodayPaging()
-                    }}
-                  >
-                    {name}
-                  </Button>
-                ))}
-              </div>
+              <p className="text-sm text-muted-foreground mb-2">좌석을 배정받은 학생만 표시됩니다.</p>
               <DataTable
                 columns={todayColumns}
                 data={visibleTodayAttendance}
@@ -587,116 +811,41 @@ export default function AttendancePage() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* 출결 기록 Tab */}
-        <TabsContent value="history" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>출결 기록</CardTitle>
-              <CardDescription>최근 출결 이력</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                 <table className="w-full text-sm">
-                   <thead>
-                     <tr className="border-b bg-muted/50">
-                       <th className="p-2 text-left">날짜</th>
-                       <th className="p-2 text-left">학생</th>
-                       <th className="p-2 text-left">반</th>
-                       <th className="p-2 text-center">상태</th>
-                       <th className="p-2 text-left">비고</th>
-                     </tr>
-                  </thead>
-                  <tbody>
-          {attendanceHistory.map((record) => {
-            const statusInfo = statusMap[record.status]
-            const Icon = statusInfo.icon
-            const studentName = record.student?.name || record.student_id
-            const className = record.class?.name || record.class_id
-            return (
-              <tr key={record.id} className="border-b">
-                <td className="p-2">{record.date}</td>
-                <td className="p-2">{studentName}</td>
-                <td className="p-2">{className}</td>
-                <td className="p-2 text-center">
-                  <Badge variant={statusInfo.variant} className="gap-1">
-                    <Icon className="h-3 w-3" />
-                    {statusInfo.label}
-                  </Badge>
-                          </td>
-                          <td className="p-2 text-muted-foreground">{record.notes || '-'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-                {hasMore && (
-                  <>
-                    <div ref={setHistorySentinel} className="h-6" />
-                    <div className="text-center text-muted-foreground text-xs py-2">
-                      {isLoadingMore ? '불러오는 중...' : ''}
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* 통계 Tab */}
-        <TabsContent value="stats" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            {/* 주간 출결 추이 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>주간 출결 추이</CardTitle>
-                <CardDescription>이번 주 일별 출결 현황</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={weeklyStats}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="present" name="출석" fill="#10b981" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="late" name="지각" fill="#f59e0b" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="absent" name="결석" fill="#ef4444" radius={[8, 8, 0, 0]} />
-                    <Bar dataKey="excused" name="인정결석" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            {/* 반별 출결률 */}
-            <Card>
-              <CardHeader>
-                <CardTitle>반별 출결률</CardTitle>
-                <CardDescription>이번 달 반별 출결률</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={classAttendanceRate}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-                    <Tooltip formatter={(value) => `${value}%`} />
-                    <Line
-                      type="monotone"
-                      dataKey="rate"
-                      name="출결률"
-                      stroke="hsl(var(--primary))"
-                      strokeWidth={2}
-                      dot={{ fill: 'hsl(var(--primary))', r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
       </Tabs>
+
+      {/* 등하원 일정 모달 */}
+      <Dialog open={scheduleModalOpen} onOpenChange={setScheduleModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>등·하원 일정</DialogTitle>
+            <DialogDescription>
+              {scheduleTarget ? `${scheduleTarget.name} 학생의 요일별 등·하원 예정 시간입니다.` : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          {scheduleLoading && <p className="text-sm text-muted-foreground">불러오는 중...</p>}
+          {!scheduleLoading && scheduleError && (
+            <p className="text-sm text-destructive">{scheduleError}</p>
+          )}
+
+          {!scheduleLoading && !scheduleError && (
+            <div className="space-y-3">
+              {(commuteSchedules || []).length === 0 && (
+                <p className="text-sm text-muted-foreground">등록된 일정이 없습니다.</p>
+              )}
+              {(commuteSchedules || []).map((sch) => (
+                <div key={sch.id || sch.weekday} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
+                  <span className="font-medium capitalize">{sch.weekday}</span>
+                  <div className="flex items-center gap-3 text-right">
+                    <span>등원 {sch.check_in_time ?? '-'}</span>
+                    <span>하원 {sch.check_out_time ?? '-'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

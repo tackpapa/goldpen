@@ -186,6 +186,28 @@ export function Sidebar() {
 
     loadOrganizationSettings()
 
+    // 서버에서 최신 org 설정을 가져와 서명 URL을 반영
+    const fetchOrg = async () => {
+      try {
+        const slug = window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+        const res = await fetch(`/api/settings?slug=${slug}`, { credentials: 'include' })
+        const data = await res.json()
+        if (res.ok && data.organization) {
+          if (data.organization.name) {
+            setOrganizationName(data.organization.name)
+            localStorage.setItem('organization_name', data.organization.name)
+          }
+          if (data.organization.logo_url) {
+            setOrganizationLogo(data.organization.logo_url)
+            localStorage.setItem('organization_logo', data.organization.logo_url)
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load organization logo', e)
+      }
+    }
+    fetchOrg()
+
     // Listen for organization settings changes
     window.addEventListener('organizationSettingsChanged', loadOrganizationSettings)
 

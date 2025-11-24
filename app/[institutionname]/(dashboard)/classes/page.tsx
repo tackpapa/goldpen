@@ -725,7 +725,7 @@ export default function ClassesPage() {
     <div className="space-y-6 p-4 md:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold">반 관리</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">수업/반 관리</h1>
           <p className="text-sm md:text-base text-muted-foreground">반 정보를 관리하세요</p>
         </div>
         <Button onClick={handleOpenDialog} className="w-full sm:w-auto">
@@ -1074,7 +1074,7 @@ export default function ClassesPage() {
               }
 
               return (
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
                   <table className="w-full">
                     <thead className="bg-muted/50">
                       <tr>

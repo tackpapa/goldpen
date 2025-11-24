@@ -69,7 +69,7 @@ export const navigationItems: NavigationItem[] = [
   },
   {
     id: 'classes',
-    name: '반 관리',
+    name: '수업/반 관리',
     href: '/classes',
     icon: BookOpen,
     badges: ['학원용'],

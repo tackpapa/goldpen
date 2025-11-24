@@ -76,11 +76,12 @@ export async function POST(request: Request) {
     }
 
     // 2) 수업 등록 학생 목록
-    const { data: enrollments, error: enrollError } = await service
-      .from('class_enrollments')
-      .select('class_id, student_id')
-      .in('class_id', classIds)
-      .eq('status', 'active')
+  const { data: enrollments, error: enrollError } = await service
+    .from('class_enrollments')
+    .select('class_id, student_id')
+    .in('class_id', classIds)
+    .eq('org_id', profile.org_id)
+    .eq('status', 'active')
 
     if (enrollError) {
       return Response.json({ error: '수강 학생 조회 실패', details: enrollError.message }, { status: 500 })

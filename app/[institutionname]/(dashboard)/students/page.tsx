@@ -91,6 +91,7 @@ export default function StudentsPage() {
   // Student detail modal state
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+  const [creditFilter, setCreditFilter] = useState<'all' | 'negative'>('all')
 
   // Fetch students from API on mount
   useEffect(() => {
@@ -233,6 +234,11 @@ export default function StudentsPage() {
       },
     },
   ]
+
+  const filteredStudents =
+    creditFilter === 'negative'
+      ? students.filter((s) => (s.credit ?? 0) < 0)
+      : students
 
   const handleOpenDialog = () => {
     reset({
@@ -466,9 +472,27 @@ export default function StudentsPage() {
         <CardContent className="pt-6 overflow-x-auto">
           <DataTable
             columns={columns}
-            data={students}
+            data={filteredStudents}
             searchKey="name"
             searchPlaceholder="학생 이름으로 검색..."
+            toolbar={
+              <div className="flex gap-2">
+                <Button
+                  variant={creditFilter === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setCreditFilter('all')}
+                >
+                  전체
+                </Button>
+                <Button
+                  variant={creditFilter === 'negative' ? 'destructive' : 'outline'}
+                  size="sm"
+                  onClick={() => setCreditFilter('negative')}
+                >
+                  미납중
+                </Button>
+              </div>
+            }
           />
         </CardContent>
       </Card>

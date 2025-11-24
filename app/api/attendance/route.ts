@@ -1,4 +1,5 @@
 import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient } from '@supabase/supabase-js'
 import { createAttendanceSchema } from '@/lib/validations/attendance'
 import { ZodError } from 'zod'
 
@@ -6,27 +7,66 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const demoOrgId = process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-
-    const { data: userProfile } = await supabase.from('users').select('org_id').eq('id', user.id).single()
-    if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-
     const { searchParams } = new URL(request.url)
+    const isDev = process.env.NODE_ENV !== 'production'
+    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
+
+    let supabase = await createAuthenticatedClient(request)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    // 서비스 롤 폴백 (개발 테스트용)
+    if ((!user || authError) && allowService) {
+      if (!supabaseUrl || !supabaseServiceKey) {
+        return Response.json({ error: '서비스 키 누락' }, { status: 500 })
+      }
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      user = { id: 'service-role' } as any
+    }
+
+    if (!user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+
+    let orgId: string | null = null
+    let userProfile: any = null
+    if (user.id === 'service-role') {
+      orgId = searchParams.get('org_id') || demoOrgId
+      if (orgId) userProfile = { org_id: orgId }
+    } else {
+      const { data: profile } = await supabase.from('users').select('org_id').eq('id', user.id).maybeSingle()
+      orgId = profile?.org_id || null
+      userProfile = profile
+    }
+    if (!orgId) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+
     const student_id = searchParams.get('student_id')
     const class_id = searchParams.get('class_id')
     const date = searchParams.get('date')
+    const targetDateParam = searchParams.get('target_date')
     const status = searchParams.get('status')
     const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 100)
     const offset = Math.max(parseInt(searchParams.get('offset') || '0', 10), 0)
     const todayStr = new Date().toISOString().slice(0, 10)
-    const weekStart = new Date()
+
+    // 기준 날짜: target_date > date > 오늘 순으로 선택
+    const selectedDateStr = (() => {
+      const raw = targetDateParam || date || todayStr
+      const d = new Date(raw)
+      // 유효하지 않은 날짜면 오늘로 폴백
+      if (Number.isNaN(d.getTime())) return todayStr
+      return d.toISOString().slice(0, 10)
+    })()
+
+    // 통계 기간 계산 (기준일 포함 뒤로 6일, 29일)
+    const selectedDate = new Date(selectedDateStr)
+    const weekStart = new Date(selectedDate)
     weekStart.setUTCDate(weekStart.getUTCDate() - 6)
     const weekStartStr = weekStart.toISOString().slice(0, 10)
-    const monthStart = new Date()
+    const monthStart = new Date(selectedDate)
     monthStart.setUTCDate(monthStart.getUTCDate() - 29)
     const monthStartStr = monthStart.toISOString().slice(0, 10)
 
@@ -34,44 +74,84 @@ export async function GET(request: Request) {
     // const targetDate = date || new Date().toISOString().slice(0, 10)
     // await ensureAbsencesForDate(supabase, userProfile.org_id, targetDate)
 
-    let query = supabase
-      .from('attendance')
-      .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
-      .eq('org_id', userProfile.org_id)
-      .order('date', { ascending: false })
+    // 공통 필터를 함수로 묶어 count/데이터 양쪽에 동일 적용
+    const withFilters = (qb: any) => {
+      let q = qb.eq('org_id', userProfile.org_id)
+      if (student_id) q = q.eq('student_id', student_id)
+      if (class_id) q = q.eq('class_id', class_id)
+      if (date) q = q.eq('date', date)
+      if (status) q = q.eq('status', status)
+      return q
+    }
 
-    if (student_id) query = query.eq('student_id', student_id)
-    if (class_id) query = query.eq('class_id', class_id)
-    if (date) query = query.eq('date', date)
-    if (status) query = query.eq('status', status)
+    // 총 건수 (무한스크롤 hasMore 정확도 향상)
+    const { count: totalCount } = await withFilters(
+      supabase.from('attendance').select('id', { count: 'exact', head: true })
+    )
+
+    let query = withFilters(
+      supabase
+        .from('attendance')
+        .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
+        .order('date', { ascending: false })
+    )
     query = query.range(offset, offset + limit - 1)
 
-    const { data: attendance, error } = await query
+    let { data: attendance, error } = await query
 
     if (error) {
       console.error('[Attendance GET] Error:', error)
       return Response.json({ error: '출결 목록 조회 실패' }, { status: 500 })
     }
 
-    // 오늘 출결 기록 (실제 체크된 것)
+    // 학생 이름이 비어있는 레코드는 한 번에 학생 테이블로 보강 (이름 대신 id가 표시되는 문제 방지)
+    const missingStudentIds = Array.from(
+      new Set(
+        (attendance || [])
+          .filter((a: any) => !a.student?.name && a.student_id)
+          .map((a: any) => a.student_id)
+      )
+    )
+    if (missingStudentIds.length > 0) {
+      const { data: studentRows } = await supabase
+        .from('students')
+        .select('id, name')
+        .in('id', missingStudentIds)
+        .eq('org_id', userProfile.org_id)
+
+      const map = new Map((studentRows || []).map((s: any) => [s.id, s.name]))
+      attendance = (attendance || []).map((a: any) => {
+        if (!a.student?.name) {
+          const name = map.get(a.student_id)
+          if (name) {
+            a.student = a.student || {}
+            a.student.name = name
+          }
+        }
+        return a
+      })
+    }
+
+    // 선택 날짜 출결 기록 (실제 체크된 것)
     const { data: todayRows } = await supabase
       .from('attendance')
       .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
       .eq('org_id', userProfile.org_id)
-      .eq('date', todayStr)
+      .eq('date', selectedDateStr)
       .order('updated_at', { ascending: false })
 
-    console.log('[Attendance GET] todayRows count', todayRows?.length || 0)
+    console.log('[Attendance GET] selectedDate', selectedDateStr, 'rows', todayRows?.length || 0)
 
-    // 오늘 요일에 맞는 수업 스케줄 조회해 선생님/시간 매핑
+    // 선택 날짜 요일에 맞는 수업 스케줄 조회해 선생님/시간 매핑
     const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
-    const todayDay = dayMap[new Date(todayStr).getDay()]
+    const todayDay = dayMap[new Date(selectedDateStr).getDay()]
     // 오늘 요일에 해당하는 수업들 (등록 + 스케줄) -> 모든 수업행 구성 후 출결 매핑
-    const { data: enrollments } = await supabase
-      .from('class_enrollments')
-      .select('class_id, student_id, classes!inner(id, name, teacher_name, schedule, org_id)')
-      .eq('status', 'active')
-      .eq('classes.org_id', userProfile.org_id)
+  const { data: enrollments } = await supabase
+    .from('class_enrollments')
+    .select('class_id, student_id, students!inner(id, name), classes!inner(id, name, teacher_name, schedule, org_id)')
+    .eq('status', 'active')
+    .eq('org_id', userProfile.org_id)
+    .eq('classes.org_id', userProfile.org_id)
 
     const scheduleMap: Record<string, { start_time: string | null; end_time: string | null; teacher_name: string | null }> = {}
     const korDayMap: Record<string, string> = {
@@ -110,10 +190,11 @@ export async function GET(request: Request) {
         const key = `${en.student_id}-${en.class_id || ''}`
         const att = attendanceMap.get(key)
         const status = att?.status || 'scheduled'
+        const studentName = att?.student?.name || en.students?.name || en.student_id
         return {
           id: att?.id || null,
           student_id: en.student_id,
-          student_name: att?.student?.name || en.student_id,
+          student_name: studentName,
           class_id: en.class_id,
           class_name: cls.name || en.class_id,
           teacher_id: null,
@@ -162,13 +243,21 @@ export async function GET(request: Request) {
         return { ...s, status: aggStatus }
       })
 
+    const fetched = attendance?.length || 0
+    const hasMore = totalCount !== null && totalCount !== undefined
+      ? offset + fetched < totalCount
+      : fetched === limit
+
     return Response.json({
       attendance,
       count: attendance?.length || 0,
+      total: totalCount ?? null,
+      hasMore,
       todayStudents,
-      weeklyStats: await buildWeeklyStats(supabase, userProfile.org_id, weekStartStr, todayStr), // 이번 주
-      studentRates: await buildStudentRates(supabase, userProfile.org_id, monthStartStr, todayStr), // 이번 달
+      weeklyStats: await buildWeeklyStats(supabase, userProfile.org_id, weekStartStr, selectedDateStr), // 선택 주간
+      studentRates: await buildStudentRates(supabase, userProfile.org_id, monthStartStr, selectedDateStr), // 선택 월간
       nextOffset: offset + (attendance?.length || 0),
+      selectedDate: selectedDateStr,
     })
   } catch (error: any) {
     console.error('[Attendance GET] Unexpected error:', error)

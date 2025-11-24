@@ -72,7 +72,7 @@ export async function POST(request: Request) {
     // 6. organizations 테이블에서 기관 정보 조회
     const { data: org, error: orgError } = await supabase
       .from('organizations')
-      .select('id, name, type')
+      .select('id, name, type, slug')
       .eq('id', userProfile.org_id)
       .single()
 
@@ -84,7 +84,19 @@ export async function POST(request: Request) {
       )
     }
 
-    // 7. 성공 응답
+    // 7. 성공 응답 + 세션 쿠키 (30일 유지)
+    const sessionPayload = JSON.stringify({
+      access_token: authData.session.access_token,
+      refresh_token: authData.session.refresh_token,
+    })
+
+    const THIRTY_DAYS = 60 * 60 * 24 * 30
+    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+    const cookie = [
+      // access/refresh 모두 포함한 JSON 패키지를 하나의 쿠키로 저장
+      `sb-auth-token=${encodeURIComponent(sessionPayload)}; Path=/; Max-Age=${THIRTY_DAYS}; HttpOnly; SameSite=Lax${secureFlag}`,
+    ]
+
     return Response.json(
       {
         user: {
@@ -97,12 +109,14 @@ export async function POST(request: Request) {
         org: {
           id: org.id,
           name: org.name,
+          slug: org.slug,
           type: org.type,
         },
       },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Set-Cookie': cookie,
         },
       }
     )

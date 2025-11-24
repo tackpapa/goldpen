@@ -173,6 +173,7 @@ export function BasicInfoTab({
           school: localStudent.school,
           parent_name: localStudent.parent_name,
           parent_phone: localStudent.parent_phone,
+          email: localStudent.email,
           student_code: localStudent.student_code,
           notes: localStudent.notes,
           branch_name: localStudent.branch_name || branchValue,

@@ -242,7 +242,7 @@ export default function ConsultationsPage() {
       cell: ({ row }) => {
         const consultation = row.original
         return (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant="ghost"
               size="sm"
@@ -262,11 +262,38 @@ export default function ConsultationsPage() {
               <ListPlus className="mr-2 h-4 w-4" />
               대기리스트 추가
             </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => handleDeleteConsultation(consultation)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              삭제
+            </Button>
           </div>
         )
       },
     },
   ]
+
+  const handleDeleteConsultation = async (consultation: Consultation) => {
+    if (!confirm(`상담 “${consultation.student_name}” 기록을 삭제할까요?`)) return
+    try {
+      const res = await fetch(`/api/consultations/${consultation.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        toast({ title: '삭제 실패', description: err.error || '상담 삭제에 실패했습니다.', variant: 'destructive' })
+        return
+      }
+      setConsultations((prev) => prev.filter((c) => c.id !== consultation.id))
+      toast({ title: '삭제 완료', description: '상담 기록이 삭제되었습니다.' })
+    } catch (error) {
+      toast({ title: '삭제 실패', description: '서버와 통신할 수 없습니다.', variant: 'destructive' })
+    }
+  }
 
   const handleViewDetail = (consultation: Consultation) => {
     setSelectedConsultation(consultation)

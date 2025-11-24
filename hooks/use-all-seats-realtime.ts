@@ -21,12 +21,30 @@ export function useAllSeatsRealtime(studentIds: string[]) {
 
   const supabase = useMemo(() => createClient(), [])
   const today = new Date().toISOString().split('T')[0]
+  const [orgId, setOrgId] = useState<string | null>(null)
 
   useEffect(() => {
     if (studentIds.length === 0) {
       setStatus({ sleepRecords: new Map(), outingRecords: new Map(), loading: false })
       return
     }
+
+    const fetchOrg = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        const json = await res.json()
+        setOrgId(json?.org_id || json?.orgId || null)
+      } catch {
+        setOrgId(null)
+      }
+    }
+
+    fetchOrg()
+  }, [studentIds.join(',')])
+
+  useEffect(() => {
+    if (studentIds.length === 0) return
+    if (!orgId) return
 
     async function loadAllStatus() {
       try {
@@ -40,6 +58,7 @@ export function useAllSeatsRealtime(studentIds: string[]) {
           .from('sleep_records')
           .select('*')
           .in('student_id', studentIds)
+          .eq('org_id', orgId)
           .eq('date', today)
           .eq('status', 'sleeping')
 
@@ -48,6 +67,7 @@ export function useAllSeatsRealtime(studentIds: string[]) {
           .from('outing_records')
           .select('*')
           .in('student_id', studentIds)
+          .eq('org_id', orgId)
           .eq('date', today)
           .eq('status', 'out')
 
@@ -93,6 +113,7 @@ export function useAllSeatsRealtime(studentIds: string[]) {
           event: '*',
           schema: 'public',
           table: 'sleep_records',
+          filter: `org_id=eq.${orgId}`,
         },
         async (payload) => {
           console.log('💤 Sleep record changed:', payload)
@@ -144,6 +165,7 @@ export function useAllSeatsRealtime(studentIds: string[]) {
           event: '*',
           schema: 'public',
           table: 'outing_records',
+          filter: `org_id=eq.${orgId}`,
         },
         async (payload) => {
           console.log('🚪 Outing record changed:', payload)

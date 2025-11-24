@@ -1,6 +1,6 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { ZodError } from 'zod'
 import * as z from 'zod'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -17,31 +17,16 @@ const createSeatSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { searchParams } = new URL(request.url)
     const room_id = searchParams.get('room_id')
     const status = searchParams.get('status')
 
-    let query = supabase
+    let query = db
       .from('seats')
       .select('*, rooms(name), students(name)')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .order('seat_number', { ascending: true })
 
     if (room_id) query = query.eq('room_id', room_id)
@@ -63,31 +48,16 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createSeatSchema.parse(body)
 
-    const { data: seat, error: createError } = await supabase
+    const { data: seat, error: createError } = await db
       .from('seats')
       .insert({
         ...validated,
-        org_id: userProfile.org_id
+        org_id: orgId
       })
       .select()
       .single()

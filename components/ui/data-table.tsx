@@ -30,6 +30,7 @@ interface DataTableProps<TData, TValue> {
   searchKey?: string
   searchPlaceholder?: string
   disablePagination?: boolean
+  toolbar?: React.ReactNode
 }
 
 export function DataTable<TData, TValue>({
@@ -38,6 +39,7 @@ export function DataTable<TData, TValue>({
   searchKey,
   searchPlaceholder = "검색...",
   disablePagination = false,
+  toolbar,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([])
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([])
@@ -65,16 +67,21 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-3 md:space-y-4">
-      {searchKey && (
-        <div className="flex items-center">
-          <Input
-            placeholder={searchPlaceholder}
-            value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
-            onChange={(event) =>
-              table.getColumn(searchKey)?.setFilterValue(event.target.value)
-            }
-            className="w-full md:max-w-sm text-sm md:text-base"
-          />
+      {(searchKey || toolbar) && (
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          {searchKey && (
+            <div className="flex items-center">
+              <Input
+                placeholder={searchPlaceholder}
+                value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
+                onChange={(event) =>
+                  table.getColumn(searchKey)?.setFilterValue(event.target.value)
+                }
+                className="w-full md:max-w-sm text-sm md:text-base"
+              />
+            </div>
+          )}
+          {toolbar && <div className="flex items-center gap-2">{toolbar}</div>}
         </div>
       )}
       <div className="rounded-md border overflow-hidden">

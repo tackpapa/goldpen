@@ -734,10 +734,12 @@ export default function SeatsPage() {
   useEffect(() => {
     const fetchSeatConfigAndAssignments = async () => {
       try {
-        // Fetch config and assignments in parallel
+        // Fetch config and assignments in parallel (개발 시 service=1 + demo org 폴백)
+        const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+        const serviceQs = process.env.NODE_ENV !== 'production' ? `?service=1&orgId=${demoOrgId}` : ''
         const [configRes, assignmentsRes] = await Promise.all([
-          fetch('/api/seat-config', { credentials: 'include' }),
-          fetch('/api/seat-assignments', { credentials: 'include' }),
+          fetch(`/api/seat-config${serviceQs}`, { credentials: 'include' }),
+          fetch(`/api/seat-assignments${serviceQs}`, { credentials: 'include' }),
         ])
 
         const configData = await configRes.json()
@@ -850,16 +852,27 @@ export default function SeatsPage() {
   const allStudentIds = seats.filter(s => s.student_id).map(s => s.student_id!)
   const { sleepRecords, outingRecords } = useAllSeatsRealtime(allStudentIds)
 
-  // Subscribe to call_records
+  // Subscribe to call_records (org 스코프)
   useEffect(() => {
     const supabase = createClient()
+    let orgId: string | null = null
+
     const today = new Date().toISOString().split('T')[0]
 
-    // Initial fetch
+    const fetchOrg = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        const json = await res.json()
+        orgId = json?.org_id || json?.orgId || null
+      } catch {}
+    }
+
     const fetchCallRecords = async () => {
+      if (!orgId) return
       const { data, error } = await supabase
         .from('call_records')
         .select('*')
+        .eq('org_id', orgId)
         .eq('date', today)
         .in('status', ['calling', 'acknowledged'])
 
@@ -877,79 +890,93 @@ export default function SeatsPage() {
       }
     }
 
-    fetchCallRecords()
-
-    // Subscribe to changes
-    const channel = supabase
-      .channel('call-records-all')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'call_records',
-          filter: `date=eq.${today}`,
-        },
-        (payload) => {
-          console.log('Call record change (seats page):', payload)
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const record = payload.new as CallRecord
-            setCallRecords((prev) => {
-              const newMap = new Map(prev)
-              if (record.status === 'calling' || record.status === 'acknowledged') {
-                newMap.set(record.seat_number, record)
-              } else {
+    const setupRealtime = () => {
+      if (!orgId) return null
+      return supabase
+        .channel('call-records-all')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'call_records',
+            filter: `org_id=eq.${orgId}`,
+          },
+          (payload) => {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const record = payload.new as CallRecord
+              setCallRecords((prev) => {
+                const newMap = new Map(prev)
+                if (record.status === 'calling' || record.status === 'acknowledged') {
+                  newMap.set(record.seat_number, record)
+                } else {
+                  newMap.delete(record.seat_number)
+                }
+                return newMap
+              })
+            } else if (payload.eventType === 'DELETE') {
+              const record = payload.old as CallRecord
+              setCallRecords((prev) => {
+                const newMap = new Map(prev)
                 newMap.delete(record.seat_number)
-              }
-              return newMap
-            })
-          } else if (payload.eventType === 'DELETE') {
-            const record = payload.old as CallRecord
-            setCallRecords((prev) => {
-              const newMap = new Map(prev)
-              newMap.delete(record.seat_number)
-              return newMap
-            })
+                return newMap
+              })
+            }
           }
-        }
-      )
-      .subscribe()
+        )
+        .subscribe()
+    }
+
+    let channel: any
+
+    fetchOrg().then(() => {
+      fetchCallRecords()
+      channel = setupRealtime()
+    })
 
     return () => {
-      channel.unsubscribe()
+      channel?.unsubscribe()
     }
   }, [])
 
-  // Subscribe to manager_calls
+  // Subscribe to manager_calls (org 스코프)
   useEffect(() => {
     const supabase = createClient()
+    let orgId: string | null = null
 
-    // Subscribe to changes
-    const channel = supabase
-      .channel('manager-calls-all')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'manager_calls',
-        },
-        (payload) => {
-          console.log('📞 [Manager Call] Received:', payload)
-          const record = payload.new as any
-          setManagerCallAlert({
-            seatNumber: record.seat_number,
-            studentName: record.student_name || '학생',
-          })
-        }
-      )
-      .subscribe((status) => {
-        console.log('🔌 [Manager Call] Subscription status:', status)
-      })
-
-    return () => {
-      channel.unsubscribe()
+    const fetchOrg = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include' })
+        const json = await res.json()
+        orgId = json?.org_id || json?.orgId || null
+      } catch {}
     }
+
+    let channel: any
+    fetchOrg().then(() => {
+      if (!orgId) return
+      channel = supabase
+        .channel('manager-calls-all')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'manager_calls',
+            filter: `org_id=eq.${orgId}`,
+          },
+          (payload) => {
+            const record = payload.new as any
+            setManagerCallAlert({
+              seatNumber: record.seat_number,
+              studentName: record.student_name || '학생',
+            })
+          }
+        )
+        .subscribe()
+    })
+
+    return () => channel?.unsubscribe()
   }, [])
 
   // Play alarm when manager call is received
@@ -1061,6 +1088,11 @@ export default function SeatsPage() {
 
     // Update sleep record status to 'awake' in database
     if (sleepAlertInfo) {
+      if (!orgId) {
+        console.error('Org ID missing; cannot update sleep_records')
+        setSleepAlertOpen(false)
+        return
+      }
       try {
         const supabase = createClient()
         const today = new Date().toISOString().split('T')[0]
@@ -1071,6 +1103,7 @@ export default function SeatsPage() {
             wake_time: new Date().toISOString(),
             status: 'awake'
           })
+          .eq('org_id', orgId)
           .eq('seat_number', sleepAlertInfo.seatNumber)
           .eq('date', today)
           .eq('status', 'sleeping')
@@ -1578,8 +1611,11 @@ export default function SeatsPage() {
       }
 
       toast({
-        title: '출결 상태 변경',
-        description: `${seat.number}번 좌석 - ${seat.student_name} (${newStatus === 'checked_in' ? '등원' : '하원'})`,
+        title: newStatus === 'checked_in' ? '등원 처리 완료' : '하원 처리 완료',
+        description:
+          newStatus === 'checked_in'
+            ? `${seat.student_name || '학생'}님, 오늘도 열공하세요!`
+            : `${seat.student_name || '학생'}님, 수고했어요.`,
       })
     } catch (error) {
       console.error('Failed to toggle attendance:', error)

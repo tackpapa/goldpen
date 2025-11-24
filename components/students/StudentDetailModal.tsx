@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { Student } from '@/lib/types/database'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -41,6 +42,13 @@ export function StudentDetailModal({
     open && student ? student.id : null
   )
 
+  // 크레딧 탭 진입 시 최신 사용 내역을 보장하기 위해 재조회
+  useEffect(() => {
+    if (activeTab === 'class-credits' && open && student) {
+      refetch()
+    }
+  }, [activeTab, open, student, refetch])
+
   // 결제 완료 후 데이터 리프레시 및 결제내역 탭으로 이동
   const handlePaymentComplete = () => {
     refetch()
@@ -72,6 +80,7 @@ export function StudentDetailModal({
               </button>
             </div>
           </div>
+          <DialogDescription className="sr-only">학생 상세 정보 모달</DialogDescription>
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">

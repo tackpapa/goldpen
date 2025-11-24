@@ -14,6 +14,7 @@ export interface User {
 export interface Organization {
   id: string
   name: string
+  slug?: string
   type: 'academy' | 'learning_center' | 'study_cafe' | 'tutoring'
 }
 
@@ -39,30 +40,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [org, setOrg] = useState<Organization | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
 
   // 세션 확인 함수
   const refreshSession = useCallback(async () => {
     try {
+      // 브라우저에 저장된 supabase 세션에서 토큰 우선 확보
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: sessionData } = await supabase.auth.getSession()
+      const bearer = sessionData.session?.access_token || accessToken || undefined
+
       const response = await fetch('/api/auth/me', {
         method: 'GET',
         credentials: 'include', // 쿠키 포함
+        headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined,
       })
 
       if (response.ok) {
         const data = await response.json()
-        setUser(data.user)
-        setOrg(data.org)
-      } else {
-        // 401은 정상 (로그인 안된 상태) - 에러 로그 출력 안함
-        setUser(null)
-        setOrg(null)
+        setUser(data.user || null)
+        setOrg(data.org || null)
+        if (data.user && sessionData.session?.access_token) {
+          setAccessToken(sessionData.session.access_token)
+        } else {
+          setAccessToken(null)
+        }
       }
     } catch (error) {
       // 네트워크 에러만 로그 출력
       setUser(null)
       setOrg(null)
+      setAccessToken(null)
     }
-  }, [])
+  }, [accessToken])
 
   // 초기 세션 확인
   useEffect(() => {
@@ -97,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             access_token: data.session.access_token,
             refresh_token: data.session.refresh_token,
           })
+          setAccessToken(data.session.access_token)
         }
 
         setUser(data.user)

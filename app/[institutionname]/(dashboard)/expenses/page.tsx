@@ -62,15 +62,23 @@ import { format } from 'date-fns'
 
 
 export default function ExpensesPage() {
-  const { toast } = useToast()
+const { toast } = useToast()
+  const categoryColorPalette = [
+    '#2563eb', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#14b8a6', '#a855f7', '#64748b'
+  ]
   const [selectedPeriod, setSelectedPeriod] = useState('6months')
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([])
   const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpenseSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [expenseFilter, setExpenseFilter] = useState<'all' | 'monthly' | 'weekly' | 'one-time'>('all')
-  const [selectedMonth, setSelectedMonth] = useState('2024-10')
+  const today = new Date()
+  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+  const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('전체')
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
 
   // Expense creation dialog state
   const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false)
@@ -85,9 +93,23 @@ export default function ExpensesPage() {
   })
 
   useEffect(() => {
-    // Load expense categories from localStorage
-    const categories = expenseCategoryManager.getCategories()
-    setExpenseCategories(categories)
+    // Load expense categories: 우선 로컬, 이어서 서버 최신 값으로 덮어쓰기
+    setExpenseCategories(expenseCategoryManager.getCategories())
+
+    const loadCategories = async () => {
+      try {
+        const res = await fetch(`/api/settings/expense-categories?slug=${slug}`, { credentials: 'include' })
+        const data = await res.json()
+        if (res.ok && data.categories) {
+          expenseCategoryManager.setCategories(data.categories)
+          setExpenseCategories(expenseCategoryManager.getCategories())
+        }
+      } catch (_) {
+        // 네트워크 실패 시 로컬 값 유지
+        setExpenseCategories(expenseCategoryManager.getCategories())
+      }
+    }
+    loadCategories()
 
     // Fetch expenses from API
     const fetchExpenses = async () => {
@@ -102,6 +124,15 @@ export default function ExpensesPage() {
         if (response.ok) {
           setExpenseRecords(data.expenseRecords || [])
           setMonthlyExpenses(data.monthlyExpenses || [])
+
+          // 드롭다운에 최신 달이 없을 때 대비해 최신 데이터 달로 설정
+          const months = (data.monthlyExpenses || []).map(m => m.month)
+          if (months.length > 0) {
+            const latest = months[months.length - 1]
+            setSelectedMonth(latest)
+          } else {
+            setSelectedMonth(currentMonth)
+          }
         } else {
           toast({ title: '지출 데이터 로드 실패', variant: 'destructive' })
         }
@@ -113,6 +144,17 @@ export default function ExpensesPage() {
     }
     fetchExpenses()
   }, [toast])
+
+  const refreshExpenseCategories = async () => {
+    try {
+      const res = await fetch(`/api/settings/expense-categories?slug=${slug}`, { credentials: 'include' })
+      const data = await res.json()
+      if (res.ok && data.categories) {
+        expenseCategoryManager.setCategories(data.categories)
+        setExpenseCategories(expenseCategoryManager.getCategories())
+      }
+    } catch (_) {}
+  }
 
   // Computed values from monthlyExpenses
   const latestMonth = monthlyExpenses[monthlyExpenses.length - 1] || {
@@ -135,6 +177,13 @@ export default function ExpensesPage() {
     ? latestMonth.category_expenses[0]
     : { category_name: '지출 없음', amount: 0, percentage: 0 }
 
+  const monthOptions = Array.from(new Set([
+    ...monthlyExpenses.map(m => m.month),
+    currentMonth,
+  ].filter(Boolean)))
+    .sort()
+    .reverse()
+
   // Chart data transformations
   const trendData = monthlyExpenses.map(item => ({
     month: item.month.slice(5),
@@ -153,13 +202,22 @@ export default function ExpensesPage() {
   })
 
   // Get colors for each category
-  const getCategoryColor = (categoryName: string) => {
+  const hashColorIndex = (name: string) => {
+    let hash = 0
+    for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i)
+    return Math.abs(hash) % categoryColorPalette.length
+  }
+
+  const getCategoryColor = (categoryName: string, index?: number) => {
     const category = expenseCategories.find(cat => cat.name === categoryName)
-    return category?.color || '#6b7280'
+    if (category?.color) return category.color
+    const idx = typeof index === 'number' ? index % categoryColorPalette.length : hashColorIndex(categoryName)
+    return categoryColorPalette[idx]
   }
 
   // Handle expense creation
   const handleCreateExpense = () => {
+    refreshExpenseCategories()
     setExpenseForm({
       category_id: '',
       custom_category_name: '',
@@ -218,7 +276,7 @@ export default function ExpensesPage() {
   }
 
   // Handle save expense
-  const handleSaveExpense = () => {
+  const handleSaveExpense = async () => {
     // 직접 입력인 경우 custom_category_name 체크
     const isCustomCategory = expenseForm.category_id === 'custom'
     const categoryName = isCustomCategory
@@ -245,31 +303,45 @@ export default function ExpensesPage() {
       return
     }
 
-    const newExpense: ExpenseRecord = {
-      id: `expense-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      org_id: 'org-1', // TODO: Get from context
-      category_id: expenseForm.category_id,
-      category_name: categoryName,
-      amount: parseFloat(expenseForm.amount),
-      expense_date: expenseForm.expense_date,
-      is_recurring: expenseForm.is_recurring,
-      recurring_type: expenseForm.recurring_type || undefined,
-      notes: expenseForm.notes || undefined,
+    try {
+      const response = await fetch('/api/expenses', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          category: categoryName,
+          amount: parseFloat(expenseForm.amount),
+          description: `${categoryName}`,
+          expense_date: expenseForm.expense_date,
+          notes: expenseForm.notes || undefined,
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result.error || '지출 저장 실패')
+      }
+
+      const saved: ExpenseRecord = {
+        ...result.expense,
+        category_id: result.expense?.category_id || categoryName,
+        category_name: result.expense?.category_name || categoryName,
+        is_recurring: false,
+      }
+
+      const updatedRecords = [saved, ...expenseRecords]
+      setExpenseRecords(updatedRecords)
+      setMonthlyExpenses(recomputeMonthly(updatedRecords))
+      setSelectedMonth(saved.expense_date.slice(0, 7))
+
+      toast({
+        title: '지출 등록 완료',
+        description: `${categoryName} - ₩${parseFloat(expenseForm.amount).toLocaleString()} 지출이 등록되었습니다.`,
+      })
+      setIsExpenseDialogOpen(false)
+    } catch (err: any) {
+      toast({ title: '저장 실패', description: err.message, variant: 'destructive' })
     }
-
-    // Optimistically 반영
-    const updatedRecords = [newExpense, ...expenseRecords]
-    setExpenseRecords(updatedRecords)
-    setMonthlyExpenses(recomputeMonthly(updatedRecords))
-    setSelectedMonth(newExpense.expense_date.slice(0, 7))
-
-    toast({
-      title: '지출 등록 완료',
-      description: `${categoryName} - ₩${parseFloat(expenseForm.amount).toLocaleString()} 지출이 등록되었습니다.`,
-    })
-
-    setIsExpenseDialogOpen(false)
   }
 
   // Handle recurring type toggle
@@ -297,7 +369,7 @@ export default function ExpensesPage() {
             <SelectTrigger className="w-[160px]">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+              <SelectContent className="max-h-[440px] overflow-auto">
               <SelectItem value="3months">최근 3개월</SelectItem>
               <SelectItem value="6months">최근 6개월</SelectItem>
               <SelectItem value="12months">최근 12개월</SelectItem>
@@ -444,11 +516,11 @@ export default function ExpensesPage() {
                 {/* Month and Category filter */}
                 <div className="flex items-center gap-4">
                   <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue />
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="월 선택" />
                     </SelectTrigger>
                     <SelectContent>
-                      {['2024-10', '2024-09', '2024-08'].map((month) => (
+                      {monthOptions.map((month) => (
                         <SelectItem key={month} value={month}>
                           {month.split('-')[0]}년 {month.split('-')[1]}월
                         </SelectItem>
@@ -457,16 +529,29 @@ export default function ExpensesPage() {
                   </Select>
 
                   <div className="flex gap-2 flex-wrap">
-                    {['전체', '강사 급여', '임대료', '관리비', '교재/교구', '마케팅', '기타'].map((category) => (
+                    {expenseCategories.length === 0 && (
+                      <Badge variant={selectedCategoryFilter === '전체' ? 'default' : 'outline'} onClick={() => setSelectedCategoryFilter('전체')} className="cursor-pointer">
+                        전체
+                      </Badge>
+                    )}
+                    {expenseCategories.map((cat, idx) => (
                       <Badge
-                        key={category}
-                        variant={selectedCategoryFilter === category ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => setSelectedCategoryFilter(category)}
+                        key={cat.id}
+                        variant={selectedCategoryFilter === cat.name ? 'default' : 'outline'}
+                        className="cursor-pointer border"
+                        style={{ borderColor: getCategoryColor(cat.name, idx), color: getCategoryColor(cat.name, idx) }}
+                        onClick={() => setSelectedCategoryFilter(cat.name)}
                       >
-                        {category}
+                        {cat.name}
                       </Badge>
                     ))}
+                    <Badge
+                      variant={selectedCategoryFilter === '전체' ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedCategoryFilter('전체')}
+                    >
+                      전체
+                    </Badge>
                   </div>
                 </div>
 
@@ -489,17 +574,7 @@ export default function ExpensesPage() {
                         .sort((a, b) => new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime())
                         .map(expense => {
                           const category = expenseCategories.find(cat => cat.name === expense.category_name)
-                          const categoryColor = category?.color || '#6b7280'
-
-                          // Category color classes
-                          const categoryColors: Record<string, string> = {
-                            '강사 급여': 'bg-blue-100 text-blue-700',
-                            '임대료': 'bg-purple-100 text-purple-700',
-                            '관리비': 'bg-green-100 text-green-700',
-                            '교재/교구': 'bg-orange-100 text-orange-700',
-                            '마케팅': 'bg-pink-100 text-pink-700',
-                            '기타': 'bg-gray-100 text-gray-700',
-                          }
+                          const categoryColor = category?.color || getCategoryColor(expense.category_name)
 
                           return (
                             <tr key={expense.id} className="border-b last:border-0 hover:bg-muted/50">
@@ -509,7 +584,12 @@ export default function ExpensesPage() {
                               <td className="p-3">
                                 <Badge
                                   variant="secondary"
-                                  className={cn('font-medium', categoryColors[expense.category_name])}
+                                  className={cn('font-medium border')}
+                                  style={{
+                                    color: categoryColor,
+                                    borderColor: categoryColor,
+                                    backgroundColor: `${categoryColor}22`,
+                                  }}
                                 >
                                   {expense.category_name}
                                 </Badge>
@@ -570,6 +650,7 @@ export default function ExpensesPage() {
                   <XAxis dataKey="month" />
                   <YAxis />
                   <Tooltip
+                    cursor={false}
                     formatter={(value: number) => [`₩${(value * 10000).toLocaleString()}`, '지출']}
                   />
                   <Legend />
@@ -597,7 +678,7 @@ export default function ExpensesPage() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="month" />
                     <YAxis />
-                    <Tooltip formatter={(value: number) => [`${value.toFixed(1)}%`, '증감률']} />
+                    <Tooltip cursor={false} formatter={(value: number) => [`${value.toFixed(1)}%`, '증감률']} />
                     <Legend />
                     <Line
                       type="monotone"
@@ -635,6 +716,7 @@ export default function ExpensesPage() {
                         ))}
                     </Pie>
                     <Tooltip
+                      cursor={false}
                       formatter={(value: number) => `₩${value.toLocaleString()}`}
                     />
                     <Legend />
@@ -662,6 +744,7 @@ export default function ExpensesPage() {
                   <XAxis dataKey="month" />
                   <YAxis />
                   <Tooltip
+                    cursor={false}
                     formatter={(value: number) => `₩${(value * 10000).toLocaleString()}`}
                   />
                   <Legend />
@@ -669,8 +752,9 @@ export default function ExpensesPage() {
                     <Bar
                       key={cat.category_id}
                       dataKey={cat.category_name}
-                      fill={getCategoryColor(cat.category_name)}
+                      fill={getCategoryColor(cat.category_name, index)}
                       stackId="a"
+                      isAnimationActive={false}
                     />
                   ))}
                 </BarChart>
@@ -738,6 +822,7 @@ export default function ExpensesPage() {
                   <XAxis dataKey="month" />
                   <YAxis />
                   <Tooltip
+                    cursor={false}
                     formatter={(value: number) => [`₩${(value * 10000).toLocaleString()}`, '지출']}
                   />
                   <Legend />
@@ -770,12 +855,12 @@ export default function ExpensesPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {month.category_expenses.map(cat => (
+                    {month.category_expenses.map((cat, idx) => (
                       <div key={cat.category_id} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div
                             className="h-2 w-2 rounded-full"
-                            style={{ backgroundColor: getCategoryColor(cat.category_name) }}
+                            style={{ backgroundColor: getCategoryColor(cat.category_name, idx) }}
                           />
                           <span className="text-sm font-medium">{cat.category_name}</span>
                         </div>
@@ -820,28 +905,24 @@ export default function ExpensesPage() {
 
                   return (
                     <div key={cat.category_id} className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="h-4 w-4 rounded"
-                            style={{ backgroundColor: getCategoryColor(cat.category_name) }}
-                          />
-                          <div>
-                            <h4 className="font-semibold">{cat.category_name}</h4>
-                            <p className="text-sm text-muted-foreground">
-                              ₩{cat.amount.toLocaleString()} ({cat.percentage.toFixed(1)}%)
-                            </p>
-                          </div>
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="h-4 w-4 rounded"
+                          style={{ backgroundColor: getCategoryColor(cat.category_name) }}
+                        />
+                        <div>
+                          <h4 className="font-semibold">{cat.category_name}</h4>
+                          <p className="text-sm text-muted-foreground">
+                            ₩{cat.amount.toLocaleString()} ({cat.percentage.toFixed(1)}%)
+                          </p>
                         </div>
-                        <Button variant="outline" size="sm">
-                          상세 보기
-                        </Button>
                       </div>
                       <ResponsiveContainer width="100%" height={100}>
                         <LineChart data={history}>
                           <XAxis dataKey="month" hide />
                           <YAxis hide />
                           <Tooltip
+                            cursor={false}
                             formatter={(value: number) => `₩${(value * 10000).toLocaleString()}`}
                           />
                           <Line

@@ -1,10 +1,11 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { ZodError } from 'zod'
 import * as z from 'zod'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+export const preferredRegion = 'auto'
 
 const createExamSchema = z.object({
   title: z.string().min(1, '시험 제목은 필수입니다'),
@@ -16,30 +17,15 @@ const createExamSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { searchParams } = new URL(request.url)
     const exam_date = searchParams.get('exam_date')
 
-    let query = supabase
+    let query = db
       .from('exams')
       .select('*')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .order('exam_date', { ascending: false })
 
     if (exam_date) query = query.eq('exam_date', exam_date)
@@ -48,6 +34,9 @@ export async function GET(request: Request) {
 
     if (examsError) {
       console.error('[Exams GET] Error:', examsError)
+      if ((examsError as any).code === '42P01') {
+        return Response.json({ exams: [], count: 0 })
+      }
       return Response.json({ error: '시험 목록 조회 실패', details: examsError.message }, { status: 500 })
     }
 
@@ -60,28 +49,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createExamSchema.parse(body)
 
     const payload = {
-      org_id: userProfile.org_id,
+      org_id: orgId,
       title: validated.title,
       description: validated.description ?? null,
       exam_date: validated.exam_date,
@@ -90,7 +64,7 @@ export async function POST(request: Request) {
       status: validated.status ?? 'scheduled',
     }
 
-    const { data: exam, error: createError } = await supabase
+    const { data: exam, error: createError } = await db
       .from('exams')
       .insert(payload)
       .select()

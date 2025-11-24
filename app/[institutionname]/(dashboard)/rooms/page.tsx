@@ -461,7 +461,11 @@ export default function RoomsPage() {
   // Filter students by search query
   // Statistics
   const totalSchedules = schedules.length
-  const activeRooms = rooms.filter(r => r.status === 'available' || r.status === 'active').length
+  // status 값이 없거나 알 수 없는 경우도 운영 교실로 집계
+  const activeRooms = rooms.filter(r =>
+    r.status === undefined || r.status === null || r.status === '' ||
+    r.status === 'available' || r.status === 'active'
+  ).length
   const totalCapacity = rooms.reduce((sum, r) => sum + r.capacity, 0)
 
   if (loading) {

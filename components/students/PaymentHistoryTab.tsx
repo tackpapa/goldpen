@@ -24,6 +24,10 @@ export function PaymentHistoryTab({
   payments = [],
   loading = false
 }: PaymentHistoryTabProps) {
+  // 안전 필터: 현재 학생 결제만 표시
+  const filtered = payments.filter(p => p.student_id === student.id)
+  const totalAmount = filtered.reduce((sum, p) => sum + (p.amount || 0), 0)
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-48">
@@ -31,8 +35,6 @@ export function PaymentHistoryTab({
       </div>
     )
   }
-
-  const totalAmount = payments.reduce((sum, p) => sum + (p.amount || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -43,7 +45,7 @@ export function PaymentHistoryTab({
             <CardTitle className="text-sm font-medium">총 결제 횟수</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{payments.length}회</div>
+            <div className="text-2xl font-bold">{filtered.length}회</div>
           </CardContent>
         </Card>
 
@@ -59,17 +61,17 @@ export function PaymentHistoryTab({
 
       {/* 결제 내역 테이블 */}
       <Card>
-        <CardHeader>
-          <CardTitle>결제 내역</CardTitle>
-          <CardDescription>최근 결제 기록 ({payments.length}건)</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {payments.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              결제 내역이 없습니다.
-            </div>
-          ) : (
-            <div className="max-h-[500px] overflow-y-auto">
+          <CardHeader>
+            <CardTitle>결제 내역</CardTitle>
+            <CardDescription>최근 결제 기록 ({filtered.length}건)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {filtered.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                결제 내역이 없습니다.
+              </div>
+            ) : (
+              <div className="max-h-[500px] overflow-y-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -81,7 +83,7 @@ export function PaymentHistoryTab({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {[...payments].reverse().map(payment => (
+                  {[...filtered].reverse().map(payment => (
                     <TableRow key={payment.id}>
                       <TableCell className="font-medium">
                         {payment.revenue_category_name || payment.category || payment.description || '결제'}

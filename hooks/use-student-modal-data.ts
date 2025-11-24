@@ -42,7 +42,9 @@ export function useStudentModalData(
     setError(null)
 
     try {
-      const response = await fetch(`/api/students/${studentId}/modal`)
+      const response = await fetch(`/api/students/${studentId}/modal`, {
+        credentials: 'include',
+      })
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)

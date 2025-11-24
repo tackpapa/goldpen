@@ -36,6 +36,7 @@ export function ClassCreditsTab({
 
   // 마이그레이션 후: students.credit 컬럼 사용 (시간 단위)
   const currentCredits = student.credit || 0
+  const isNegative = currentCredits < 0
 
   // 모든 사용 내역 (별도로 전달받은 creditUsages 사용)
   const allUsages = creditUsages
@@ -45,16 +46,20 @@ export function ClassCreditsTab({
     <div className="space-y-6">
       {/* 크레딧 통계 */}
       <div className="grid grid-cols-2 gap-4">
-        <Card className="border-2 border-primary">
+        <Card className={`border-2 ${isNegative ? 'border-destructive bg-destructive/5' : 'border-primary'}`}>
           <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm font-medium">현재 보유 크레딧</CardTitle>
-              <Clock className="h-4 w-4 text-primary" />
+              <Clock className={`h-4 w-4 ${isNegative ? 'text-destructive' : 'text-primary'}`} />
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-primary">{currentCredits}시간</div>
-            <p className="text-xs text-muted-foreground mt-1">사용 가능</p>
+            <div className={`text-3xl font-bold ${isNegative ? 'text-destructive' : 'text-primary'}`}>
+              {currentCredits}시간
+            </div>
+            <p className={`text-xs mt-1 ${isNegative ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
+              {isNegative ? '미납중' : '사용 가능'}
+            </p>
           </CardContent>
         </Card>
 
@@ -113,7 +118,7 @@ export function ClassCreditsTab({
                         {usage.teacher_name || '선생님'}
                       </TableCell>
                       <TableCell className="text-right font-bold text-orange-600">
-                        -{usage.hours_used}시간
+                        {Math.abs(usage.hours_used || 0)}시간
                       </TableCell>
                     </TableRow>
                   ))}

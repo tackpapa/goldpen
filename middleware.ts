@@ -2,16 +2,54 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
+  // 1) 기관 slug 검증: 첫 세그먼트가 org slug여야 하고, DB organizations.slug에 존재해야 함
+  const pathSegments = request.nextUrl.pathname.split('/').filter(Boolean)
+  const isApiRequest = request.nextUrl.pathname.startsWith('/api/')
+
+  // 시스템 경로는 slug 검증 제외
+  const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico']
+  const firstSegment = pathSegments[0]
+
+  if (pathSegments.length >= 1 && !isApiRequest && !systemPaths.includes(firstSegment)) {
+    const slug = firstSegment
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    if (supabaseUrl && supabaseKey) {
+      try {
+        const supabase = createServerClient(supabaseUrl, supabaseKey, {
+          cookies: {
+            get: () => undefined,
+            set: () => undefined,
+            remove: () => undefined,
+          },
+        })
+
+        const { data, error } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', slug)
+          .maybeSingle()
+
+        if (error || !data) {
+          return NextResponse.rewrite(new URL('/404', request.url))
+        }
+      } catch {
+        // DB 확인 실패 시 404로 막아 안전 우선
+        return NextResponse.rewrite(new URL('/404', request.url))
+      }
+    }
+  }
+
   // E2E / 스모크 테스트 시 인증 우회 플래그
   if (process.env.E2E_NO_AUTH === '1') {
-    // API 요청 -> api-bypass로 rewrite (모든 메소드 200 OK)
-    if (request.nextUrl.pathname.startsWith('/api/')) {
-      const bypassUrl = request.nextUrl.clone()
-      bypassUrl.pathname = '/api-bypass' + request.nextUrl.pathname.substring(4)
-      return NextResponse.rewrite(bypassUrl)
-    }
+    // E2E에서는 모든 API를 실제 경로로 통과시켜 서비스 롤/데모 폴백을 활용한다.
+    return NextResponse.next()
+  }
 
-    return NextResponse.next();
+  // 로컬/개발 환경에서는 인증 리다이렉트를 비활성화하여 작업 편의성을 높인다.
+  if (process.env.NODE_ENV !== 'production') {
+    return NextResponse.next()
   }
 
   let response = NextResponse.next({
@@ -90,8 +128,7 @@ export async function middleware(request: NextRequest) {
                           '/seats', '/all-schedules', '/expenses']
 
   // URL 패턴: /[institutionname]/[page] 형태 체크
-  const pathSegments = request.nextUrl.pathname.split('/').filter(Boolean)
-  const isProtectedPath = pathSegments.length >= 2 &&
+  const isProtectedPath = !isApiRequest && pathSegments.length >= 2 &&
     protectedPaths.some(path => request.nextUrl.pathname.includes(path))
 
   if (isProtectedPath) {
@@ -104,7 +141,9 @@ export async function middleware(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith('/login') ||
       request.nextUrl.pathname.startsWith('/signup')) {
     if (user) {
-      return NextResponse.redirect(new URL('/goldpen/overview', request.url))
+      // 기관 slug를 추출할 수 없으므로 기본 루트로만 돌려보내고,
+      // 클라이언트에서 기관 선택/경로 이동을 처리하도록 한다.
+      return NextResponse.redirect(new URL('/', request.url))
     }
   }
 

@@ -26,11 +26,18 @@ export async function POST(request: Request) {
       )
     }
 
+    const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+    const expired = [
+      `sb-auth-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`,
+      `sb-access-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`, // 호환용
+    ]
+
     return Response.json(
       { message: '로그아웃되었습니다' },
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate',
+          'Set-Cookie': expired,
         },
       }
     )
