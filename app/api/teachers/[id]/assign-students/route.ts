@@ -22,7 +22,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   try {
     const teacherId = params.id
-    const { studentIds } = await request.json()
+    const { studentIds } = await request.json() as { studentIds: string[] }
 
     if (!Array.isArray(studentIds)) {
       return Response.json({ error: 'studentIds 배열이 필요합니다' }, { status: 400 })

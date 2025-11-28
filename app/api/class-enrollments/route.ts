@@ -50,7 +50,7 @@ export async function GET(request: Request) {
       .from('class_enrollments')
       .select('*, students:student_id(id, name, grade, school, credit, seatsremainingtime)')
       .eq('org_id', orgId)
-      .eq('status', 'active')
+      .or('status.eq.active,status.is.null')
       .limit(1000)
 
     if (classId) {

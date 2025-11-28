@@ -15,10 +15,11 @@ import {
   Grid3x3,
   Armchair,
   Wallet,
+  Activity,
   LucideIcon,
 } from 'lucide-react'
 
-export type BadgeType = '학원용' | '독서실' | '공부방'
+export type BadgeType = '학원용' | '독서실' | '공부방' | '강사용'
 
 export interface NavigationItem {
   id: string
@@ -163,6 +164,13 @@ export const navigationItems: NavigationItem[] = [
     name: '설정',
     href: '/settings',
     icon: Settings,
+    badges: ['학원용', '독서실', '공부방'],
+  },
+  {
+    id: 'activity-logs',
+    name: '활동 로그',
+    href: '/activity-logs',
+    icon: Activity,
     badges: ['학원용', '독서실', '공부방'],
   },
 ]

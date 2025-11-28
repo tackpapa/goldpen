@@ -32,7 +32,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Plus, Search } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { MoreHorizontal, Plus, Search, Users, GraduationCap, TrendingUp } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface Organization {
@@ -43,7 +50,14 @@ interface Organization {
   subscription_plan: string
   created_at: string
   user_count: number
-  users: { name: string } | null
+  student_count: number
+  monthly_revenue: number
+  owner: { id: string; name: string; email: string } | null
+  org_settings: {
+    logo_url?: string
+    theme?: string
+    kakao_enabled?: boolean
+  } | null
 }
 
 export default function OrganizationsPage() {
@@ -54,6 +68,8 @@ export default function OrganizationsPage() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
   const limit = 20
 
   const typeLabels: Record<string, string> = {
@@ -61,6 +77,13 @@ export default function OrganizationsPage() {
     learning_center: '러닝센터',
     study_cafe: '스터디카페',
     tutoring: '공부방',
+  }
+
+  const typeColors: Record<string, string> = {
+    academy: 'bg-blue-100 text-blue-800',
+    learning_center: 'bg-purple-100 text-purple-800',
+    study_cafe: 'bg-orange-100 text-orange-800',
+    tutoring: 'bg-teal-100 text-teal-800',
   }
 
   const statusColors: Record<string, string> = {
@@ -80,17 +103,25 @@ export default function OrganizationsPage() {
       accessorKey: 'name',
       header: '조직명',
       cell: ({ row }) => (
-        <div className="font-medium">{row.getValue('name')}</div>
+        <div
+          className="font-medium cursor-pointer hover:text-primary"
+          onClick={() => router.push(`/admin/organizations/${row.original.id}` as any)}
+        >
+          {row.getValue('name')}
+        </div>
       ),
     },
     {
       accessorKey: 'type',
       header: '타입',
-      cell: ({ row }) => (
-        <Badge variant="outline">
-          {typeLabels[row.getValue('type')] || row.getValue('type')}
-        </Badge>
-      ),
+      cell: ({ row }) => {
+        const type = row.getValue('type') as string
+        return (
+          <Badge className={typeColors[type] || 'bg-gray-100 text-gray-800'}>
+            {typeLabels[type] || type}
+          </Badge>
+        )
+      },
     },
     {
       accessorKey: 'status',
@@ -108,24 +139,65 @@ export default function OrganizationsPage() {
       accessorKey: 'subscription_plan',
       header: '플랜',
       cell: ({ row }) => (
-        <div className="uppercase text-sm">
+        <Badge variant="outline" className="uppercase">
           {row.getValue('subscription_plan')}
-        </div>
+        </Badge>
       ),
     },
     {
       accessorKey: 'user_count',
-      header: '사용자 수',
+      header: () => (
+        <div className="flex items-center gap-1">
+          <Users className="h-4 w-4" />
+          사용자
+        </div>
+      ),
       cell: ({ row }) => (
         <div className="text-center">{row.getValue('user_count')}</div>
       ),
     },
     {
-      accessorKey: 'users',
+      accessorKey: 'student_count',
+      header: () => (
+        <div className="flex items-center gap-1">
+          <GraduationCap className="h-4 w-4" />
+          학생
+        </div>
+      ),
+      cell: ({ row }) => (
+        <div className="text-center">{row.getValue('student_count')}</div>
+      ),
+    },
+    {
+      accessorKey: 'monthly_revenue',
+      header: () => (
+        <div className="flex items-center gap-1">
+          <TrendingUp className="h-4 w-4" />
+          이번달 매출
+        </div>
+      ),
+      cell: ({ row }) => {
+        const revenue = row.getValue('monthly_revenue') as number
+        return (
+          <div className="text-right font-medium">
+            {revenue.toLocaleString()}원
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: 'owner',
       header: '원장',
       cell: ({ row }) => {
-        const owner = row.getValue('users') as { name: string } | null
-        return <div>{owner?.name || '-'}</div>
+        const owner = row.getValue('owner') as { name: string; email: string } | null
+        return (
+          <div>
+            <div className="font-medium">{owner?.name || '-'}</div>
+            {owner?.email && (
+              <div className="text-xs text-muted-foreground">{owner.email}</div>
+            )}
+          </div>
+        )
       },
     },
     {
@@ -133,7 +205,7 @@ export default function OrganizationsPage() {
       header: '생성일',
       cell: ({ row }) => {
         const date = new Date(row.getValue('created_at'))
-        return <div>{format(date, 'yyyy-MM-dd')}</div>
+        return <div className="text-sm text-muted-foreground">{format(date, 'yyyy-MM-dd')}</div>
       },
     },
     {
@@ -191,21 +263,32 @@ export default function OrganizationsPage() {
 
   useEffect(() => {
     loadOrganizations()
-  }, [page])
+  }, [page, typeFilter, statusFilter])
 
   const loadOrganizations = async () => {
     try {
       setIsLoading(true)
       const searchQuery = table.getColumn('name')?.getFilterValue() as string || ''
 
-      const response = await fetch(
-        `/api/admin/organizations?page=${page}&limit=${limit}&search=${searchQuery}`
-      )
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        search: searchQuery,
+      })
+
+      if (typeFilter && typeFilter !== 'all') {
+        params.append('type', typeFilter)
+      }
+      if (statusFilter && statusFilter !== 'all') {
+        params.append('status', statusFilter)
+      }
+
+      const response = await fetch(`/api/admin/organizations?${params.toString()}`)
 
       if (response.ok) {
-        const data = await response.json()
-        setOrganizations(data.organizations)
-        setTotalCount(data.total)
+        const data = await response.json() as { organizations?: any[]; total?: number }
+        setOrganizations(data.organizations || [])
+        setTotalCount(data.total || 0)
       }
     } catch (error) {
       console.error('Failed to load organizations:', error)
@@ -272,6 +355,29 @@ export default function OrganizationsPage() {
             className="pl-10"
           />
         </div>
+        <Select value={typeFilter} onValueChange={(value) => { setTypeFilter(value); setPage(1); }}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="기관 유형" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">전체 유형</SelectItem>
+            <SelectItem value="academy">학원</SelectItem>
+            <SelectItem value="learning_center">러닝센터</SelectItem>
+            <SelectItem value="study_cafe">스터디카페</SelectItem>
+            <SelectItem value="tutoring">공부방</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); }}>
+          <SelectTrigger className="w-32">
+            <SelectValue placeholder="상태" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">전체 상태</SelectItem>
+            <SelectItem value="active">활성</SelectItem>
+            <SelectItem value="suspended">정지</SelectItem>
+            <SelectItem value="deleted">삭제</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="rounded-md border">

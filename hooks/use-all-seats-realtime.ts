@@ -11,8 +11,10 @@ interface AllSeatsRealtimeStatus {
 /**
  * 모든 좌석의 Realtime 상태를 2개 채널로 관리
  * (기존: 좌석당 2채널 → 신규: 전체 테이블당 1채널)
+ * @param studentIds - 학생 ID 목록
+ * @param orgId - 조직 ID (필수, 상위 컴포넌트에서 전달)
  */
-export function useAllSeatsRealtime(studentIds: string[]) {
+export function useAllSeatsRealtime(studentIds: string[], orgId: string | null = null) {
   const [status, setStatus] = useState<AllSeatsRealtimeStatus>({
     sleepRecords: new Map(),
     outingRecords: new Map(),
@@ -21,26 +23,13 @@ export function useAllSeatsRealtime(studentIds: string[]) {
 
   const supabase = useMemo(() => createClient(), [])
   const today = new Date().toISOString().split('T')[0]
-  const [orgId, setOrgId] = useState<string | null>(null)
 
+  // Handle empty state
   useEffect(() => {
-    if (studentIds.length === 0) {
+    if (studentIds.length === 0 || !orgId) {
       setStatus({ sleepRecords: new Map(), outingRecords: new Map(), loading: false })
-      return
     }
-
-    const fetchOrg = async () => {
-      try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
-        const json = await res.json()
-        setOrgId(json?.org_id || json?.orgId || null)
-      } catch {
-        setOrgId(null)
-      }
-    }
-
-    fetchOrg()
-  }, [studentIds.join(',')])
+  }, [studentIds.length, orgId])
 
   useEffect(() => {
     if (studentIds.length === 0) return
@@ -207,7 +196,7 @@ export function useAllSeatsRealtime(studentIds: string[]) {
       supabase.removeChannel(sleepChannel)
       supabase.removeChannel(outingChannel)
     }
-  }, [studentIds.join(','), today])
+  }, [studentIds.join(','), today, orgId])
 
   return status
 }

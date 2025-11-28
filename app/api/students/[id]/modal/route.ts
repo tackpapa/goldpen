@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 const parseDurationHours = (lessonTime?: string | null) => {
   if (!lessonTime) return 0
@@ -89,21 +90,21 @@ export async function GET(
 
     const { data: enrollments, error: enrollError } = await adminSupabase
       .from('class_enrollments')
-      .select('class_id, student_id, student_name, status')
+      .select('id, class_id, student_id, student_name, status')
       .eq('student_id', id)
       .eq('org_id', orgId)
-      .in('status', ['active', null])
+      .or('status.eq.active,status.is.null')
 
     if (enrollError) {
       console.error('[Student modal] enrollments error', enrollError)
     }
 
-    const classIds = (enrollments || []).map((e) => e.class_id)
+    const classIds = (enrollments || []).map((e: { class_id: string }) => e.class_id)
 
     const { data: classes } = classIds.length
       ? await adminSupabase
           .from('classes')
-          .select('id, name, subject, teacher_name')
+          .select('id, name, subject, teacher_name, room')
           .in('id', classIds)
           .eq('org_id', orgId)
       : { data: [] as any[] }
@@ -118,18 +119,36 @@ export async function GET(
           .order('created_at', { ascending: false })
       : { data: [] as any[] }
 
-    const classMap = new Map((classes || []).map((c) => [c.id, c]))
+    interface ClassInfo {
+      id: string
+      name: string
+      subject: string
+      teacher_name: string
+      room: string
+    }
+    const classMap = new Map((classes || []).map((c: ClassInfo) => [c.id, c]))
 
-    const creditUsages = (lessons || []).map((lesson) => {
-      const cls = classMap.get(lesson.class_id) || {}
+    interface LessonInfo {
+      id: string
+      class_id: string
+      lesson_date: string
+      lesson_time: string
+      teacher_name: string
+      subject: string
+      class_name: string
+      created_at: string
+      org_id: string
+    }
+    const creditUsages = (lessons || []).map((lesson: LessonInfo) => {
+      const cls = classMap.get(lesson.class_id) as ClassInfo | undefined
       const hours_used = parseDurationHours(lesson.lesson_time) || 0
       return {
         id: lesson.id,
         used_at: lesson.lesson_date || lesson.created_at,
         hours_used,
-        subject: lesson.subject || cls.subject || '수업',
-        teacher_name: lesson.teacher_name || cls.teacher_name || '선생님',
-        class_name: lesson.class_name || cls.name || '',
+        subject: lesson.subject || cls?.subject || '수업',
+        teacher_name: lesson.teacher_name || cls?.teacher_name || '선생님',
+        class_name: lesson.class_name || cls?.name || '',
       }
     })
 
@@ -141,7 +160,13 @@ export async function GET(
       .eq('org_id', orgId)
       .order('check_in_time', { ascending: false })
 
-    const usages = (attendanceLogs || []).map(log => ({
+    interface AttendanceLog {
+      id: string
+      check_in_time: string | null
+      check_out_time: string | null
+      duration_minutes: number | null
+    }
+    const usages = (attendanceLogs || []).map((log: AttendanceLog) => ({
       id: log.id,
       check_in_time: log.check_in_time,
       check_out_time: log.check_out_time,
@@ -151,8 +176,8 @@ export async function GET(
     // Attendance 탭용 형식 (출석률/상태 계산에 사용)
     // attendance_logs에는 status가 없으므로 체류 기록은 모두 'present'로 간주
     const attendance = (attendanceLogs || [])
-      .filter(log => !!log.check_in_time) // check_in_time 없는 레코드는 제외해 Invalid Date 방지
-      .map(log => {
+      .filter((log: AttendanceLog) => !!log.check_in_time) // check_in_time 없는 레코드는 제외해 Invalid Date 방지
+      .map((log: AttendanceLog) => {
         const dateIso = new Date(log.check_in_time!).toISOString()
         return {
           id: log.id,
@@ -176,14 +201,23 @@ export async function GET(
     const { data: payments } = serviceClient
       ? await serviceClient
         .from('payment_records')
-        .select('id, org_id, student_id, student_name, amount, payment_date, payment_method, status, notes, revenue_category_name, created_at')
+        .select('id, org_id, student_id, student_name, amount, payment_date, payment_method, status, notes, revenue_category_name, created_at, granted_credits_hours, granted_pass_type, granted_pass_amount')
         .eq('org_id', student.org_id)
         .eq('student_id', id)
         .order('payment_date', { ascending: false })
         .order('created_at', { ascending: false })
       : { data: [] }
 
-    const schedules = (commuteSchedules || []).map((row) => ({
+    interface CommuteSchedule {
+      id: string
+      created_at: string
+      updated_at: string
+      weekday: number
+      check_in_time: string | null
+      check_out_time: string | null
+      notes: string | null
+    }
+    const schedules = (commuteSchedules || []).map((row: CommuteSchedule) => ({
       id: row.id,
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -194,9 +228,44 @@ export async function GET(
       notes: row.notes || undefined,
     }))
 
+    // Branches (지점 목록)
+    const { data: branches } = await adminSupabase
+      .from('branches')
+      .select('id, name, status')
+      .eq('org_id', orgId)
+      .eq('status', 'active')
+      .order('name')
+
+    // enrollments에 class 정보 추가 (BasicInfoTab에서 enrollment.classes로 접근)
+    interface EnrollmentInfo {
+      id: string
+      class_id: string
+      student_id: string
+      student_name: string
+      status: string | null
+    }
+    const enrichedEnrollments = (enrollments || []).map((enrollment: EnrollmentInfo) => {
+      const classInfo = classMap.get(enrollment.class_id) as ClassInfo | undefined
+      return {
+        ...enrollment,
+        // flat properties (호환성)
+        class_name: classInfo?.name || '',
+        subject: classInfo?.subject || '',
+        teacher_name: classInfo?.teacher_name || '',
+        // nested object (BasicInfoTab에서 사용)
+        classes: classInfo ? {
+          id: classInfo.id,
+          name: classInfo.name,
+          subject: classInfo.subject,
+          teacher_name: classInfo.teacher_name,
+          room: classInfo.room,
+        } : null,
+      }
+    })
+
     return Response.json({
       student,
-      enrollments: enrollments || [],
+      enrollments: enrichedEnrollments,
       credits: [],
       creditUsages,
       services: [],
@@ -208,6 +277,7 @@ export async function GET(
       passes: [],
       activePass: null,
       usages,
+      branches: branches || [],
     })
   } catch (error: any) {
     console.error('[Student modal] unexpected', error)

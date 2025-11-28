@@ -5,7 +5,9 @@ export const runtime = 'edge'
 
 import React, { useState, useEffect } from 'react'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useSchedules } from '@/lib/swr'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { PageSkeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -105,6 +107,9 @@ const timeSlots = [
 export default function SchedulePage() {
   usePageAccess('schedule')
 
+  // SWR 훅으로 데이터 fetching
+  const { schedules: swrSchedules, isLoading: schedulesLoading } = useSchedules()
+
   const [selectedSchedule, setSelectedSchedule] = useState<Schedule | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [filterTeacher, setFilterTeacher] = useState<string>('all')
@@ -113,22 +118,18 @@ export default function SchedulePage() {
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [schedules, setSchedules] = useState<Schedule[]>([])
 
-  // Fetch schedules from API
+  // SWR 데이터를 로컬 상태에 동기화
   useEffect(() => {
-    const fetchSchedules = async () => {
-      try {
-        const response = await fetch('/api/schedules', { credentials: 'include' })
-        const data = await response.json() as { schedules?: ScheduleApiResponse[]; error?: string }
-        if (response.ok && data.schedules) {
-          const normalized = data.schedules.map(normalizeSchedule)
-          setSchedules(normalized)
-        }
-      } catch {
-        console.error('Failed to fetch schedules')
-      }
+    if (swrSchedules.length > 0) {
+      setSchedules(swrSchedules.map(normalizeSchedule))
     }
-    fetchSchedules()
-  }, [])
+  }, [swrSchedules])
+
+  // 초기 로딩 중이면 스켈레톤 표시
+  const isInitialLoading = schedulesLoading && schedules.length === 0
+  if (isInitialLoading) {
+    return <PageSkeleton />
+  }
 
   const handleScheduleClick = (schedule: Schedule) => {
     setSelectedSchedule(schedule)

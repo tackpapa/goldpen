@@ -22,7 +22,6 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
     const { db, orgId, role } = await getSupabaseWithOrg(request)
     if (!['owner', 'manager', 'service_role'].includes(role || '')) {
       return Response.json({ error: '강의실 정보를 수정할 권한이 없습니다' }, { status: 403 })

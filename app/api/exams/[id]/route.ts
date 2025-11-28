@@ -1,6 +1,7 @@
 import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { ZodError } from 'zod'
 import * as z from 'zod'
+import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -61,6 +62,20 @@ export async function PUT(
       return Response.json({ error: '시험을 찾을 수 없습니다' }, { status: 404 })
     }
 
+    // 활동 로그 기록
+    await logActivity({
+      orgId: userProfile.org_id,
+      userId: user.id,
+      userName: user.email?.split('@')[0] || '사용자',
+      userRole: null,
+      actionType: 'update',
+      entityType: 'exam',
+      entityId: exam.id,
+      entityName: exam.title,
+      description: actionDescriptions.exam.update(exam.title || '이름 없음'),
+      request,
+    })
+
     return Response.json({ exam, message: '시험이 수정되었습니다' })
   } catch (error: any) {
     if (error instanceof ZodError) {
@@ -98,6 +113,14 @@ export async function DELETE(
       return Response.json({ error: '시험을 삭제할 권한이 없습니다' }, { status: 403 })
     }
 
+    // 삭제 전 시험 정보 조회 (로그용)
+    const { data: examToDelete } = await supabase
+      .from('exams')
+      .select('id, title')
+      .eq('id', params.id)
+      .eq('org_id', userProfile.org_id)
+      .single()
+
     const { error: deleteError } = await supabase
       .from('exams')
       .delete()
@@ -107,6 +130,22 @@ export async function DELETE(
     if (deleteError) {
       console.error('[Exams DELETE] Error:', deleteError)
       return Response.json({ error: '시험 삭제 실패', details: deleteError.message }, { status: 500 })
+    }
+
+    // 활동 로그 기록
+    if (examToDelete) {
+      await logActivity({
+        orgId: userProfile.org_id,
+        userId: user.id,
+        userName: user.email?.split('@')[0] || '사용자',
+        userRole: userProfile.role,
+        actionType: 'delete',
+        entityType: 'exam',
+        entityId: params.id,
+        entityName: examToDelete.title,
+        description: actionDescriptions.exam.delete(examToDelete.title || '이름 없음'),
+        request,
+      })
     }
 
     return Response.json({ message: '시험이 삭제되었습니다' })

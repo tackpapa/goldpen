@@ -90,7 +90,7 @@ app.delete("/", async (c) => {
       return rowCount;
     });
     if (!deleted) return c.json({ error: "Not found" }, 404);
-    return c.json({ ok: true }, 204);
+    return c.json({ ok: true }, 200);
   } catch (error: any) {
     console.error("[consultations/:id] DELETE error:", error);
     return c.json({ error: error.message }, 500);

@@ -1,4 +1,4 @@
-import { e2eBypass } from '@/api/_utils/e2e-bypass'
+import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
 import { createClient } from '@/lib/supabase/server'
@@ -54,10 +54,10 @@ export async function GET(request: Request) {
 
     const offset = (page - 1) * limit
 
-    // Build query
+    // Build query (without FK join)
     let query = supabase
       .from('organizations')
-      .select('*, users!owner_id(id, name, email)', { count: 'exact' })
+      .select('*', { count: 'exact' })
 
     // Apply filters
     if (search) {
@@ -82,23 +82,66 @@ export async function GET(request: Request) {
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    // Get user count for each organization
-    const orgsWithUserCount = await Promise.all(
+    // Get additional data for each organization
+    const orgsWithDetails = await Promise.all(
       (organizations || []).map(async (org) => {
+        // User count
         const { count: userCount } = await supabase
           .from('users')
           .select('*', { count: 'exact', head: true })
           .eq('org_id', org.id)
 
+        // Student count
+        const { count: studentCount } = await supabase
+          .from('students')
+          .select('*', { count: 'exact', head: true })
+          .eq('org_id', org.id)
+
+        // Owner info (role = 'owner')
+        const { data: ownerData } = await supabase
+          .from('users')
+          .select('id, name, email')
+          .eq('org_id', org.id)
+          .eq('role', 'owner')
+          .limit(1)
+          .maybeSingle()
+
+        // Monthly revenue (billing_transactions this month)
+        const startOfMonth = new Date()
+        startOfMonth.setDate(1)
+        startOfMonth.setHours(0, 0, 0, 0)
+
+        const { data: revenueData } = await supabase
+          .from('billing_transactions')
+          .select('amount')
+          .eq('org_id', org.id)
+          .gte('created_at', startOfMonth.toISOString())
+
+        const monthlyRevenue = (revenueData || []).reduce(
+          (sum, tx) => sum + (Number(tx.amount) || 0),
+          0
+        )
+
+        // Org settings
+        const { data: settingsData } = await supabase
+          .from('org_settings')
+          .select('*')
+          .eq('org_id', org.id)
+          .maybeSingle()
+
         return {
           ...org,
           user_count: userCount || 0,
+          student_count: studentCount || 0,
+          owner: ownerData || null,
+          monthly_revenue: monthlyRevenue,
+          org_settings: settingsData || null,
         }
       })
     )
 
     return Response.json({
-      organizations: orgsWithUserCount,
+      organizations: orgsWithDetails,
       total: count || 0,
       page,
       limit,

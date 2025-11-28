@@ -93,9 +93,9 @@ export async function GET(request: Request) {
 
     const schedules = schedulesRaw || []
 
-    const classIds = Array.from(new Set(schedules.map((s) => s.class_id).filter(Boolean)))
-    const teacherIds = Array.from(new Set(schedules.map((s) => s.teacher_id).filter(Boolean)))
-    const roomIds = Array.from(new Set(schedules.map((s) => s.room_id).filter(Boolean)))
+    const classIds = Array.from(new Set(schedules.map((s: any) => s.class_id).filter(Boolean)))
+    const teacherIds = Array.from(new Set(schedules.map((s: any) => s.teacher_id).filter(Boolean)))
+    const roomIds = Array.from(new Set(schedules.map((s: any) => s.room_id).filter(Boolean)))
 
     // 2) 클래스 이름 맵
     let classNameMap = new Map<string, { name: string; teacher_id?: string | null }>()
@@ -156,7 +156,9 @@ export async function GET(request: Request) {
       rooms: s.room_id ? { name: roomNameMap.get(s.room_id) || '미지정' } : null,
     }))
 
-    return Response.json({ schedules: enriched, count: enriched.length })
+    return Response.json({ schedules: enriched, count: enriched.length }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('[Schedules GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })

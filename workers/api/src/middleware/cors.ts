@@ -30,7 +30,7 @@ export function cors() {
 
     // Handle preflight
     if (c.req.method === 'OPTIONS') {
-      return c.text('', 204)
+      return c.body(null, 204)
     }
 
     await next()

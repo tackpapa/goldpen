@@ -102,9 +102,9 @@ app.get("/", async (c) => {
           [DEMO_ORG],
         );
         const revMap = new Map<string, number>();
-        revenue.rows.forEach((r) => revMap.set(r.month, Number(r.revenue)));
+        revenue.rows.forEach((r: any) => revMap.set(r.month, Number(r.revenue)));
         const expMap = new Map<string, number>();
-        expenses.rows.forEach((r) => expMap.set(r.month, Number(r.expenses)));
+        expenses.rows.forEach((r: any) => expMap.set(r.month, Number(r.expenses)));
         const months = Array.from(
           new Set([...revMap.keys(), ...expMap.keys()]),
         ).sort();

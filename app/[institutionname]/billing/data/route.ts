@@ -25,17 +25,18 @@ function getServiceClient() {
 export async function GET(request: Request) {
   try {
     const supabase = await createAuthenticatedClient(request)
-    const { orgId, user } = await getOrgId(supabase)
+    const { orgId } = await getOrgId(supabase)
 
-    // 인증이 없으면 서비스 롤 클라이언트 사용
-    const service = !user ? getServiceClient() : null
+    // 항상 서비스 롤 클라이언트 사용 (RLS 우회)
+    const service = getServiceClient()
     const db = service || supabase
 
     const [{ data: transactions, error: txErr }, { data: expenses, error: expErr }, { data: categories, error: catErr }, { data: salaries, error: salErr }, { data: students, error: stuErr }] =
       await Promise.all([
         db.from('payment_records')
-          .select('id, payment_date, amount, student_name, notes, revenue_category_name, payment_method, org_id')
+          .select('id, payment_date, amount, student_name, notes, revenue_category_name, payment_method, org_id, status')
           .eq('org_id', orgId)
+          .eq('status', 'completed')  // 완료된 결제만 포함 (취소된 결제 제외)
           .order('payment_date', { ascending: false })
           .order('created_at', { ascending: false }),
         db.from('expenses')
@@ -65,6 +66,8 @@ export async function GET(request: Request) {
       expenseCategories: categories || [],
       teacherSalaries: salaries || [],
       students: students || [],
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (e: any) {
     return Response.json({ error: e.message || '데이터 조회 실패' }, { status: 500 })

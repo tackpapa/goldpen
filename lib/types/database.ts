@@ -199,7 +199,7 @@ export interface Consultation {
   updated_at: string
   org_id: string
   student_name: string
-  student_grade?: number
+  student_grade?: string
   parent_name: string
   parent_phone: string
   parent_email?: string
@@ -222,15 +222,17 @@ export interface Exam {
   created_at: string
   updated_at: string
   org_id: string
-  name: string
+  title: string
   subject: string
   class_id: string
-  class_name: string
   exam_date: string
-  exam_time: string
+  duration_minutes?: number
   total_score: number
-  status: 'scheduled' | 'completed' | 'cancelled'
-  notes?: string
+  description?: string
+  // API normalized fields
+  class_name?: string
+  teacher_name?: string
+  teacher_id?: string
 }
 
 export interface ExamScore {
@@ -319,6 +321,11 @@ export interface Organization {
     auto_sms: boolean
     auto_email: boolean
     notification_enabled: boolean
+    use_sms?: boolean
+    use_kakao?: boolean
+    enabledMenus?: string[]
+    menuOrder?: string[]
+    messageTemplates?: Record<string, string>
   }
   created_at: string
   updated_at: string
@@ -700,6 +707,7 @@ export interface SubjectStatistics {
 export interface CallRecord {
   id: string
   created_at: string
+  org_id: string
   student_id: string
   seat_number: number
   date: string // YYYY-MM-DD

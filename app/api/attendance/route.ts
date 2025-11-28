@@ -2,6 +2,7 @@ import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { createClient } from '@supabase/supabase-js'
 import { createAttendanceSchema } from '@/lib/validations/attendance'
 import { ZodError } from 'zod'
+import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -258,6 +259,8 @@ export async function GET(request: Request) {
       studentRates: await buildStudentRates(supabase, userProfile.org_id, monthStartStr, selectedDateStr), // 선택 월간
       nextOffset: offset + (attendance?.length || 0),
       selectedDate: selectedDateStr,
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
     console.error('[Attendance GET] Unexpected error:', error)
@@ -316,7 +319,7 @@ async function buildStudentRates(supabase: any, orgId: string, startDate: string
     .map(([id, v]) => {
       const total = v.present + v.late + v.absent + v.excused
       const rate = total === 0 ? 0 : Math.round((v.present / total) * 100)
-      return { id, name: v.name, ...v, rate }
+      return { id, ...v, rate }
     })
     .sort((a, b) => b.rate - a.rate)
     .slice(0, 20)
@@ -425,6 +428,20 @@ export async function POST(request: Request) {
       }
       return Response.json({ error: '출결 생성 실패' }, { status: 500 })
     }
+
+    // 활동 로그 기록 (await 필요 - Edge Runtime에서 fire-and-forget이 작동하지 않음)
+    await logActivity({
+      orgId: userProfile.org_id,
+      userId: user.id,
+      userName: user.email?.split('@')[0] || '사용자',
+      userRole: null,
+      actionType: 'create',
+      entityType: 'attendance',
+      entityId: attendanceData.id,
+      entityName: `${validated.date} 출결`,
+      description: actionDescriptions.attendance.create(`${validated.date}`),
+      request,
+    })
 
     return Response.json({ attendance: attendanceData, message: '출결이 기록되었습니다' }, { status: 201 })
   } catch (error: any) {

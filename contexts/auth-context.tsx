@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { user?: User | null; org?: Organization | null }
         setUser(data.user || null)
         setOrg(data.org || null)
         if (data.user && sessionData.session?.access_token) {
@@ -97,7 +97,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ email, password }),
       })
 
-      const data = await response.json()
+      interface LoginResponse {
+        user?: User
+        org?: Organization
+        session?: { access_token: string; refresh_token: string }
+        error?: string
+      }
+      const data = await response.json() as LoginResponse
 
       if (response.ok) {
         // Supabase 세션을 클라이언트에 설정
@@ -111,8 +117,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setAccessToken(data.session.access_token)
         }
 
-        setUser(data.user)
-        setOrg(data.org)
+        setUser(data.user || null)
+        setOrg(data.org || null)
         return { success: true, user: data.user, org: data.org }
       } else {
         return { success: false, error: data.error || '로그인에 실패했습니다' }

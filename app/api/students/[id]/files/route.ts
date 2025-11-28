@@ -1,4 +1,4 @@
-import { e2eBypass } from '@/api/_utils/e2e-bypass'
+import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
 import { createClient } from '@/lib/supabase/client-edge'
@@ -143,7 +143,7 @@ export async function DELETE(
   const supabase = createClient()
 
   try {
-    const { fileId } = await request.json()
+    const { fileId } = await request.json() as { fileId: string }
 
     if (!fileId) {
       return NextResponse.json({ error: 'fileId is required' }, { status: 400 })

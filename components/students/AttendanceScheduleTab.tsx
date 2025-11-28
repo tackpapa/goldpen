@@ -112,7 +112,7 @@ export function AttendanceScheduleTab({
       })
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const { schedule } = await res.json()
+      const { schedule } = await res.json() as { schedule: AttendanceSchedule }
       setSchedules((prev) => {
         const others = prev.filter((s) => s.day_of_week !== day)
         return [...others, schedule].sort((a,b)=> DAYS.findIndex(d=>d.value===a.day_of_week) - DAYS.findIndex(d=>d.value===b.day_of_week))

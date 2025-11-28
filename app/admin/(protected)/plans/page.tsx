@@ -204,8 +204,8 @@ export default function PlansPage() {
       setIsLoading(true)
       const response = await fetch('/api/admin/plans?includeInactive=true')
       if (response.ok) {
-        const data = await response.json()
-        setPlans(data.plans)
+        const data = await response.json() as { plans?: any[] }
+        setPlans(data.plans || [])
       }
     } catch (error) {
       console.error('Failed to load plans:', error)
@@ -271,7 +271,7 @@ export default function PlansPage() {
         setIsDialogOpen(false)
         loadPlans()
       } else {
-        const data = await response.json()
+        const data = await response.json() as { error?: string }
         toast({ title: data.error || '저장 실패', variant: 'destructive' })
       }
     } catch (error) {
@@ -292,7 +292,7 @@ export default function PlansPage() {
         toast({ title: '플랜 삭제 완료' })
         loadPlans()
       } else {
-        const data = await response.json()
+        const data = await response.json() as { error?: string }
         toast({ title: data.error || '삭제 실패', variant: 'destructive' })
       }
     } catch (error) {

@@ -147,10 +147,14 @@ export default function RoomsPage() {
           fetch('/api/classes', { credentials: 'include' }),
         ])
 
-        const schedulesData = await schedulesRes.json()
-        const roomsData = await roomsRes.json()
-        const teachersData = await teachersRes.json()
-        const classesData = await classesRes.json()
+        interface SchedulesResponse { schedules?: any[] }
+        interface RoomsResponse { rooms?: Room[] }
+        interface TeachersResponse { teachers?: Teacher[] }
+        interface ClassesResponse { classes?: any[] }
+        const schedulesData = await schedulesRes.json() as SchedulesResponse
+        const roomsData = await roomsRes.json() as RoomsResponse
+        const teachersData = await teachersRes.json() as TeachersResponse
+        const classesData = await classesRes.json() as ClassesResponse
 
         if (schedulesData.schedules) setSchedules(schedulesData.schedules)
         if (roomsData.rooms) {
@@ -380,7 +384,11 @@ export default function RoomsPage() {
         }),
       })
 
-      const data = await response.json()
+      interface ScheduleApiResponse {
+        error?: string
+        schedules?: any[]
+      }
+      const data = await response.json() as ScheduleApiResponse
 
       if (!response.ok) {
         // rollback
@@ -395,7 +403,7 @@ export default function RoomsPage() {
 
       // Sync with server result
       const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
-      const refreshData = await refreshRes.json()
+      const refreshData = await refreshRes.json() as ScheduleApiResponse
       if (refreshData.schedules) {
         setSchedules(refreshData.schedules)
       }
@@ -409,7 +417,7 @@ export default function RoomsPage() {
     } catch (error) {
       // rollback
       const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
-      const refreshData = await refreshRes.json()
+      const refreshData = await refreshRes.json() as { schedules?: any[] }
       if (refreshData.schedules) setSchedules(refreshData.schedules)
       console.error('Schedule creation error:', error)
       toast({
@@ -786,7 +794,7 @@ export default function RoomsPage() {
                           credentials: 'include',
                           body: JSON.stringify({ id: selectedScheduleId }),
                         })
-                        const data = await res.json()
+                        const data = await res.json() as { error?: string }
                         if (!res.ok) {
                           setSchedules(prev)
                           toast({
@@ -798,7 +806,7 @@ export default function RoomsPage() {
                         }
                         // refresh
                         const refreshRes = await fetch('/api/schedules', { credentials: 'include' })
-                        const refreshData = await refreshRes.json()
+                        const refreshData = await refreshRes.json() as { schedules?: any[] }
                         if (refreshData.schedules) setSchedules(refreshData.schedules)
                         toast({ title: '삭제 완료', description: '수업이 삭제되었습니다.' })
                         setSelectedScheduleId(null)

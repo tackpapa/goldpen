@@ -93,12 +93,15 @@ export default function AllSchedulesPage() {
         const [schedulesRes, roomsRes, teachersRes] = await Promise.all([
           fetch('/api/schedules', { credentials: 'include' }),
           fetch('/api/rooms', { credentials: 'include' }),
-          fetch('/api/teachers', { credentials: 'include', credentials: 'include' }),
+          fetch('/api/teachers', { credentials: 'include' }),
         ])
 
-        const schedulesData = await schedulesRes.json()
-        const roomsData = await roomsRes.json()
-        const teachersData = await teachersRes.json()
+        interface SchedulesResponse { schedules?: any[] }
+        interface RoomsResponse { rooms?: Room[] }
+        interface TeachersResponse { teachers?: Teacher[] }
+        const schedulesData = await schedulesRes.json() as SchedulesResponse
+        const roomsData = await roomsRes.json() as RoomsResponse
+        const teachersData = await teachersRes.json() as TeachersResponse
 
         if (schedulesData.schedules) setSchedules(schedulesData.schedules)
         if (roomsData.rooms) setRooms(roomsData.rooms)

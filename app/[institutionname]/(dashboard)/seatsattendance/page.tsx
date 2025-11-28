@@ -15,8 +15,9 @@ import { DataTable } from '@/components/ui/data-table'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { CheckCircle, XCircle, Clock, User, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CheckCircle, XCircle, Clock, User, ExternalLink, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 import type { Attendance } from '@/lib/types/database'
+import { StudentPlannerModal } from '@/components/seats/StudentPlannerModal'
 import { addDays, format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
@@ -108,11 +109,23 @@ export default function AttendancePage() {
   // 등하원 일정 모달 상태
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false)
   const [scheduleTarget, setScheduleTarget] = useState<{ id: string; name: string } | null>(null)
+
+  // 플래너 모달 상태
+  const [plannerModalOpen, setPlannerModalOpen] = useState(false)
+  const [plannerTarget, setPlannerTarget] = useState<{ id: string; name: string } | null>(null)
+
+  // org_id 가져오기 (demo 환경용)
+  const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [commuteSchedules, setCommuteSchedules] = useState<
     Array<{ id?: string; weekday: string; check_in_time: string | null; check_out_time: string | null; notes?: string | null }>
   >([])
+
+  // 전체 학생 등하원 일정 (지각/결석 계산용)
+  const [allStudentSchedules, setAllStudentSchedules] = useState<
+    Record<string, { day_of_week: string; start_time: string | null }[]>
+  >({})
 
   const shiftDate = useCallback((delta: number) => {
     const next = addDays(new Date(selectedDate), delta)
@@ -159,24 +172,27 @@ export default function AttendancePage() {
         ? `?service=1&org_id=dddd0000-0000-0000-0000-000000000000`
         : ''
       const res = await fetch(`/api/students/${studentId}/commute-schedules${devQs}`, { credentials: 'include' })
-      const data = await res.json()
+      const data = await res.json() as { schedules?: any[]; error?: string }
       if (!res.ok) {
         setScheduleError(data?.error || '일정 불러오기 실패')
         setCommuteSchedules([])
         return
       }
-      const schedules = data.schedules || data || []
+      const schedules = data.schedules || []
       if (!schedules || schedules.length === 0) {
         // 더미 일정 생성 (월~금 16:00~21:00, 토 10:00~14:00)
         const dummy = [
           'monday','tuesday','wednesday','thursday','friday'
-        ].map((w) => ({ weekday: weekdayKo[w], check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정' }))
+        ].map((w) => ({ weekday: weekdayKo[w as keyof typeof weekdayKo], check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정' }))
         dummy.push({ weekday: weekdayKo.saturday, check_in_time: '10:00', check_out_time: '14:00', notes: '더미 일정' })
         setCommuteSchedules(dummy)
       } else {
+        // API 응답 필드명 매핑: day_of_week -> weekday, start_time -> check_in_time, end_time -> check_out_time
         const localized = (schedules as any[]).map((s) => ({
           ...s,
-          weekday: weekdayKo[(s.weekday as keyof typeof weekdayKo)] || s.weekday,
+          weekday: weekdayKo[(s.day_of_week as keyof typeof weekdayKo)] || s.day_of_week || s.weekday,
+          check_in_time: s.start_time || s.check_in_time,
+          check_out_time: s.end_time || s.check_out_time,
         }))
         setCommuteSchedules(localized)
       }
@@ -235,7 +251,7 @@ export default function AttendancePage() {
     params.set('target_date', targetDate)
     const response = await fetch(`/api/attendance?${params.toString()}`, { credentials: 'include' })
     const logsResponse = await fetch(`/api/attendance/logs?date=${targetDate}`, { credentials: 'include' })
-    const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: StudentAttendanceRateItem[]; selectedDate?: string }
+    const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: any[]; selectedDate?: string; error?: string }
     const logsData = logsResponse.ok ? await logsResponse.json() as { logs?: Array<{ student_id: string; check_in_time: string | null; check_out_time: string | null }> } : { logs: [] }
 
     if (!response.ok) {
@@ -291,7 +307,7 @@ export default function AttendancePage() {
       try {
         const res = await fetch('/api/seat-assignments', { credentials: 'include' })
         if (!res.ok) return
-        const data = await res.json()
+        const data = await res.json() as { assignments?: any[] }
         const ids: string[] = []
         const map: Record<string, SeatInfo> = {}
         const nameMap: Record<string, SeatInfo> = {}
@@ -342,7 +358,7 @@ export default function AttendancePage() {
         setAssignedStudentIds(Array.from(new Set(ids)))
         setSeatMap(map)
         setSeatNameMap(nameMap)
-        setRawAssignments(data.assignments || [])
+        setRawAssignments((data as { assignments?: any[] }).assignments || [])
       } catch (e) {
         // 실패해도 전체 목록 표시 (필터 없이)
         setAssignedStudentIds([])
@@ -350,6 +366,36 @@ export default function AttendancePage() {
     }
     loadSeatAssignments()
   }, [])
+
+  // 전체 학생 등하원 일정 로드 (지각/결석 계산용)
+  useEffect(() => {
+    if (assignedStudentIds.length === 0) return
+    const fetchAllSchedules = async () => {
+      const devQs = process.env.NODE_ENV !== 'production'
+        ? `?service=1&org_id=dddd0000-0000-0000-0000-000000000000`
+        : ''
+      const schedulesMap: Record<string, { day_of_week: string; start_time: string | null }[]> = {}
+
+      await Promise.all(
+        assignedStudentIds.map(async (studentId) => {
+          try {
+            const res = await fetch(`/api/students/${studentId}/commute-schedules${devQs}`, { credentials: 'include' })
+            if (!res.ok) return
+            const data = await res.json() as { schedules?: any[] }
+            const schedules = data.schedules || []
+            schedulesMap[studentId] = schedules.map((s: any) => ({
+              day_of_week: s.day_of_week,
+              start_time: s.start_time || null,
+            }))
+          } catch {
+            // 무시
+          }
+        })
+      )
+      setAllStudentSchedules(schedulesMap)
+    }
+    fetchAllSchedules()
+  }, [assignedStudentIds])
 
   // Infinite scroll observer
   useEffect(() => {
@@ -433,7 +479,7 @@ export default function AttendancePage() {
         })
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
+        const body = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(body.error || '저장 실패')
       }
       toast({
@@ -445,8 +491,8 @@ export default function AttendancePage() {
       // rollback to present if failed
       setTodayAttendance(prev => prev.map(r => {
         if (r.student_id !== studentId) return r
-        const updatedClasses = r.classes.map(c => c.class_id === classId ? { ...c, status: 'present' } : c)
-        const agg = updatedClasses.reduce((min, c) => Math.min(min, statusPriority[c.status]), 99)
+        const updatedClasses = r.classes.map(c => c.class_id === classId ? { ...c, status: 'present' as AttendanceStatus } : c)
+        const agg = updatedClasses.reduce((min, c) => Math.min(min, statusPriority[c.status as AttendanceStatus] ?? 99), 99)
         const aggStatus = (Object.keys(statusPriority) as AttendanceStatus[]).find(s => statusPriority[s] === agg) || 'present'
         return { ...r, classes: updatedClasses, status: aggStatus }
       }))
@@ -564,6 +610,24 @@ export default function AttendancePage() {
         return <span>{formatSeatNumber(seat?.seatNumber ?? null)}</span>
       },
     },
+    {
+      id: 'actions',
+      header: '액션',
+      cell: ({ row }) => (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            setPlannerTarget({ id: row.original.student_id, name: row.original.student_name })
+            setPlannerModalOpen(true)
+          }}
+          className="gap-1"
+        >
+          <FileText className="h-4 w-4" />
+          플래너
+        </Button>
+      ),
+    },
   ]
 
   // 좌석 배정 정보가 있으면 그 학생들로 필터, 없으면 전체 표시
@@ -666,31 +730,65 @@ export default function AttendancePage() {
   }, [hasMoreToday])
 
   const todayStats = useMemo(() => {
-    const uniqueStudents = Array.from(new Set(filteredTodayAttendance.map((r) => r.student_id))).filter(Boolean)
-    // 로그가 있는 학생은 출석으로 간주, 없고 status absent면 결석
+    // 오늘 요일 계산 (monday, tuesday, ...)
+    const today = new Date(selectedDate)
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const todayWeekday = dayNames[today.getDay()]
+    const now = new Date()
+    const nowMinutes = now.getHours() * 60 + now.getMinutes()
+    const LATE_GRACE_MINUTES = 0 // 정확한 시간 기준 (유예 없음)
+
+    // 등하원 일정이 있는 학생만 대상
+    const studentsWithSchedule = assignedStudentIds.filter((id) => {
+      const schedules = allStudentSchedules[id] || []
+      return schedules.some((s) => s.day_of_week === todayWeekday && s.start_time)
+    })
+
     const presentSet = new Set<string>()
+    const lateSet = new Set<string>()
     const absentSet = new Set<string>()
-    uniqueStudents.forEach((id) => {
-      if (!id) return
+
+    studentsWithSchedule.forEach((id) => {
+      const schedules = allStudentSchedules[id] || []
+      const todaySchedule = schedules.find((s) => s.day_of_week === todayWeekday)
+      if (!todaySchedule || !todaySchedule.start_time) return
+
+      // 예정 등원 시간 파싱 (HH:MM:SS 형식)
+      const [schH, schM] = todaySchedule.start_time.split(':').map(Number)
+      const scheduledMinutes = schH * 60 + schM
+
       const logs = dailyLogsByStudent[id] || []
-      if (logs.length > 0 && logs.some((l) => l.in)) {
-        presentSet.add(id)
+      const firstCheckIn = logs.find((l) => l.in)?.in
+
+      if (firstCheckIn) {
+        // 등원함 - 지각 여부 판단
+        const checkInDate = new Date(firstCheckIn)
+        const checkInMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
+        if (checkInMinutes > scheduledMinutes + LATE_GRACE_MINUTES) {
+          lateSet.add(id)
+        } else {
+          presentSet.add(id)
+        }
       } else {
-        const status = filteredTodayAttendance.find((r) => r.student_id === id)?.status
-        if (status === 'absent') absentSet.add(id)
+        // 등원 안함 - 예정 시간 지났으면 결석
+        if (nowMinutes > scheduledMinutes + LATE_GRACE_MINUTES) {
+          absentSet.add(id)
+        }
+        // 아직 예정 시간 안 지났으면 아무것도 안함 (scheduled로 처리)
       }
     })
 
-    const total = uniqueStudents.length
+    const total = studentsWithSchedule.length
     const present = presentSet.size
-    const absent = Math.max(0, total - present)
-    const late = 0 // 더미 데이터: 지각 판정 미구현
+    const late = lateSet.size
+    const absent = absentSet.size
     const excused = 0
-    const scheduled = Math.max(0, total - present - absent)
-    const rate = total === 0 ? 0 : Math.round(((present + excused) / total) * 100)
+    const scheduled = Math.max(0, total - present - late - absent)
+    const attended = present + late // 출석 + 지각 = 등원한 학생
+    const rate = total === 0 ? 0 : Math.round((attended / total) * 100)
 
     return { total, present, late, absent, excused, scheduled, rate }
-  }, [filteredTodayAttendance, dailyLogsByStudent])
+  }, [selectedDate, assignedStudentIds, allStudentSchedules, dailyLogsByStudent])
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -846,6 +944,20 @@ export default function AttendancePage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* 플래너 모달 */}
+      {plannerTarget && (
+        <StudentPlannerModal
+          isOpen={plannerModalOpen}
+          onClose={() => {
+            setPlannerModalOpen(false)
+            setPlannerTarget(null)
+          }}
+          studentId={plannerTarget.id}
+          studentName={plannerTarget.name}
+          orgId={demoOrgId}
+        />
+      )}
     </div>
   )
 }

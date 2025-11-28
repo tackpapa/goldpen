@@ -7,9 +7,11 @@ import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useTeachersOverview, useStudents, useClasses } from '@/lib/swr'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
+import { PageSkeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -120,9 +122,17 @@ export default function TeachersPage() {
   usePageAccess('teachers')
 
   const { toast } = useToast()
+
+  // SWR hooks로 데이터 페칭
+  const { teachers: swrTeachers, isLoading: teachersLoading, refresh: refreshTeachers } = useTeachersOverview()
+  const { students: swrStudents, isLoading: studentsLoading, refresh: refreshStudents } = useStudents()
+  const { classes: swrClasses, isLoading: classesLoading, refresh: refreshClasses } = useClasses()
+
+  // 로컬 상태 (optimistic updates 용)
   const [teachers, setTeachers] = useState<Teacher[]>([])
   const [rawTeachers, setRawTeachers] = useState<Teacher[]>([])
   const [allStudents, setAllStudents] = useState<StudentForAssignment[]>([])
+  const [classes, setClasses] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -135,10 +145,30 @@ export default function TeachersPage() {
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false)
   const [isTeacherDetailModalOpen, setIsTeacherDetailModalOpen] = useState(false)
   const [selectedTeacherForDetail, setSelectedTeacherForDetail] = useState<Teacher | null>(null)
-  const [classes, setClasses] = useState<any[]>([])
   const [selectedTeacherFilter, setSelectedTeacherFilter] = useState<string>('all') // 강사 필터 상태
   const [displayCount, setDisplayCount] = useState(10) // 무한 스크롤 표시 개수
   const classesObserverTarget = useRef<HTMLDivElement>(null) // 무한 스크롤 센티넬
+
+  // SWR 데이터를 로컬 상태에 동기화
+  useEffect(() => {
+    if (swrTeachers.length > 0) {
+      const normalized = swrTeachers.map(normalizeTeacher)
+      setRawTeachers(normalized)
+      setTeachers(normalized)
+    }
+  }, [swrTeachers])
+
+  useEffect(() => {
+    if (swrStudents.length > 0) {
+      setAllStudents(swrStudents)
+    }
+  }, [swrStudents])
+
+  useEffect(() => {
+    if (swrClasses.length > 0) {
+      setClasses(swrClasses)
+    }
+  }, [swrClasses])
 
   const normalizeStatus = (status?: string) => normalizeStatusValue(status)
 
@@ -201,65 +231,8 @@ export default function TeachersPage() {
 
   const [subjectInput, setSubjectInput] = useState('')
 
-  // Fetch teachers and students on component mount
-  useEffect(() => {
-    const fetchTeachers = async () => {
-      setIsLoading(true)
-      try {
-        const response = await fetch('/api/teachers/overview', { credentials: 'include' })
-        const data = await response.json() as { teachers?: (Teacher & { assigned_students_count?: number; assigned_classes_count?: number })[]; error?: string }
-
-        if (response.ok) {
-          const normalized = (data.teachers || []).map(normalizeTeacher)
-          setRawTeachers(normalized)
-          setTeachers(normalized)
-        } else {
-          toast({
-            title: '데이터 로드 실패',
-            description: data.error || '강사 목록을 불러올 수 없습니다.',
-            variant: 'destructive',
-          })
-        }
-      } catch (error) {
-        toast({
-          title: '오류 발생',
-          description: '서버와 통신할 수 없습니다.',
-          variant: 'destructive',
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    const fetchStudents = async () => {
-      try {
-        const response = await fetch('/api/students', { credentials: 'include' })
-        const data = await response.json() as { students?: any[]; error?: string }
-
-        if (response.ok) {
-          setAllStudents(data.students || [])
-        }
-      } catch (error) {
-        console.error('Failed to fetch students:', error)
-      }
-    }
-
-    const fetchClasses = async () => {
-      try {
-        const response = await fetch('/api/classes', { credentials: 'include' })
-        const data = await response.json() as { classes?: any[]; error?: string }
-        if (response.ok) {
-          setClasses(data.classes || [])
-        }
-      } catch (error) {
-        console.error('Failed to fetch classes:', error)
-      }
-    }
-
-    fetchTeachers()
-    fetchStudents()
-    fetchClasses()
-  }, [toast])
+  // 로딩 상태 통합
+  const isInitialLoading = teachersLoading && teachers.length === 0
 
   // Derive assigned_students from student.teacher_id whenever teachers or students change
   useEffect(() => {
@@ -425,7 +398,7 @@ export default function TeachersPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentIds: selectedStudents }),
       })
-      const data = await response.json()
+      const data = await response.json() as { error?: string }
       if (!response.ok) throw new Error(data.error || '배정 저장에 실패했습니다.')
 
       const updatedTeachers = teachers.map((teacher) =>
@@ -731,6 +704,11 @@ export default function TeachersPage() {
   const activeTeachers = teachers.filter((t) => normalizeStatus(t.status) === 'active').length
   const totalClasses = classes.length
   const totalStudents = allStudents.length
+
+  // 초기 로딩 시 스켈레톤 표시
+  if (isInitialLoading) {
+    return <PageSkeleton />
+  }
 
   return (
     <div className="flex flex-col gap-6 p-4 md:p-6">

@@ -58,7 +58,7 @@ export function PaymentTab({
   const refreshRevenueCategories = async () => {
     try {
       const res = await fetch(`/api/settings/revenue-categories?slug=${slug}`, { credentials: 'include' })
-      const data = await res.json()
+      const data = await res.json() as { categories?: any[] }
       if (res.ok && data.categories) {
         // 서버에서 전달된 항목 + 로컬 기본값을 병합하고 활성 항목만 표시
         revenueCategoryManager.setCategories(data.categories)
@@ -134,7 +134,7 @@ export function PaymentTab({
         }),
       })
 
-      const result = await response.json()
+      const result = await response.json() as { error?: string }
 
       if (!response.ok) {
         throw new Error(result.error || '결제 등록에 실패했습니다.')

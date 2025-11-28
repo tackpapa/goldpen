@@ -175,9 +175,9 @@ export default function AuditLogsPage() {
       const response = await fetch(`/api/admin/audit-logs?${params}`)
 
       if (response.ok) {
-        const data = await response.json()
-        setLogs(data.logs)
-        setTotalCount(data.total)
+        const data = await response.json() as { logs?: any[]; total?: number }
+        setLogs(data.logs || [])
+        setTotalCount(data.total || 0)
       }
     } catch (error) {
       console.error('Failed to load audit logs:', error)

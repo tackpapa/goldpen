@@ -50,7 +50,7 @@ app.get("/", async (c) => {
         `SELECT id, org_id, name, 0::int as capacity, subject as type, status, created_at, updated_at FROM classes WHERE org_id = $1`,
         [DEMO_ORG],
       );
-      const rooms = roomRows.map((r) => ({
+      const rooms = roomRows.map((r: any) => ({
         id: r.id,
         org_id: r.org_id,
         name: r.name,

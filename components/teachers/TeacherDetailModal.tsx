@@ -65,7 +65,7 @@ export function TeacherDetailModal({
   classes,
 }: TeacherDetailModalProps) {
   const [activeTab, setActiveTab] = useState('info')
-  const { data: modalData, loading, refetch } = useTeacherModalData(open ? teacher.id : null)
+  const { data: modalData, loading, refetch } = useTeacherModalData(open && teacher ? teacher.id : null)
   const { toast } = useToast()
 
   const hasTeacher = Boolean(teacher)
@@ -94,11 +94,11 @@ export function TeacherDetailModal({
   const statusKey = normalizeStatus(currentTeacher.status)
   // subjects may come as string, array, or be undefined; normalize to safe list
   const subjectList = Array.isArray(currentTeacher.subjects)
-    ? currentTeacher.subjects.filter((s): s is string => Boolean(s))
+    ? currentTeacher.subjects.filter((s: any): s is string => Boolean(s))
     : typeof currentTeacher.subjects === 'string'
       ? currentTeacher.subjects
           .split(',')
-          .map((s) => s.trim())
+          .map((s: any) => s.trim())
           .filter(Boolean)
       : []
 
@@ -120,12 +120,12 @@ export function TeacherDetailModal({
         notes: updatedTeacher.notes,
       }
 
-      const response = await fetch(`/api/teachers/${teacher.id}`, {
+      const response = await fetch(`/api/teachers/${teacher?.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      const result = await response.json()
+      const result = (await response.json()) as any
       if (!response.ok) throw new Error(result.error || '강사 정보 업데이트 실패')
       // toast 제거: 부모 컴포넌트의 onUpdate에서 처리
       await refetch()

@@ -28,10 +28,11 @@ export async function POST(request: Request) {
       return Response.json({ error: '파일이 필요합니다' }, { status: 400 })
     }
 
-    const path = `logos/${orgId}/${Date.now()}-${file.name}`
-    const { error: uploadError } = await service.storage.from(BUCKET).upload(path, file, {
+    const fileObj = file as File
+    const path = `logos/${orgId}/${Date.now()}-${fileObj.name}`
+    const { error: uploadError } = await service.storage.from(BUCKET).upload(path, fileObj, {
       upsert: true,
-      contentType: file.type || 'application/octet-stream',
+      contentType: fileObj.type || 'application/octet-stream',
     })
     if (uploadError) {
       console.error('[Logo Upload] upload error', uploadError)

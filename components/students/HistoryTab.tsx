@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import type { Student, ClassCredit, StudyRoomPass, PaymentRecord } from '@/lib/types/database'
+import type { Student, PaymentRecord } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -12,22 +12,22 @@ interface HistoryTabProps {
 }
 
 export function HistoryTab({ student }: HistoryTabProps) {
-  const [credits, setCredits] = useState<ClassCredit[]>([])
-  const [passes, setPasses] = useState<StudyRoomPass[]>([])
+  const [credits, setCredits] = useState<any[]>([])
+  const [passes, setPasses] = useState<any[]>([])
   const [payments, setPayments] = useState<PaymentRecord[]>([])
 
   useEffect(() => {
     // Load class credits
     const storedCredits = localStorage.getItem('class_credits')
     if (storedCredits) {
-      const all = JSON.parse(storedCredits) as ClassCredit[]
+      const all = JSON.parse(storedCredits) as any[]
       setCredits(all.filter(c => c.student_id === student.id))
     }
 
     // Load study room passes
     const storedPasses = localStorage.getItem('study_room_passes')
     if (storedPasses) {
-      const all = JSON.parse(storedPasses) as StudyRoomPass[]
+      const all = JSON.parse(storedPasses) as any[]
       setPasses(all.filter(p => p.student_id === student.id))
     }
 
@@ -162,14 +162,14 @@ export function HistoryTab({ student }: HistoryTabProps) {
                       {new Date(payment.payment_date).toLocaleDateString('ko-KR')} · {' '}
                       {payment.payment_method === 'card' ? '카드' : payment.payment_method === 'cash' ? '현금' : '계좌이체'}
                     </p>
-                    {payment.granted_credits && (
+                    {(payment as any).granted_credits && (
                       <p className="text-xs text-green-600 mt-1">
-                        ✓ 수업 크레딧 {payment.granted_credits.hours}시간 부여
+                        ✓ 수업 크레딧 {(payment as any).granted_credits.hours}시간 부여
                       </p>
                     )}
-                    {payment.granted_pass && (
+                    {(payment as any).granted_pass && (
                       <p className="text-xs text-blue-600 mt-1">
-                        ✓ 독서실 {payment.granted_pass.amount}{payment.granted_pass.type === 'hours' ? '시간' : '일'}권 부여
+                        ✓ 독서실 {(payment as any).granted_pass.amount}{(payment as any).granted_pass.type === 'hours' ? '시간' : '일'}권 부여
                       </p>
                     )}
                   </div>

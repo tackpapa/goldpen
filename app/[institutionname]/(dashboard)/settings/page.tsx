@@ -47,16 +47,23 @@ import { Textarea } from '@/components/ui/textarea'
 const defaultOrganization: Organization = {
   id: '',
   name: '',
+  owner_id: '',
   owner_name: '',
   address: '',
   phone: '',
   email: '',
   logo_url: '',
+  slug: '',
+  status: 'active',
   settings: {
     auto_sms: false,
     auto_email: false,
     notification_enabled: false,
+    use_sms: false,
+    use_kakao: false,
   },
+  created_at: '',
+  updated_at: '',
 }
 
 // Service Usage Data Types
@@ -78,6 +85,14 @@ interface ServiceUsage {
   cost: number
 }
 
+// API 응답 타입
+interface ApiResponse {
+  error?: string
+  url?: string
+  path?: string
+  organization?: Organization
+  [key: string]: unknown
+}
 
 export default function SettingsPage() {
   const { toast } = useToast()
@@ -143,6 +158,67 @@ export default function SettingsPage() {
     notes: '',
   })
 
+  // 메시지 템플릿 state
+  const DEFAULT_TEMPLATES: Record<string, string> = {
+    // 학원/공부방 전용
+    'academy_late': '[{{기관명}}] {{학생명}} 학생이 등록된 시간({{예정시간}})에 등원하지 않았습니다. 확인 부탁드립니다.',
+    'academy_checkin': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 등원하였습니다.',
+    'academy_checkout': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 하원하였습니다.',
+    // 독서실 전용
+    'study_late': '[{{기관명}}] {{학생명}} 학생이 등록된 시간({{예정시간}})에 입실하지 않았습니다. 확인 부탁드립니다.',
+    'study_checkin': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 입실하였습니다.',
+    'study_checkout': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 퇴실하였습니다.',
+    'study_out': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 외출하였습니다.',
+    'study_return': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 복귀하였습니다.',
+    // 학습 알림
+    'daily_report': '[{{기관명}}] {{학생명}} 학생의 {{날짜}} 학습 현황입니다.\n\n총 학습시간: {{총학습시간}}\n완료한 과목: {{완료과목}}\n\n자세한 내용은 앱에서 확인해주세요.',
+    // 수업일지
+    'lesson_report': '[{{기관명}}] {{학생명}} 학생의 수업일지가 도착했습니다.\n\n과목: {{과목}}\n강사: {{강사명}}\n수업내용: {{수업내용}}\n\n자세한 내용은 앱에서 확인해주세요.',
+    // 시험 결과
+    'exam_result': '[{{기관명}}] {{학생명}} 학생의 시험 결과입니다.\n\n시험명: {{시험명}}\n점수: {{점수}}점\n\n자세한 내용은 앱에서 확인해주세요.',
+    // 과제 관련
+    'assignment_new': '[{{기관명}}] {{학생명}} 학생에게 새로운 과제가 등록되었습니다.\n\n과제명: {{과제명}}\n마감일: {{마감일}}\n\n자세한 내용은 앱에서 확인해주세요.',
+    'assignment_remind': '[{{기관명}}] {{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제명: {{과제명}}\n마감일: {{마감일}}\n\n제출을 서둘러주세요.',
+  }
+  const [messageTemplates, setMessageTemplates] = useState<Record<string, string>>(DEFAULT_TEMPLATES)
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
+  const [editingTemplateKey, setEditingTemplateKey] = useState<string | null>(null)
+  const [editingTemplateValue, setEditingTemplateValue] = useState('')
+
+  const TEMPLATE_LABELS: Record<string, string> = {
+    'academy_late': '지각 안내 (학원/공부방)',
+    'academy_checkin': '등원 알림 (학원/공부방)',
+    'academy_checkout': '하원 알림 (학원/공부방)',
+    'study_late': '지각 안내 (독서실)',
+    'study_checkin': '입실 알림 (독서실)',
+    'study_checkout': '퇴실 알림 (독서실)',
+    'study_out': '외출 알림 (독서실)',
+    'study_return': '복귀 알림 (독서실)',
+    'daily_report': '당일 학습 진행 결과',
+    'lesson_report': '수업일지 전송',
+    'exam_result': '시험 결과 전송',
+    'assignment_new': '새 과제 등록',
+    'assignment_remind': '과제 마감 알림',
+  }
+
+  const handleOpenTemplateModal = (key: string) => {
+    setEditingTemplateKey(key)
+    setEditingTemplateValue(messageTemplates[key] || DEFAULT_TEMPLATES[key] || '')
+    setIsTemplateModalOpen(true)
+  }
+
+  const handleSaveTemplate = async () => {
+    if (!editingTemplateKey) return
+    const nextTemplates = { ...messageTemplates, [editingTemplateKey]: editingTemplateValue }
+    setMessageTemplates(nextTemplates)
+    // settings에 저장
+    const nextSettings = { ...organization.settings, messageTemplates: nextTemplates }
+    setOrganization({ ...organization, settings: nextSettings })
+    await persistOrganization({ settings: nextSettings })
+    setIsTemplateModalOpen(false)
+    toast({ title: '저장 완료', description: '메시지 템플릿이 저장되었습니다.' })
+  }
+
   // Account management state
   type Account = {
     id: string
@@ -201,9 +277,9 @@ export default function SettingsPage() {
 
   const fetchJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const res = await fetch(path, { credentials: 'include', ...init })
-    const data = await res.json()
+    const data = await res.json() as T & { error?: string }
     if (!res.ok) {
-      throw new Error(data?.error || '요청 실패')
+      throw new Error(data.error || '요청 실패')
     }
     return data as T
   }
@@ -273,10 +349,10 @@ export default function SettingsPage() {
           credentials: 'include',
           body: form,
         })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || '로고 업로드 실패')
+        const data = await res.json() as ApiResponse
+        if (!res.ok) throw new Error(data.error || '로고 업로드 실패')
 
-        const logoUrl = data.url || data.path
+        const logoUrl = (data.url || data.path) as string
         setOrganization((prev) => ({ ...prev, logo_url: logoUrl }))
         localStorage.setItem('organization_logo', logoUrl)
         localStorage.setItem('organization_name', organization.name)
@@ -321,8 +397,8 @@ export default function SettingsPage() {
         settings: payload.settings,
       }),
     })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data?.error || '저장 실패')
+    const data = await res.json() as ApiResponse
+    if (!res.ok) throw new Error(data.error || '저장 실패')
     if (data.organization) {
       setOrganization({
         ...defaultOrganization,
@@ -364,15 +440,22 @@ export default function SettingsPage() {
     } catch (e) {
       // ignore rollback for now
     }
+    const settingLabels: Record<string, string> = {
+      auto_sms: 'SMS 자동 발송',
+      auto_email: '이메일 자동 발송',
+      use_sms: 'SMS 사용',
+      use_kakao: '카카오메세지 사용',
+      notification_enabled: '알림',
+    }
     toast({
       title: '설정 변경',
-      description: `${key === 'auto_sms' ? 'SMS 자동 발송' : key === 'auto_email' ? '이메일 자동 발송' : '알림'} 설정이 변경되었습니다.`,
+      description: `${settingLabels[key] || key} 설정이 변경되었습니다.`,
     })
   }
 
-  const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' }> = {
+  const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }> = {
     active: { label: '활성', variant: 'default' },
-    available: { label: '사용 가능', variant: 'success' },
+    available: { label: '사용 가능', variant: 'default' },
     inactive: { label: '비활성', variant: 'secondary' },
     maintenance: { label: '점검 중', variant: 'outline' },
   }
@@ -407,8 +490,8 @@ export default function SettingsPage() {
           notes: roomForm.notes || null,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || '교실 저장 실패')
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '교실 저장 실패')
       await loadAll()
       toast({
         title: editingRoom ? '교실 수정 완료' : '교실 추가 완료',
@@ -430,8 +513,8 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: roomId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || '교실 삭제 실패')
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '교실 삭제 실패')
       await loadAll()
       toast({ title: '교실 삭제 완료', description: `${room?.name} 교실이 삭제되었습니다.` })
     } catch (e) {
@@ -470,8 +553,8 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...(editingBranch ? { id: editingBranch.id } : {}), ...branchForm }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || '지점 저장 실패')
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '지점 저장 실패')
       await loadAll()
       toast({
         title: editingBranch ? '지점 수정 완료' : '지점 추가 완료',
@@ -493,8 +576,8 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: branchId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || '지점 삭제 실패')
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '지점 삭제 실패')
       await loadAll()
       toast({ title: '지점 삭제 완료', description: `${branch?.name} 지점이 삭제되었습니다.` })
     } catch (e) {
@@ -538,8 +621,8 @@ export default function SettingsPage() {
           role: accountForm.role,
         }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || '계정 저장 실패')
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '계정 저장 실패')
       await loadAll()
       toast({
         title: editingAccount ? '계정 수정 완료' : '계정 추가 완료',
@@ -561,8 +644,8 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: accountId }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data?.error || '계정 삭제 실패')
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '계정 삭제 실패')
       await loadAll()
       toast({ title: '계정 삭제 완료', description: `${account?.name} 계정이 삭제되었습니다.` })
     } catch (e) {
@@ -686,7 +769,7 @@ export default function SettingsPage() {
           id: editingRevenueCategory?.id,
           name: revenueCategoryForm.name,
           description: revenueCategoryForm.description || null,
-          display_order: editingRevenueCategory?.display_order,
+          order: editingRevenueCategory?.order,
           is_active: editingRevenueCategory?.is_active ?? true,
         }),
       })
@@ -745,19 +828,19 @@ export default function SettingsPage() {
     if (target < 0 || target >= revenueCategories.length) return
     const newCategories = [...revenueCategories]
     ;[newCategories[idx], newCategories[target]] = [newCategories[target], newCategories[idx]]
-    // update display_order in DB
+    // update order in DB
     try {
       await Promise.all(
-        newCategories.map((c, order) =>
+        newCategories.map((c, idx) =>
           fetch(withSlug(`${basePath}/revenue-categories`), {
             method: 'PATCH',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: c.id, display_order: order }),
+            body: JSON.stringify({ id: c.id, order: idx }),
           })
         )
       )
-      setRevenueCategories(newCategories.map((c, order) => ({ ...c, display_order: order })))
+      setRevenueCategories(newCategories.map((c, idx) => ({ ...c, order: idx })))
       toast({ title: '순서 변경 완료', description: '수입 항목 순서가 변경되었습니다.' })
     } catch (e) {
       toast({ title: '순서 변경 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
@@ -807,7 +890,7 @@ export default function SettingsPage() {
           name: expenseCategoryForm.name,
           description: expenseCategoryForm.description || null,
           color: expenseCategoryForm.color,
-          display_order: editingExpenseCategory?.display_order,
+          order: editingExpenseCategory?.order,
           is_active: editingExpenseCategory?.is_active ?? true,
         }),
       })
@@ -868,16 +951,16 @@ export default function SettingsPage() {
     ;[newCategories[idx], newCategories[target]] = [newCategories[target], newCategories[idx]]
     try {
       await Promise.all(
-        newCategories.map((c, order) =>
+        newCategories.map((c, idx) =>
           fetch(withSlug(`${basePath}/expense-categories`), {
             method: 'PATCH',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: c.id, display_order: order }),
+            body: JSON.stringify({ id: c.id, order: idx }),
           })
         )
       )
-      setExpenseCategories(newCategories.map((c, order) => ({ ...c, display_order: order })))
+      setExpenseCategories(newCategories.map((c, idx) => ({ ...c, order: idx })))
       toast({ title: '순서 변경 완료', description: '지출 항목 순서가 변경되었습니다.' })
     } catch (e) {
       toast({ title: '순서 변경 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
@@ -1112,8 +1195,6 @@ export default function SettingsPage() {
           <TabsTrigger value="revenue">수입관리</TabsTrigger>
           <TabsTrigger value="expense">지출관리</TabsTrigger>
           <TabsTrigger value="menus">메뉴 관리</TabsTrigger>
-          <TabsTrigger value="automation">자동화</TabsTrigger>
-          <TabsTrigger value="notifications">알림</TabsTrigger>
           <TabsTrigger value="kakaotalk">알림톡 설정</TabsTrigger>
           <TabsTrigger value="billing">서비스 이용내역</TabsTrigger>
         </TabsList>
@@ -1215,11 +1296,10 @@ export default function SettingsPage() {
                   <Input
                     id="owner-name"
                     value={organization.owner_name || ''}
-                    onChange={(e) =>
-                      setOrganization({ ...organization, owner_name: e.target.value })
-                    }
-                    placeholder="예: 김원장"
+                    disabled
+                    className="bg-muted"
                   />
+                  <p className="text-xs text-muted-foreground">가입 시 등록된 이름입니다</p>
                 </div>
               </div>
 
@@ -1462,7 +1542,7 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">
-                  {accounts.filter((a) => a.role === 'staff' || a.role === 'manager').length}개
+                  {accounts.filter((a) => a.role === 'staff').length}개
                 </div>
                 <p className="text-xs text-muted-foreground">직원 전용 계정</p>
               </CardContent>
@@ -1774,7 +1854,7 @@ export default function SettingsPage() {
                         variant="ghost"
                         size="sm"
                         className="h-6 w-6 p-0"
-                        onClick={() => handleMoveExpenseCategory(index, 'up')}
+                        onClick={() => handleMoveExpenseCategory(category.id, 'up')}
                         disabled={index === 0}
                       >
                         <ChevronUp className="h-4 w-4" />
@@ -1783,7 +1863,7 @@ export default function SettingsPage() {
                         variant="ghost"
                         size="sm"
                         className="h-6 w-6 p-0"
-                        onClick={() => handleMoveExpenseCategory(index, 'down')}
+                        onClick={() => handleMoveExpenseCategory(category.id, 'down')}
                         disabled={index === expenseCategories.length - 1}
                       >
                         <ChevronDown className="h-4 w-4" />
@@ -2043,130 +2123,6 @@ export default function SettingsPage() {
 
         </TabsContent>
 
-        {/* Automation Tab */}
-        <TabsContent value="automation" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>자동화 설정</CardTitle>
-              <CardDescription>자동 메시지 발송을 설정하세요</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>SMS 자동 발송</Label>
-                  <p className="text-sm text-muted-foreground">
-                    출결, 성적 등의 정보를 SMS로 자동 발송합니다
-                  </p>
-                </div>
-                <Switch
-                  checked={organization.settings.auto_sms}
-                  onCheckedChange={() => handleToggleSetting('auto_sms')}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>이메일 자동 발송</Label>
-                  <p className="text-sm text-muted-foreground">
-                    월별 리포트를 이메일로 자동 발송합니다
-                  </p>
-                </div>
-                <Switch
-                  checked={organization.settings.auto_email}
-                  onCheckedChange={() => handleToggleSetting('auto_email')}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>발송 템플릿</CardTitle>
-              <CardDescription>자동 발송 메시지 템플릿을 관리하세요</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {[
-                  { name: '출석 안내', type: 'SMS', status: 'active' },
-                  { name: '결석 알림', type: 'SMS', status: 'active' },
-                  { name: '성적 발송', type: 'Email', status: 'active' },
-                  { name: '월간 리포트', type: 'Email', status: 'inactive' },
-                ].map((template, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between rounded-lg border p-3"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div>
-                        <p className="font-medium">{template.name}</p>
-                        <p className="text-sm text-muted-foreground">{template.type}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant={template.status === 'active' ? 'default' : 'secondary'}
-                      >
-                        {template.status === 'active' ? '활성' : '비활성'}
-                      </Badge>
-                      <Button variant="ghost" size="sm">
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Notifications Tab */}
-        <TabsContent value="notifications" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>알림 설정</CardTitle>
-              <CardDescription>시스템 알림을 설정하세요</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>푸시 알림</Label>
-                  <p className="text-sm text-muted-foreground">
-                    브라우저 푸시 알림을 받습니다
-                  </p>
-                </div>
-                <Switch
-                  checked={organization.settings.notification_enabled}
-                  onCheckedChange={() => handleToggleSetting('notification_enabled')}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>알림 항목</CardTitle>
-              <CardDescription>받을 알림 유형을 선택하세요</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {[
-                { label: '신규 상담 요청', description: '새로운 상담 신청이 있을 때' },
-                { label: '학생 결석', description: '학생이 결석했을 때' },
-                { label: '결제 완료', description: '학부모가 결제를 완료했을 때' },
-                { label: '결제 미납', description: '미납 결제가 발생했을 때' },
-                { label: '과제 제출', description: '학생이 과제를 제출했을 때' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>{item.label}</Label>
-                    <p className="text-sm text-muted-foreground">{item.description}</p>
-                  </div>
-                  <Switch defaultChecked={i < 3} />
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
         {/* KakaoTalk Notification Settings Tab */}
         <TabsContent value="kakaotalk" className="space-y-4">
           <Card>
@@ -2180,6 +2136,49 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* 메시지 발송 방식 선택 */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">메시지 발송 방식</Label>
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant={organization.settings.use_sms ? 'default' : 'outline'}
+                    className="gap-2"
+                    onClick={() => {
+                      const nextSettings = {
+                        ...organization.settings,
+                        use_sms: true,
+                        use_kakao: false,
+                      }
+                      setOrganization({ ...organization, settings: nextSettings })
+                      persistOrganization({ settings: nextSettings })
+                      toast({ title: '설정 변경', description: 'SMS 사용으로 변경되었습니다.' })
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    SMS 사용하기
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={organization.settings.use_kakao ? 'default' : 'outline'}
+                    className="gap-2"
+                    onClick={() => {
+                      const nextSettings = {
+                        ...organization.settings,
+                        use_sms: false,
+                        use_kakao: true,
+                      }
+                      setOrganization({ ...organization, settings: nextSettings })
+                      persistOrganization({ settings: nextSettings })
+                      toast({ title: '설정 변경', description: '카카오메세지 사용으로 변경되었습니다.' })
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    카카오메세지 사용하기
+                  </Button>
+                </div>
+              </div>
+
               {/* 출결 관련 알림 - 학원/공부방 전용 */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">
@@ -2193,7 +2192,12 @@ export default function SettingsPage() {
                       학생이 등록한 스케줄에 맞게 등원하지 않았을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('academy_late')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2203,7 +2207,12 @@ export default function SettingsPage() {
                       학생이 등원했을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('academy_checkin')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2213,7 +2222,12 @@ export default function SettingsPage() {
                       학생이 하원했을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('academy_checkout')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
               </div>
 
@@ -2230,7 +2244,12 @@ export default function SettingsPage() {
                       학생이 등록한 스케줄에 맞게 입실하지 않았을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_late')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2240,7 +2259,12 @@ export default function SettingsPage() {
                       학생이 독서실에 입실했을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_checkin')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2250,7 +2274,12 @@ export default function SettingsPage() {
                       학생이 독서실에서 퇴실했을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_checkout')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2260,7 +2289,12 @@ export default function SettingsPage() {
                       학생이 외출했을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_out')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
 
                 <div className="flex items-center justify-between">
@@ -2270,7 +2304,12 @@ export default function SettingsPage() {
                       학생이 외출 후 복귀했을 때
                     </p>
                   </div>
-                  <Switch defaultChecked />
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_return')}>
+                      템플릿 수정
+                    </Button>
+                    <Switch defaultChecked />
+                  </div>
                 </div>
               </div>
 
@@ -2291,7 +2330,12 @@ export default function SettingsPage() {
                         💡 학생이 하루에 여러 번 입실/퇴실해도 플래너는 하루 단위로 유지되며, 설정 시간에 한 번만 전송됩니다
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('daily_report')}>
+                        템플릿 수정
+                      </Button>
+                      <Switch defaultChecked />
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-4 pt-2 border-t">
@@ -2333,7 +2377,12 @@ export default function SettingsPage() {
                         강사가 수업일지 작성 → 관리자 승인 → 학부모에게 전송
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('lesson_report')}>
+                        템플릿 수정
+                      </Button>
+                      <Switch defaultChecked />
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
                     💡 강사가 작성한 수업일지는 관리자가 승인 버튼을 눌러야 학부모에게 발송됩니다
@@ -2355,7 +2404,12 @@ export default function SettingsPage() {
                         시험 결과 입력 → 관리자 승인 → 학부모에게 전송
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('exam_result')}>
+                        템플릿 수정
+                      </Button>
+                      <Switch defaultChecked />
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
                     💡 시험 결과는 관리자가 승인 버튼을 눌러야 학부모에게 발송됩니다
@@ -2377,7 +2431,12 @@ export default function SettingsPage() {
                         과제 등록 → 관리자 승인 → 학부모에게 전송
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('assignment_new')}>
+                        템플릿 수정
+                      </Button>
+                      <Switch defaultChecked />
+                    </div>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
                     💡 과제 정보는 관리자가 승인 버튼을 눌러야 학부모에게 발송됩니다
@@ -2786,6 +2845,67 @@ export default function SettingsPage() {
             </Button>
             <Button onClick={handleSaveRoom}>
               {editingRoom ? '수정' : '추가'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Template Edit Modal */}
+      <Dialog open={isTemplateModalOpen} onOpenChange={setIsTemplateModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>메시지 템플릿 수정</DialogTitle>
+            <DialogDescription>
+              {editingTemplateKey && TEMPLATE_LABELS[editingTemplateKey]}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="template-content">메시지 템플릿</Label>
+              <Textarea
+                id="template-content"
+                value={editingTemplateValue}
+                onChange={(e) => setEditingTemplateValue(e.target.value)}
+                rows={8}
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded space-y-1">
+              <p className="font-medium">사용 가능한 변수:</p>
+              <p>{'{{기관명}}'} - 기관 이름</p>
+              <p>{'{{학생명}}'} - 학생 이름</p>
+              <p>{'{{시간}}'} - 이벤트 발생 시간</p>
+              <p>{'{{예정시간}}'} - 예정된 시간 (지각 알림용)</p>
+              <p>{'{{날짜}}'} - 날짜</p>
+              <p>{'{{과목}}'} - 과목명</p>
+              <p>{'{{강사명}}'} - 강사 이름</p>
+              <p>{'{{수업내용}}'} - 수업 내용</p>
+              <p>{'{{시험명}}'} - 시험 이름</p>
+              <p>{'{{점수}}'} - 시험 점수</p>
+              <p>{'{{과제명}}'} - 과제 이름</p>
+              <p>{'{{마감일}}'} - 과제 마감일</p>
+              <p>{'{{총학습시간}}'} - 총 학습 시간</p>
+              <p>{'{{완료과목}}'} - 완료한 과목</p>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (editingTemplateKey) {
+                  setEditingTemplateValue(DEFAULT_TEMPLATES[editingTemplateKey] || '')
+                }
+              }}
+            >
+              기본값으로 초기화
+            </Button>
+            <Button variant="outline" onClick={() => setIsTemplateModalOpen(false)}>
+              취소
+            </Button>
+            <Button onClick={handleSaveTemplate}>
+              저장
             </Button>
           </DialogFooter>
         </DialogContent>

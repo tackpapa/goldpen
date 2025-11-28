@@ -48,16 +48,6 @@ export const availableWidgets: Widget[] = [
     order: 2,
   },
   {
-    id: 'consultations-upcoming',
-    type: 'consultations-upcoming',
-    title: '예정된 상담',
-    description: '오늘/내일 상담 일정',
-    category: '상담관리',
-    size: 'medium',
-    enabled: true,
-    order: 9,
-  },
-  {
     id: 'consultations-conversion',
     type: 'consultations-conversion',
     title: '입교 전환율',
@@ -170,7 +160,7 @@ export const availableWidgets: Widget[] = [
   {
     id: 'attendance-today',
     type: 'attendance-today',
-    title: '오늘 출결',
+    title: '강의 오늘 출결',
     description: '출석/지각/결석',
     category: '출결관리',
     size: 'small',
@@ -180,7 +170,7 @@ export const availableWidgets: Widget[] = [
   {
     id: 'attendance-weekly',
     type: 'attendance-weekly',
-    title: '주간 출결률',
+    title: '강의 주간 출결률',
     description: '요일별 출결 추이',
     category: '출결관리',
     size: 'medium',
@@ -303,10 +293,10 @@ export const availableWidgets: Widget[] = [
     id: 'announcements',
     type: 'announcements',
     title: '공지사항',
-    description: '중요한 공지사항',
+    description: '중요한 공지사항 (기능 개발 예정)',
     category: '기타',
     size: 'medium',
-    enabled: true,
+    enabled: false,  // 실제 데이터 테이블이 없으므로 비활성화
     order: 7,
   },
 ]
@@ -316,8 +306,8 @@ export const defaultEnabledWidgetIds = availableWidgets
   .filter((w) => w.enabled)
   .map((w) => w.id)
 
-// LocalStorage 키 (v3로 변경하여 캐시 초기화)
-export const WIDGETS_STORAGE_KEY = 'dashboard-widgets-config-v3'
+// LocalStorage 키 (v6로 변경하여 캐시 초기화 - announcements 비활성화)
+export const WIDGETS_STORAGE_KEY = 'dashboard-widgets-config-v6'
 
 // 위젯 설정 가져오기 (Smart Config Merging)
 export function getWidgetsConfig(): Widget[] {

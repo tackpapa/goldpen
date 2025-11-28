@@ -2,6 +2,7 @@ import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { createClient } from '@supabase/supabase-js'
 import { createClassSchema } from '@/lib/validations/class'
 import { ZodError } from 'zod'
+import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 // 서비스 롤 클라이언트 (RLS 무시, 인증 실패 시 Fallback)
 function getServiceClient() {
@@ -113,13 +114,38 @@ export async function GET(request: Request) {
       return Response.json({ error: '반 목록 조회 실패' }, { status: 500 })
     }
 
+    // 실제 enrollment 수 계산 (students가 존재하는 것만 카운트)
+    const classIds = classes?.map((c: any) => c.id) || []
+    let enrollmentCounts: Record<string, number> = {}
+
+    if (classIds.length > 0) {
+      const { data: enrollments } = await db
+        .from('class_enrollments')
+        .select('class_id, student_id, students:student_id(id)')
+        .eq('org_id', orgId)
+        .or('status.eq.active,status.is.null')
+        .in('class_id', classIds)
+
+      // 학생이 실제로 존재하는 enrollment만 카운트
+      if (enrollments) {
+        for (const e of enrollments) {
+          if (e.students) {
+            enrollmentCounts[e.class_id] = (enrollmentCounts[e.class_id] || 0) + 1
+          }
+        }
+      }
+    }
+
     const normalized =
-      classes?.map((cls) => ({
+      classes?.map((cls: any) => ({
         ...cls,
         schedule: Array.isArray(cls.schedule) ? cls.schedule : [],
+        current_students: enrollmentCounts[cls.id] || 0, // 실제 학생 수로 덮어쓰기
       })) ?? []
 
-    return Response.json({ classes: normalized, count: count || 0, total: count || 0 })
+    return Response.json({ classes: normalized, count: count || 0, total: count || 0 }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('[Classes GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
@@ -186,6 +212,20 @@ export async function POST(request: Request) {
       classId: classData.id,
       schedule: validated.schedule || [],
       roomName: validated.room,
+    })
+
+    // 활동 로그 기록
+    await logActivity({
+      orgId: userProfile.org_id,
+      userId: user.id,
+      userName: user.email?.split('@')[0] || '사용자',
+      userRole: null,
+      actionType: 'create',
+      entityType: 'class',
+      entityId: classData.id,
+      entityName: classData.name,
+      description: actionDescriptions.class.create(classData.name || '이름 없음'),
+      request,
     })
 
     return Response.json({ class: classData, message: '반이 생성되었습니다' }, { status: 201 })

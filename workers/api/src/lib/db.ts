@@ -1,3 +1,4 @@
+// @ts-ignore - pg types not available in Workers context
 import { Pool } from 'pg'
 import type { Env } from '../env'
 

@@ -116,6 +116,8 @@ const mockStudents: Student[] = [
     status: 'active',
     enrollment_date: '2025-01-01',
     notes: '성실한 학생',
+    credit: 0,
+    seatsremainingtime: 0,
   },
   {
     id: '2',
@@ -132,6 +134,8 @@ const mockStudents: Student[] = [
     subjects: ['국어', '사회'],
     status: 'active',
     enrollment_date: '2025-01-02',
+    credit: 0,
+    seatsremainingtime: 0,
   },
   {
     id: '3',
@@ -147,6 +151,8 @@ const mockStudents: Student[] = [
     subjects: ['수학', '과학'],
     status: 'active',
     enrollment_date: '2025-01-03',
+    credit: 0,
+    seatsremainingtime: 0,
   },
 ]
 

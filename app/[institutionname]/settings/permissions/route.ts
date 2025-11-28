@@ -36,7 +36,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { db, orgId } = await getSupabaseWithOrg(request)
-    const body = await request.json()
+    const body = await request.json() as { permissions?: any[] }
     const items = z.array(permissionSchema).parse(body?.permissions || [])
 
     // upsert each

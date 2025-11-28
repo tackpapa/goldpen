@@ -1,4 +1,4 @@
-import { e2eBypass } from '@/api/_utils/e2e-bypass'
+import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
 /**

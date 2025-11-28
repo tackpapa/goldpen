@@ -14,9 +14,11 @@ export const runtime = 'edge'
 import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useExams, useClasses, useTeachers } from '@/lib/swr'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
+import { PageSkeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -27,7 +29,7 @@ import {
 } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Eye, Edit, MoreHorizontal, TrendingUp, PenSquare, BarChart3, Send } from 'lucide-react'
+import { Plus, Eye, Edit, Trash2, TrendingUp, PenSquare, BarChart3, Send, Copy } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,48 +56,70 @@ export default function ExamsPage() {
   usePageAccess('exams')
 
   const { toast } = useToast()
-  const [exams, setExams] = useState<Exam[]>([])
-  const [scores, setScores] = useState<Record<string, ExamScore[]>>({})
-  const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    const fetchExams = async () => {
-      setIsLoading(true)
-      try {
-        const response = await fetch('/api/exams', { credentials: 'include' })
-        const data = await response.json() as { exams?: Exam[]; scores?: Record<string, ExamScore[]>; error?: string }
-        if (response.ok) {
-          setExams(data.exams || [])
-          setScores(data.scores || {})
-        } else {
-          toast({ title: '시험 데이터 로드 실패', variant: 'destructive' })
-        }
-      } catch {
-        toast({ title: '오류 발생', variant: 'destructive' })
-      } finally {
-        setIsLoading(false)
-      }
+  // SWR 훅으로 데이터 페칭
+  const { exams: examsData, scores: scoresData, isLoading: examsLoading, refresh: refreshExams } = useExams()
+  const { classes: classesData, isLoading: classesLoading } = useClasses()
+  const { teachers: teachersData, isLoading: teachersLoading } = useTeachers()
+
+  // 로컬 상태 (수정 시 사용)
+  const [localExams, setLocalExams] = useState<Exam[] | null>(null)
+  const [localScores, setLocalScores] = useState<Record<string, ExamScore[]> | null>(null)
+
+  // 실제 사용할 데이터 (로컬 상태가 있으면 로컬, 없으면 SWR)
+  const exams = localExams ?? examsData
+  const scores = localScores ?? scoresData
+  const classes = classesData as Array<{ id: string; name: string; teacher_id?: string; teacher_name?: string; teacher?: { id: string; name: string } | null }>
+  const teachers = teachersData as Array<{ id: string; name: string }>
+  const isLoading = examsLoading || classesLoading || teachersLoading
+
+  // 로컬 상태 업데이트 함수
+  const setExams = (updater: Exam[] | ((prev: Exam[]) => Exam[])) => {
+    if (typeof updater === 'function') {
+      setLocalExams(prev => updater(prev ?? examsData))
+    } else {
+      setLocalExams(updater)
     }
-    fetchExams()
-  }, [toast])
+  }
+  const setScores = (updater: Record<string, ExamScore[]> | ((prev: Record<string, ExamScore[]>) => Record<string, ExamScore[]>)) => {
+    if (typeof updater === 'function') {
+      setLocalScores(prev => updater(prev ?? scoresData))
+    } else {
+      setLocalScores(updater)
+    }
+  }
+
+  const [viewTab, setViewTab] = useState<'teacher' | 'class'>('teacher')
   const [selectedExam, setSelectedExam] = useState<Exam | null>(null)
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
+  const [selectedClass, setSelectedClass] = useState<string>('all')
   const [userRole, setUserRole] = useState<string>('teacher')
   const [isScoresDialogOpen, setIsScoresDialogOpen] = useState(false)
   const [isStatsDialogOpen, setIsStatsDialogOpen] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
   const [isScoreEntryDialogOpen, setIsScoreEntryDialogOpen] = useState(false)
   const [isNotificationDialogOpen, setIsNotificationDialogOpen] = useState(false)
+  const [isNotificationLoading, setIsNotificationLoading] = useState(false)
+  const [notificationStudents, setNotificationStudents] = useState<Array<{ id: string; name: string; parent_phone: string | null }>>([])
+  const [isGradingDialogOpen, setIsGradingDialogOpen] = useState(false)
+  const [isGradingLoading, setIsGradingLoading] = useState(false)
+  const [gradingStudents, setGradingStudents] = useState<Array<{ id: string; name: string }>>([])
+  const [gradingScores, setGradingScores] = useState<Record<string, string>>({})
+  const [gradingFeedbacks, setGradingFeedbacks] = useState<Record<string, string>>({})
+  const [gradingTab, setGradingTab] = useState<'manual' | 'auto'>('manual')
+  const [bulkGradingText, setBulkGradingText] = useState('')
+  const [autoMappedScores, setAutoMappedScores] = useState<Array<{ studentId: string; studentName: string; score: string; feedback: string; matched: boolean }>>([])
+  const [unmatchedRows, setUnmatchedRows] = useState<Array<{ name: string; score: string; feedback: string }>>([])
   const [scoreEntryTab, setScoreEntryTab] = useState<'manual' | 'bulk'>('manual')
   const [bulkScoresText, setBulkScoresText] = useState('')
   const [manualScores, setManualScores] = useState<Record<string, number>>({})
   const [manualFeedbacks, setManualFeedbacks] = useState<Record<string, string>>({})
   const [examForm, setExamForm] = useState({
-    name: '',
+    title: '',
     subject: '',
     class_name: '',
     exam_date: '',
-    exam_time: '',
+    duration_minutes: 60,
     total_score: 100,
   })
 
@@ -112,13 +136,17 @@ export default function ExamsPage() {
   }
 
   // 필터링된 시험 목록
-  const filteredExams = exams.filter((exam) =>
-    selectedTeacher === 'all' || exam.teacher_name === selectedTeacher
-  )
+  const filteredExams = exams.filter((exam) => {
+    if (viewTab === 'teacher') {
+      return selectedTeacher === 'all' || exam.teacher_name === selectedTeacher
+    } else {
+      return selectedClass === 'all' || exam.class_name === selectedClass || exam.class_id === selectedClass
+    }
+  })
 
   const columns: ColumnDef<Exam>[] = [
     {
-      accessorKey: 'name',
+      accessorKey: 'title',
       header: '시험명',
     },
     {
@@ -142,17 +170,15 @@ export default function ExamsPage() {
       header: '시험일',
       cell: ({ row }) => {
         const date = row.getValue('exam_date') as string
-        const time = row.original.exam_time
-        return `${format(new Date(date), 'yyyy-MM-dd')} ${time}`
+        return format(new Date(date), 'yyyy-MM-dd')
       },
     },
     {
-      accessorKey: 'status',
-      header: '상태',
+      accessorKey: 'duration_minutes',
+      header: '시험시간',
       cell: ({ row }) => {
-        const status = row.getValue('status') as Exam['status']
-        const statusInfo = statusMap[status] || { label: '미정', variant: 'outline' as const }
-        return <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+        const duration = row.getValue('duration_minutes') as number | null
+        return duration ? `${duration}분` : '-'
       },
     },
     {
@@ -164,7 +190,18 @@ export default function ExamsPage() {
 
         return (
           <div className="flex gap-1 flex-wrap">
-            {exam.status === 'graded' && hasScores && (
+            {/* 시험일이 지난 경우에만 채점 버튼 표시 */}
+            {new Date(exam.exam_date) < new Date(new Date().toDateString()) && (
+              <Button
+                variant={hasScores && hasScores.length > 0 ? "default" : "outline"}
+                size="sm"
+                onClick={() => handleOpenGrading(exam)}
+              >
+                <PenSquare className="mr-1 h-3 w-3" />
+                {hasScores && hasScores.length > 0 ? '채점완료' : '채점'}
+              </Button>
+            )}
+            {hasScores && hasScores.length > 0 && (
               <>
                 <Button variant="outline" size="sm" onClick={() => handleViewScores(exam)}>
                   <Eye className="mr-1 h-3 w-3" /> 성적 보기
@@ -179,17 +216,13 @@ export default function ExamsPage() {
                 )}
               </>
             )}
-            {(exam.status === 'pending_grade' || (exam.status === 'graded' && !hasScores)) && (
-              <Button variant="outline" size="sm" onClick={() => handleEnterScores(exam)}>
-                <PenSquare className="mr-1 h-3 w-3" /> 성적 입력
-              </Button>
-            )}
             <Button
-              variant="destructive"
-              size="sm"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
               onClick={() => handleDeleteExam(exam)}
             >
-              <MoreHorizontal className="mr-1 h-3 w-3" /> 삭제
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         )
@@ -198,7 +231,7 @@ export default function ExamsPage() {
   ]
 
   const handleDeleteExam = async (exam: Exam) => {
-    if (!confirm(`시험 “${exam.title || exam.name || exam.subject}”을 삭제할까요?`)) return
+    if (!confirm(`시험 "${exam.title || exam.subject}"을 삭제할까요?`)) return
     try {
       const res = await fetch(`/api/exams/${exam.id}`, { method: 'DELETE', credentials: 'include' })
       if (!res.ok) {
@@ -231,35 +264,250 @@ export default function ExamsPage() {
     setIsScoreEntryDialogOpen(true)
   }
 
-  const handleSendNotification = (exam: Exam) => {
+  const handleSendNotification = async (exam: Exam) => {
     setSelectedExam(exam)
+    setNotificationStudents([])
     setIsNotificationDialogOpen(true)
+    setIsNotificationLoading(true)
+
+    try {
+      // 해당 시험에 성적이 입력된 학생들의 ID 가져오기
+      const examScores = scores[exam.id] || []
+      const studentIds = examScores.map(s => s.student_id)
+
+      if (studentIds.length === 0) {
+        setIsNotificationLoading(false)
+        return
+      }
+
+      // 전체 학생 정보 (parent_phone 포함) 가져오기
+      const res = await fetch('/api/students', { credentials: 'include' })
+      if (res.ok) {
+        interface StudentsResponse { students?: { id: string; name: string; parent_phone?: string | null }[] }
+        const data = await res.json() as StudentsResponse
+        const allStudents = data.students || []
+        // 성적이 입력된 학생만 필터링
+        const studentsWithScores = allStudents
+          .filter((s: any) => studentIds.includes(s.id))
+          .map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            parent_phone: s.parent_phone || null
+          }))
+        setNotificationStudents(studentsWithScores)
+      }
+    } catch (error) {
+      console.error('Failed to load students:', error)
+    } finally {
+      setIsNotificationLoading(false)
+    }
   }
 
-  const getNotificationStats = (examId: string) => {
-    // Students data loaded from API
-    const studentsWithParents: Array<{ id: string; name: string; parent_phone: string | null }> = []
+  const handleOpenGrading = async (exam: Exam) => {
+    // Optimistic: 모달 먼저 열기
+    setSelectedExam(exam)
+    setGradingScores({})
+    setGradingFeedbacks({})
+    setBulkGradingText('')
+    setAutoMappedScores([])
+    setUnmatchedRows([])
+    setGradingTab('manual')
+    setGradingStudents([])
+    setIsGradingDialogOpen(true)
+    setIsGradingLoading(true)
 
-    const examScores = scores[examId] || []
-    const studentsWithScores = studentsWithParents.filter(s =>
-      examScores.some(score => score.student_id === s.id)
-    )
+    // 기존 점수 먼저 로딩 (이미 메모리에 있음)
+    const existingScores = scores[exam.id]
+    if (existingScores && existingScores.length > 0) {
+      const loadedScores: Record<string, string> = {}
+      const loadedFeedbacks: Record<string, string> = {}
+      existingScores.forEach((s) => {
+        loadedScores[s.student_id] = String(s.score)
+        if (s.notes) loadedFeedbacks[s.student_id] = s.notes
+      })
+      setGradingScores(loadedScores)
+      setGradingFeedbacks(loadedFeedbacks)
+    }
 
-    const withPhone = studentsWithScores.filter(s => s.parent_phone).length
-    const withoutPhone = studentsWithScores.filter(s => !s.parent_phone).length
+    // 해당 반의 학생 목록 가져오기 (백그라운드)
+    try {
+      const res = await fetch(`/api/students?class_id=${exam.class_id}`, { credentials: 'include' })
+      if (res.ok) {
+        interface ClassStudentsResponse { students?: { id: string; name: string }[] }
+        const data = await res.json() as ClassStudentsResponse
+        const studentsList = (data.students || []).map((s) => ({ id: s.id, name: s.name }))
+        setGradingStudents(studentsList)
+      } else {
+        setGradingStudents([])
+      }
+    } catch {
+      setGradingStudents([])
+    } finally {
+      setIsGradingLoading(false)
+    }
+  }
+
+  const handleSaveGrading = async () => {
+    if (!selectedExam) return
+
+    const scoresToSave = Object.entries(gradingScores)
+      .filter(([_, score]) => score !== '')
+      .map(([studentId, score]) => ({
+        student_id: studentId,
+        score: parseInt(score) || 0,
+        notes: gradingFeedbacks[studentId] || '',
+      }))
+
+    if (scoresToSave.length === 0) {
+      toast({
+        title: '입력 오류',
+        description: '최소 1명 이상의 성적을 입력해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/exams/${selectedExam.id}/scores`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ scores: scoresToSave }),
+      })
+
+      if (!res.ok) {
+        interface GradingErrorResponse { error?: string; details?: string }
+        const errorData = await res.json() as GradingErrorResponse
+        console.error('[handleSaveGrading] Error:', errorData)
+        toast({
+          title: '저장 실패',
+          description: `${errorData.error || '점수 저장에 실패했습니다.'} ${errorData.details ? `(${errorData.details})` : ''}`,
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // scores 상태 즉시 업데이트
+      const savedScores = scoresToSave.map((s) => {
+        const student = gradingStudents.find((st) => st.id === s.student_id)
+        return {
+          id: '',
+          exam_id: selectedExam.id,
+          student_id: s.student_id,
+          student_name: student?.name || '',
+          score: s.score,
+          notes: s.notes,
+        }
+      })
+
+      setScores((prev) => ({
+        ...prev,
+        [selectedExam.id]: savedScores,
+      }))
+
+      toast({
+        title: '채점 저장 완료',
+        description: `${scoresToSave.length}명의 성적이 저장되었습니다.`,
+      })
+
+      setIsGradingDialogOpen(false)
+    } catch (error) {
+      console.error('Save grading error:', error)
+      toast({
+        title: '저장 실패',
+        description: '네트워크 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // 엑셀 데이터 파싱 및 학생 매핑 함수
+  const parseAndMapBulkGrading = (text: string) => {
+    if (!text.trim()) {
+      setAutoMappedScores([])
+      setUnmatchedRows([])
+      return
+    }
+
+    const lines = text.trim().split('\n')
+    const mapped: Array<{ studentId: string; studentName: string; score: string; feedback: string; matched: boolean }> = []
+    const unmatched: Array<{ name: string; score: string; feedback: string }> = []
+
+    // 이미 매칭된 학생 ID 추적 (같은 이름의 학생이 여러 명일 때 순서대로 매칭)
+    const usedStudentIds = new Set<string>()
+
+    for (const line of lines) {
+      // 탭 또는 여러 공백으로 구분 (엑셀에서 복사 시 탭으로 구분됨)
+      const parts = line.split(/\t+|\s{2,}/)
+      if (parts.length < 2) continue
+
+      const name = parts[0].trim()
+      const score = parts[1]?.trim() || ''
+      const feedback = parts.slice(2).join(' ').trim()
+
+      // 학생 이름 매칭 - 아직 매칭되지 않은 학생 중에서 찾음
+      const matchedStudent = gradingStudents.find(
+        (s) => !usedStudentIds.has(s.id) &&
+               (s.name === name || s.name.includes(name) || name.includes(s.name))
+      )
+
+      if (matchedStudent) {
+        usedStudentIds.add(matchedStudent.id)
+        mapped.push({
+          studentId: matchedStudent.id,
+          studentName: matchedStudent.name,
+          score,
+          feedback,
+          matched: true,
+        })
+      } else {
+        unmatched.push({ name, score, feedback })
+      }
+    }
+
+    setAutoMappedScores(mapped)
+    setUnmatchedRows(unmatched)
+  }
+
+  // 자동 매핑된 데이터를 수기입력으로 적용
+  const applyAutoMappedScores = () => {
+    const newScores = { ...gradingScores }
+    const newFeedbacks = { ...gradingFeedbacks }
+
+    for (const item of autoMappedScores) {
+      if (item.matched && item.score) {
+        newScores[item.studentId] = item.score
+        if (item.feedback) {
+          newFeedbacks[item.studentId] = item.feedback
+        }
+      }
+    }
+
+    setGradingScores(newScores)
+    setGradingFeedbacks(newFeedbacks)
+    setGradingTab('manual')
+    toast({
+      title: '적용 완료',
+      description: `${autoMappedScores.filter(s => s.matched).length}명의 점수가 적용되었습니다.`,
+    })
+  }
+
+  const getNotificationStats = () => {
+    const withPhone = notificationStudents.filter(s => s.parent_phone).length
+    const withoutPhone = notificationStudents.filter(s => !s.parent_phone).length
 
     return {
-      total: studentsWithScores.length,
+      total: notificationStudents.length,
       withPhone,
       withoutPhone,
-      studentsWithoutPhone: studentsWithScores.filter(s => !s.parent_phone).map(s => s.name)
+      studentsWithoutPhone: notificationStudents.filter(s => !s.parent_phone).map(s => s.name)
     }
   }
 
   const handleConfirmSendNotification = () => {
     if (!selectedExam) return
 
-    const stats = getNotificationStats(selectedExam.id)
+    const stats = getNotificationStats()
 
     toast({
       title: '알림톡 전송 완료',
@@ -341,18 +589,18 @@ export default function ExamsPage() {
 
   const handleCreateExam = () => {
     setExamForm({
-      name: '',
+      title: '',
       subject: '',
       class_name: '',
       exam_date: '',
-      exam_time: '',
+      duration_minutes: 60,
       total_score: 100,
     })
     setIsCreateDialogOpen(true)
   }
 
-  const handleSaveExam = () => {
-    if (!examForm.name || !examForm.subject || !examForm.class_name || !examForm.exam_date || !examForm.exam_time) {
+  const handleSaveExam = async () => {
+    if (!examForm.title || !examForm.subject || !examForm.class_name || !examForm.exam_date) {
       toast({
         title: '입력 오류',
         description: '모든 필수 항목을 입력해주세요.',
@@ -361,34 +609,73 @@ export default function ExamsPage() {
       return
     }
 
-    const newExam: Exam = {
-      id: `exam-${Date.now()}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      org_id: 'org-1',
-      name: examForm.name,
-      subject: examForm.subject,
-      class_id: 'class-new',
-      class_name: examForm.class_name,
-      exam_date: examForm.exam_date,
-      exam_time: examForm.exam_time,
-      total_score: examForm.total_score,
-      status: 'scheduled',
+    // 선택한 반에서 class_id와 teacher 정보 가져오기
+    const selectedClassObj = classes.find(c => c.name === examForm.class_name)
+    if (!selectedClassObj?.id) {
+      toast({
+        title: '입력 오류',
+        description: '반을 선택해주세요.',
+        variant: 'destructive',
+      })
+      return
     }
 
-    setExams([...exams, newExam])
-    toast({
-      title: '시험 등록 완료',
-      description: `${examForm.name} 시험이 등록되었습니다.`,
-    })
-    setIsCreateDialogOpen(false)
+    try {
+      const res = await fetch('/api/exams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          title: examForm.title,
+          subject: examForm.subject,
+          exam_date: examForm.exam_date,
+          duration_minutes: examForm.duration_minutes || null,
+          total_score: examForm.total_score,
+          class_id: selectedClassObj.id,
+        }),
+      })
+
+      if (!res.ok) {
+        const errData = await res.json() as { error?: string }
+        toast({
+          title: '등록 실패',
+          description: errData.error || '시험 등록에 실패했습니다.',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      interface ExamCreateResponse { exam?: Exam }
+      const data = await res.json() as ExamCreateResponse
+      const teacherName = selectedClassObj?.teacher?.name || selectedClassObj?.teacher_name || ''
+
+      // API에서 반환된 데이터로 목록 업데이트
+      const newExam: Exam = {
+        ...data.exam!,
+        class_name: examForm.class_name,
+        teacher_name: teacherName,
+      }
+
+      setExams([...exams, newExam])
+      toast({
+        title: '시험 등록 완료',
+        description: `${examForm.title} 시험이 등록되었습니다.`,
+      })
+      setIsCreateDialogOpen(false)
+    } catch (error) {
+      toast({
+        title: '등록 실패',
+        description: '서버 통신 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    }
   }
 
   const getExamStats = (examId: string) => {
     const examScores = scores[examId] || []
-    if (scores.length === 0) return null
+    if (examScores.length === 0) return null
 
-    const scoreValues = scores.map((s) => s.score)
+    const scoreValues = examScores.map((s) => s.score)
     const avg = scoreValues.reduce((a, b) => a + b, 0) / scoreValues.length
     const max = Math.max(...scoreValues)
     const min = Math.min(...scoreValues)
@@ -402,10 +689,16 @@ export default function ExamsPage() {
       { range: '0-59', count: scoreValues.filter((s) => s < 60).length },
     ]
 
-    return { avg, max, min, distribution, total: scores.length }
+    return { avg, max, min, distribution, total: examScores.length }
   }
 
-  const completedExams = exams.filter((e) => e.status === 'graded')
+  // 성적이 입력된 시험을 완료된 시험으로 간주
+  const completedExams = exams.filter((e) => scores[e.id] && scores[e.id].length > 0)
+
+  // 로딩 중일 때 스켈레톤 표시
+  if (isLoading) {
+    return <PageSkeleton />
+  }
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -468,39 +761,83 @@ export default function ExamsPage() {
 
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm text-muted-foreground">선생님</span>
-            <div className="flex gap-1.5">
-              <Button
-                variant={selectedTeacher === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setSelectedTeacher('all')}
-                className="h-8"
-              >
-                전체
-              </Button>
-              {Array.from(new Set(exams.map((exam) => exam.teacher_name)))
-                .filter(Boolean)
-                .sort()
-                .map((teacherName) => (
+          <Tabs value={viewTab} onValueChange={(v) => setViewTab(v as 'teacher' | 'class')}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="teacher">선생님별</TabsTrigger>
+              <TabsTrigger value="class">반별</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="teacher" className="mt-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-muted-foreground">선생님</span>
+                <div className="flex gap-1.5 flex-wrap">
                   <Button
-                    key={teacherName}
-                    variant={selectedTeacher === teacherName ? 'default' : 'outline'}
+                    variant={selectedTeacher === 'all' ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setSelectedTeacher(teacherName)}
+                    onClick={() => setSelectedTeacher('all')}
                     className="h-8"
                   >
-                    {teacherName}
+                    전체
                   </Button>
-                ))}
-            </div>
-          </div>
+                  {(teachers.length > 0
+                    ? teachers.map((t) => t.name)
+                    : Array.from(new Set(exams.map((exam) => exam.teacher_name))).filter(Boolean)
+                  )
+                    .sort()
+                    .map((teacherName) => (
+                      <Button
+                        key={teacherName}
+                        variant={selectedTeacher === teacherName ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedTeacher(teacherName)}
+                        className="h-8"
+                      >
+                        {teacherName}
+                      </Button>
+                    ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="class" className="mt-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm text-muted-foreground">반</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  <Button
+                    variant={selectedClass === 'all' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSelectedClass('all')}
+                    className="h-8"
+                  >
+                    전체
+                  </Button>
+                  {(classes.length > 0
+                    ? classes
+                    : Array.from(new Set(exams.map((exam) => ({ id: exam.class_id, name: exam.class_name }))))
+                  )
+                    .filter((c) => c.name)
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map((classItem) => (
+                      <Button
+                        key={classItem.id || classItem.name}
+                        variant={selectedClass === classItem.id || selectedClass === classItem.name ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => setSelectedClass(classItem.id || classItem.name || '')}
+                        className="h-8"
+                      >
+                        {classItem.name}
+                      </Button>
+                    ))}
+                </div>
+              </div>
+            </TabsContent>
+          </Tabs>
         </CardHeader>
         <CardContent>
           <DataTable
             columns={columns}
             data={filteredExams}
-            searchKey="name"
+            searchKey="title"
             searchPlaceholder="시험명으로 검색..."
           />
         </CardContent>
@@ -516,12 +853,31 @@ export default function ExamsPage() {
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">시험명 *</Label>
+              <Label htmlFor="class_select">반 선택 *</Label>
+              <Select
+                value={examForm.class_name}
+                onValueChange={(value) => setExamForm({ ...examForm, class_name: value })}
+              >
+                <SelectTrigger id="class_select">
+                  <SelectValue placeholder="반을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classes.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="title">시험명 *</Label>
               <Input
-                id="name"
-                value={examForm.name}
-                onChange={(e) => setExamForm({ ...examForm, name: e.target.value })}
-                placeholder="예: 수학 중간고사"
+                id="title"
+                value={examForm.title}
+                onChange={(e) => setExamForm({ ...examForm, title: e.target.value })}
+                placeholder="예: 중간고사"
               />
             </div>
 
@@ -531,17 +887,7 @@ export default function ExamsPage() {
                 id="subject"
                 value={examForm.subject}
                 onChange={(e) => setExamForm({ ...examForm, subject: e.target.value })}
-                placeholder="예: 수학"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="class_name">반 이름 *</Label>
-              <Input
-                id="class_name"
-                value={examForm.class_name}
-                onChange={(e) => setExamForm({ ...examForm, class_name: e.target.value })}
-                placeholder="예: 수학 특강반"
+                placeholder="예: 수학, 영어, 국어"
               />
             </div>
 
@@ -557,12 +903,13 @@ export default function ExamsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="exam_time">시험 시간 *</Label>
+                <Label htmlFor="duration">시험 시간 (분)</Label>
                 <Input
-                  id="exam_time"
-                  type="time"
-                  value={examForm.exam_time}
-                  onChange={(e) => setExamForm({ ...examForm, exam_time: e.target.value })}
+                  id="duration"
+                  type="number"
+                  value={examForm.duration_minutes}
+                  onChange={(e) => setExamForm({ ...examForm, duration_minutes: parseInt(e.target.value) || 60 })}
+                  placeholder="60"
                 />
               </div>
             </div>
@@ -591,45 +938,31 @@ export default function ExamsPage() {
 
       {/* Scores Dialog */}
       <Dialog open={isScoresDialogOpen} onOpenChange={setIsScoresDialogOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>{selectedExam?.name} - 성적</DialogTitle>
+        <DialogContent className="max-w-2xl h-[80vh] flex flex-col">
+          <DialogHeader className="shrink-0">
+            <DialogTitle>{selectedExam?.title} - 성적</DialogTitle>
             <DialogDescription>학생별 성적 목록</DialogDescription>
           </DialogHeader>
 
           {selectedExam && scores[selectedExam.id] && (
-            <div className="space-y-4">
-              <div className="rounded-md border">
+            <div className="flex-1 overflow-hidden">
+              <div className="rounded-md border h-full overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead>
+                  <thead className="sticky top-0 bg-muted">
                     <tr className="border-b bg-muted/50">
                       <th className="p-2 text-left">학생</th>
                       <th className="p-2 text-center">점수</th>
-                      <th className="p-2 text-center">등급</th>
                     </tr>
                   </thead>
                   <tbody>
                     {scores[selectedExam.id]
                       .sort((a, b) => b.score - a.score)
                       .map((score, i) => (
-                        <tr key={score.id} className="border-b">
+                        <tr key={score.id || score.student_id} className="border-b">
                           <td className="p-2">
                             {i + 1}. {score.student_name}
                           </td>
                           <td className="p-2 text-center font-medium">{score.score}점</td>
-                          <td className="p-2 text-center">
-                            <Badge
-                              variant={
-                                score.grade === 'A'
-                                  ? 'default'
-                                  : score.grade === 'B'
-                                  ? 'secondary'
-                                  : 'outline'
-                              }
-                            >
-                              {score.grade}
-                            </Badge>
-                          </td>
                         </tr>
                       ))}
                   </tbody>
@@ -638,7 +971,7 @@ export default function ExamsPage() {
             </div>
           )}
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setIsScoresDialogOpen(false)}>
               닫기
             </Button>
@@ -650,7 +983,7 @@ export default function ExamsPage() {
       <Dialog open={isStatsDialogOpen} onOpenChange={setIsStatsDialogOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{selectedExam?.name} - 통계</DialogTitle>
+            <DialogTitle>{selectedExam?.title} - 통계</DialogTitle>
             <DialogDescription>성적 분석 및 통계</DialogDescription>
           </DialogHeader>
 
@@ -732,7 +1065,7 @@ export default function ExamsPage() {
       <Dialog open={isScoreEntryDialogOpen} onOpenChange={setIsScoreEntryDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{selectedExam?.name} - 성적 입력</DialogTitle>
+            <DialogTitle>{selectedExam?.title} - 성적 입력</DialogTitle>
             <DialogDescription>학생별 성적을 입력하세요</DialogDescription>
           </DialogHeader>
 
@@ -842,20 +1175,23 @@ export default function ExamsPage() {
           <DialogHeader>
             <DialogTitle>알림톡 발송 확인</DialogTitle>
             <DialogDescription>
-              {selectedExam?.name} 성적을 학부모에게 발송합니다
+              {selectedExam?.title} 성적을 학부모에게 발송합니다
             </DialogDescription>
           </DialogHeader>
 
           {selectedExam && (() => {
-            const stats = getNotificationStats(selectedExam.id)
-            // Students data loaded from API
-            const studentsData: Array<{ id: string; name: string; parent_phone: string | null }> = []
-            const examScores = scores[selectedExam.id] || []
-            const studentsWithScores = studentsData.filter(s =>
-              examScores.some(score => score.student_id === s.id)
-            )
-            const studentsWithPhone = studentsWithScores.filter(s => s.parent_phone)
-            const studentsWithoutPhone = studentsWithScores.filter(s => !s.parent_phone)
+            if (isNotificationLoading) {
+              return (
+                <div className="text-center py-8 text-muted-foreground">
+                  <div className="animate-spin inline-block w-6 h-6 border-2 border-current border-t-transparent rounded-full mb-2" />
+                  <p>학생 정보를 불러오는 중...</p>
+                </div>
+              )
+            }
+
+            const stats = getNotificationStats()
+            const studentsWithPhone = notificationStudents.filter(s => s.parent_phone)
+            const studentsWithoutPhone = notificationStudents.filter(s => !s.parent_phone)
 
             return (
               <div className="space-y-4">
@@ -885,36 +1221,37 @@ export default function ExamsPage() {
                   </TabsList>
 
                   <TabsContent value="receive" className="mt-4">
-                    <div className="rounded-lg bg-green-50 border border-green-200 p-3">
-                      <p className="text-sm font-medium text-green-900 mb-3">
-                        다음 학생의 학부모에게 알림톡이 발송됩니다:
-                      </p>
-                      <div className="space-y-2">
-                        {studentsWithPhone.map((student) => (
-                          <div key={student.id} className="flex items-center bg-white rounded-md p-2 border border-green-100">
-                            <Badge variant="outline" className="text-green-700 border-green-300">
+                    {studentsWithPhone.length > 0 ? (
+                      <div className="rounded-lg bg-green-50 border border-green-200 p-3">
+                        <p className="text-sm font-medium text-green-900 mb-2">
+                          다음 학생의 학부모에게 알림톡이 발송됩니다:
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {studentsWithPhone.map((student) => (
+                            <Badge key={student.id} variant="outline" className="text-green-700 border-green-300 bg-white">
                               {student.name}
                             </Badge>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        발송 가능한 학생이 없습니다.
+                      </div>
+                    )}
                   </TabsContent>
 
                   <TabsContent value="no-receive" className="mt-4">
                     {stats.withoutPhone > 0 ? (
                       <div className="rounded-lg bg-orange-50 border border-orange-200 p-3">
-                        <p className="text-sm font-medium text-orange-900 mb-3">
+                        <p className="text-sm font-medium text-orange-900 mb-2">
                           다음 학생은 학부모 번호가 등록되지 않았습니다:
                         </p>
-                        <div className="space-y-2">
+                        <div className="flex flex-wrap gap-1.5">
                           {studentsWithoutPhone.map((student) => (
-                            <div key={student.id} className="flex items-center justify-between bg-white rounded-md p-2 border border-orange-100">
-                              <Badge variant="outline" className="text-orange-700 border-orange-300">
-                                {student.name}
-                              </Badge>
-                              <span className="text-xs text-orange-600">번호 없음</span>
-                            </div>
+                            <Badge key={student.id} variant="outline" className="text-orange-700 border-orange-300 bg-white">
+                              {student.name}
+                            </Badge>
                           ))}
                         </div>
                       </div>
@@ -925,6 +1262,28 @@ export default function ExamsPage() {
                     )}
                   </TabsContent>
                 </Tabs>
+
+                {/* 알림톡 템플릿 미리보기 */}
+                <div className="rounded-lg border bg-yellow-50 p-4">
+                  <p className="text-sm font-medium text-yellow-900 mb-2">📱 알림톡 미리보기</p>
+                  <div className="bg-white rounded-lg p-3 text-sm border border-yellow-200 whitespace-pre-line">
+                    <p className="font-medium mb-2">[골드펜 학원] 시험 성적 안내</p>
+                    <p className="text-muted-foreground">
+{`안녕하세요, 학부모님.
+
+📝 시험명: ${selectedExam?.title || ''}
+📚 과목: ${selectedExam?.subject || ''}
+📅 시험일: ${selectedExam?.exam_date ? format(new Date(selectedExam.exam_date), 'yyyy년 M월 d일') : ''}
+
+👤 학생: (학생이름)
+✏️ 점수: (점수)점
+
+자녀의 학습 현황에 대해 궁금하신 점이 있으시면 언제든 문의해 주세요.
+
+감사합니다.`}
+                    </p>
+                  </div>
+                </div>
 
                 <p className="text-sm text-muted-foreground">
                   {stats.withPhone}명의 학부모에게 성적 알림톡이 발송됩니다.
@@ -940,6 +1299,197 @@ export default function ExamsPage() {
             <Button onClick={handleConfirmSendNotification}>
               <Send className="mr-2 h-4 w-4" />
               보내기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grading Dialog */}
+      <Dialog open={isGradingDialogOpen} onOpenChange={setIsGradingDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedExam?.title} - 채점</DialogTitle>
+            <DialogDescription>학생별 점수와 피드백을 입력하세요</DialogDescription>
+          </DialogHeader>
+
+          <Tabs value={gradingTab} onValueChange={(v) => setGradingTab(v as 'manual' | 'auto')}>
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="manual">수기입력</TabsTrigger>
+              <TabsTrigger value="auto">자동입력 (엑셀)</TabsTrigger>
+            </TabsList>
+
+            {/* 수기입력 탭 */}
+            <TabsContent value="manual" className="space-y-4">
+              {isGradingLoading ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <div className="animate-spin inline-block w-6 h-6 border-2 border-current border-t-transparent rounded-full mb-2" />
+                  <p>학생 목록을 불러오는 중...</p>
+                </div>
+              ) : gradingStudents.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  이 반에 등록된 학생이 없습니다.
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="p-3 text-left w-28">
+                          <div className="flex items-center gap-1">
+                            학생
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-5 w-5 p-0"
+                              onClick={() => {
+                                const names = gradingStudents.map(s => s.name).join('\n')
+                                navigator.clipboard.writeText(names)
+                                toast({
+                                  title: '복사 완료',
+                                  description: `${gradingStudents.length}명의 학생 이름이 복사되었습니다.`,
+                                })
+                              }}
+                              title="학생 이름 전체 복사"
+                            >
+                              <Copy className="h-3 w-3 text-muted-foreground" />
+                            </Button>
+                          </div>
+                        </th>
+                        <th className="p-3 text-center w-24">점수</th>
+                        <th className="p-3 text-left">피드백</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gradingStudents.map((student) => (
+                        <tr key={student.id} className="border-b">
+                          <td className="p-3 font-medium">{student.name}</td>
+                          <td className="p-3">
+                            <Input
+                              type="number"
+                              min="0"
+                              max={selectedExam?.total_score || 100}
+                              placeholder="점수"
+                              value={gradingScores[student.id] || ''}
+                              onChange={(e) => setGradingScores({ ...gradingScores, [student.id]: e.target.value })}
+                              className={`w-20 text-center ${!gradingScores[student.id] ? 'border-red-500' : ''}`}
+                            />
+                          </td>
+                          <td className="p-3">
+                            <Input
+                              placeholder="피드백 입력"
+                              value={gradingFeedbacks[student.id] || ''}
+                              onChange={(e) => setGradingFeedbacks({ ...gradingFeedbacks, [student.id]: e.target.value })}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* 자동입력 탭 */}
+            <TabsContent value="auto" className="space-y-4">
+              <div className="space-y-2">
+                <Label>엑셀에서 복사한 데이터 붙여넣기</Label>
+                <p className="text-sm text-muted-foreground">
+                  형식: 이름 [탭] 점수 [탭] 피드백(선택)
+                </p>
+                <Textarea
+                  placeholder={`예시:\n홍길동\t95\t잘했어요\n김철수\t87\n이영희\t92\t꾸준히 노력하세요`}
+                  value={bulkGradingText}
+                  onChange={(e) => {
+                    setBulkGradingText(e.target.value)
+                    parseAndMapBulkGrading(e.target.value)
+                  }}
+                  className="min-h-[120px] font-mono text-sm"
+                />
+              </div>
+
+              {/* 매핑 결과 미리보기 */}
+              {(autoMappedScores.length > 0 || unmatchedRows.length > 0) && (
+                <div className="space-y-4">
+                  {/* 매핑된 학생 */}
+                  {autoMappedScores.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="default" className="bg-green-500">매핑 성공</Badge>
+                        <span className="text-sm text-muted-foreground">{autoMappedScores.length}명</span>
+                      </div>
+                      <div className="rounded-md border">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-muted/50">
+                              <th className="p-2 text-left">학생</th>
+                              <th className="p-2 text-center w-20">점수</th>
+                              <th className="p-2 text-left">피드백</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {autoMappedScores.map((item, idx) => (
+                              <tr key={idx} className="border-b">
+                                <td className="p-2 font-medium">{item.studentName}</td>
+                                <td className="p-2 text-center">{item.score}</td>
+                                <td className="p-2 text-muted-foreground">{item.feedback || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 매핑 실패한 행 */}
+                  {unmatchedRows.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="destructive">매핑 실패</Badge>
+                        <span className="text-sm text-muted-foreground">{unmatchedRows.length}건</span>
+                      </div>
+                      <div className="rounded-md border border-destructive/50">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b bg-destructive/10">
+                              <th className="p-2 text-left">입력된 이름</th>
+                              <th className="p-2 text-center w-20">점수</th>
+                              <th className="p-2 text-left">피드백</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {unmatchedRows.map((item, idx) => (
+                              <tr key={idx} className="border-b">
+                                <td className="p-2 text-destructive">{item.name}</td>
+                                <td className="p-2 text-center">{item.score}</td>
+                                <td className="p-2 text-muted-foreground">{item.feedback || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        * 매핑 실패한 항목은 반에 등록된 학생 이름과 일치하지 않습니다.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 적용 버튼 */}
+                  {autoMappedScores.length > 0 && (
+                    <Button onClick={applyAutoMappedScores} className="w-full">
+                      매핑된 {autoMappedScores.length}명의 점수 적용하기
+                    </Button>
+                  )}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsGradingDialogOpen(false)}>
+              취소
+            </Button>
+            <Button onClick={handleSaveGrading} disabled={gradingStudents.length === 0 || gradingTab === 'auto'}>
+              저장
             </Button>
           </DialogFooter>
         </DialogContent>

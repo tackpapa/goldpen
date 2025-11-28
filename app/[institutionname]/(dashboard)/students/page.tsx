@@ -3,15 +3,17 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useStudents } from '@/lib/swr'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
+import { PageSkeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -33,7 +35,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Trash2, MoreHorizontal, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, MoreHorizontal, RefreshCw, CreditCard } from 'lucide-react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { StudentSchema, type StudentInput } from '@/lib/validations/student'
@@ -74,9 +76,35 @@ export default function StudentsPage() {
   const { toast } = useToast()
   const params = useParams()
   const institutionName = (params?.institutionname as string) || ''
-  const [students, setStudents] = useState<Student[]>([])
+
+  // SWR 훅으로 데이터 페칭
+  const { students: studentsData, isLoading: studentsLoading, refresh: refreshStudents } = useStudents()
+
+  // 로컬 상태 (수정 시 사용)
+  const [localStudents, setLocalStudents] = useState<Student[] | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // 실제 사용할 데이터 (로컬 상태가 있으면 로컬, 없으면 SWR)
+  const normalizedStudentsData = (studentsData || []).map((s: any) => ({
+    ...s,
+    attendance_code: s.attendance_code || s.student_code || '',
+    student_code: s.student_code || s.attendance_code || '',
+    branch_name: s.branch_name || institutionName || '',
+    campuses: s.campuses || [],
+  }))
+  const students = localStudents ?? normalizedStudentsData
+  const isLoading = studentsLoading
+
+  // 로컬 상태 업데이트 함수
+  const setStudents = (updater: Student[] | ((prev: Student[]) => Student[])) => {
+    if (typeof updater === 'function') {
+      setLocalStudents(prev => updater(prev ?? normalizedStudentsData))
+    } else {
+      setLocalStudents(updater)
+    }
+  }
+
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [attendanceCodeError, setAttendanceCodeError] = useState<string>('')
   const [campusError, setCampusError] = useState<string>('')
   const [branchError, setBranchError] = useState<string>('')
@@ -93,44 +121,10 @@ export default function StudentsPage() {
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
   const [creditFilter, setCreditFilter] = useState<'all' | 'negative'>('all')
 
-  // Fetch students from API on mount
-  useEffect(() => {
-    const fetchStudents = async () => {
-      setIsLoading(true)
-      try {
-        const response = await fetch('/api/students', { credentials: 'include', credentials: 'include' })
-        const data = await response.json() as { students?: Student[]; error?: string }
+  // 초기 탭 상태 (결제 버튼 클릭 시 'payment' 탭으로)
+  const [initialTab, setInitialTab] = useState<string>('info')
 
-        if (response.ok) {
-          const normalized = (data.students || []).map((s) => ({
-            ...s,
-            attendance_code: (s as any).attendance_code || (s as any).student_code || '',
-            student_code: (s as any).student_code || (s as any).attendance_code || '',
-            branch_name: (s as any).branch_name || institutionName || '',
-            campuses: (s as any).campuses || [],
-          }))
-          setStudents(normalized)
-        } else {
-          toast({
-            title: '데이터 로드 실패',
-            description: data.error || '학생 목록을 불러올 수 없습니다.',
-            variant: 'destructive',
-          })
-        }
-      } catch (error) {
-        toast({
-          title: '오류 발생',
-          description: '서버와 통신할 수 없습니다.',
-          variant: 'destructive',
-        })
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchStudents()
-  }, [toast])
-
+  // useForm 훅은 조건문 전에 호출되어야 함 (React 훅 규칙)
   const {
     register,
     handleSubmit,
@@ -145,6 +139,11 @@ export default function StudentsPage() {
     },
   })
 
+  // 로딩 중일 때 스켈레톤 표시
+  if (isLoading) {
+    return <PageSkeleton />
+  }
+
   const columns: ColumnDef<Student>[] = [
     {
       accessorKey: 'name',
@@ -156,6 +155,7 @@ export default function StudentsPage() {
             className="text-blue-600 hover:text-blue-800 hover:underline font-medium"
             onClick={() => {
               setSelectedStudent(student)
+              setInitialTab('info')
               setIsDetailModalOpen(true)
             }}
           >
@@ -213,7 +213,29 @@ export default function StudentsPage() {
       },
     },
     {
+      id: 'payment',
+      header: '액션',
+      cell: ({ row }) => {
+        const student = row.original
+        return (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSelectedStudent(student)
+              setInitialTab('payment')
+              setIsDetailModalOpen(true)
+            }}
+          >
+            <CreditCard className="mr-1 h-4 w-4" />
+            결제
+          </Button>
+        )
+      },
+    },
+    {
       id: 'actions',
+      header: '',
       cell: ({ row }) => {
         const student = row.original
         return (
@@ -296,7 +318,6 @@ export default function StudentsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm('정말로 삭제하시겠습니까?')) return
 
-    setIsLoading(true)
     const prev = students
     setStudents(students.filter((s) => s.id !== id))
     try {
@@ -325,8 +346,6 @@ export default function StudentsPage() {
         description: '서버와 통신할 수 없습니다.',
         variant: 'destructive',
       })
-    } finally {
-      setIsLoading(false)
     }
   }
 
@@ -354,7 +373,7 @@ export default function StudentsPage() {
       return
     }
 
-    setIsLoading(true)
+    setIsSaving(true)
     try {
       // 출결코드가 없으면 자동 생성
       let attendanceCode = data.attendance_code
@@ -373,7 +392,7 @@ export default function StudentsPage() {
             description: '이미 사용 중인 출결코드입니다',
             variant: 'destructive',
           })
-          setIsLoading(false)
+          setIsSaving(false)
           return
         }
       }
@@ -395,7 +414,6 @@ export default function StudentsPage() {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         org_id: '',
-        class_id: data.class_id || null,
         name: data.name,
         grade: data.grade,
         phone: data.phone || '',
@@ -406,6 +424,9 @@ export default function StudentsPage() {
         status: data.status || 'active',
         school: data.school || '',
         notes: data.notes || '',
+        credit: 0,
+        seatsremainingtime: 0,
+        enrollment_date: new Date().toISOString(),
       }
       setStudents((prev) => [...prev, optimisticStudent])
 
@@ -444,14 +465,15 @@ export default function StudentsPage() {
         })
       }
     } catch (error) {
-      setStudents((prev) => prev.filter((s) => s.id !== tempId))
+      // Refresh to restore original data
+      refreshStudents()
       toast({
         title: '오류 발생',
         description: '다시 시도해주세요.',
         variant: 'destructive',
       })
     } finally {
-      setIsLoading(false)
+      setIsSaving(false)
     }
   }
 
@@ -763,6 +785,7 @@ export default function StudentsPage() {
         student={selectedStudent}
         open={isDetailModalOpen}
         onOpenChange={setIsDetailModalOpen}
+        initialTab={initialTab}
         onUpdate={(updatedStudent) => {
           setStudents(students.map(s => s.id === updatedStudent.id ? updatedStudent : s))
           toast({

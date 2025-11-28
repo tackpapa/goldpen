@@ -3,6 +3,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Widget, widgetSizeClasses } from '@/lib/types/widget'
+import { WidgetData } from '@/lib/types/widget-data'
 import { WidgetRenderer } from './WidgetRenderer'
 import { GripVertical } from 'lucide-react'
 
@@ -10,9 +11,10 @@ interface DraggableWidgetProps {
   widget: Widget
   onRemove: () => void
   currentTime: Date
+  data?: WidgetData
 }
 
-export function DraggableWidget({ widget, onRemove, currentTime }: DraggableWidgetProps) {
+export function DraggableWidget({ widget, onRemove, currentTime, data }: DraggableWidgetProps) {
   const {
     attributes,
     listeners,
@@ -48,6 +50,7 @@ export function DraggableWidget({ widget, onRemove, currentTime }: DraggableWidg
         widget={widget}
         onRemove={onRemove}
         currentTime={currentTime}
+        data={data}
       />
     </div>
   )

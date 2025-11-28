@@ -19,31 +19,44 @@ function formatDuration(seconds: number): string {
   return `${s}초`
 }
 
+interface PlannerFeedback {
+  id: string
+  feedback: string
+  teacher_name?: string
+  updated_at: string
+}
+
 interface DailyPlannerPageProps {
   studentId: string
+  orgId?: string
   seatNumber: number
   subjects?: Subject[]  // 과목 타이머에서 전달받은 과목들
   existingPlanner?: DailyPlanner
   onSave: (planner: DailyPlanner) => void
   onBack: () => void
   onCompletedSubjectsChange?: (completedIds: Set<string>) => void  // 완료된 과목 ID 변경 콜백
+  onSubjectDeleted?: (subjectId: string) => void  // 과목 삭제 시 콜백
   containerRef?: React.RefObject<HTMLDivElement>
   // Props for parent-level data loading
   initialPlanner?: DailyPlanner | null
   dataLoaded?: boolean
+  isVisible?: boolean  // 탭 진입 시 데이터 갱신용
 }
 
 export function DailyPlannerPage({
   studentId,
+  orgId,
   seatNumber,
   subjects = [],
   existingPlanner,
   onSave,
   onBack,
   onCompletedSubjectsChange,
+  onSubjectDeleted,
   containerRef,
   initialPlanner,
   dataLoaded: parentDataLoaded,
+  isVisible = true,
 }: DailyPlannerPageProps) {
   // Use initialPlanner from parent if available, otherwise existingPlanner
   const effectivePlanner = initialPlanner ?? existingPlanner
@@ -62,6 +75,9 @@ export function DailyPlannerPage({
   const [sleepRecords, setSleepRecords] = useState<SleepRecord[]>([])
   const [outingRecords, setOutingRecords] = useState<OutingRecord[]>([])
   const [statsLoaded, setStatsLoaded] = useState(false)
+
+  // Teacher feedback
+  const [feedback, setFeedback] = useState<PlannerFeedback | null>(null)
 
   // Auto-save debounce refs
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -94,9 +110,9 @@ export function DailyPlannerPage({
     if (parentDataLoaded !== undefined) setIsLoaded(parentDataLoaded)
   }, [parentDataLoaded])
 
-  // Load sleep & outing stats
+  // Load sleep & outing stats + feedback (탭 진입 시마다 갱신)
   useEffect(() => {
-    if (!studentId) return
+    if (!studentId || !isVisible) return
 
     const loadStats = async () => {
       const supabase = createClient()
@@ -121,10 +137,29 @@ export function DailyPlannerPage({
       setSleepRecords((sleepData || []) as SleepRecord[])
       setOutingRecords((outingData || []) as OutingRecord[])
       setStatsLoaded(true)
+
+      // Load teacher feedback - orgId가 없으면 개발 환경에서 demo orgId 사용
+      const effectiveOrgId = orgId || (process.env.NODE_ENV !== 'production'
+        ? (process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000')
+        : null)
+
+      if (effectiveOrgId) {
+        const feedbackUrl = `/api/planner-feedback?service=1&orgId=${effectiveOrgId}&studentId=${studentId}`
+        console.log('🔄 [DailyPlannerPage] Refreshing feedback (isVisible changed)')
+        try {
+          const feedbackRes = await fetch(feedbackUrl)
+          if (feedbackRes.ok) {
+            const feedbackData = await feedbackRes.json() as { feedback?: PlannerFeedback }
+            setFeedback(feedbackData.feedback || null)
+          }
+        } catch (error) {
+          console.error('Failed to load feedback:', error)
+        }
+      }
     }
 
     loadStats()
-  }, [studentId])
+  }, [studentId, orgId, isVisible])
 
   // Merge subjects with existing planner (no fetch needed if initialPlanner provided)
   useEffect(() => {
@@ -174,7 +209,7 @@ export function DailyPlannerPage({
         let dbPlannerId: string | null = null
 
         if (response.ok) {
-          const data = await response.json()
+          const data = await response.json() as { planner?: DailyPlanner }
           if (data.planner) {
             dbPlannerId = data.planner.id
             dbPlans = data.planner.study_plans || []
@@ -256,7 +291,7 @@ export function DailyPlannerPage({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { planner: DailyPlanner }
         setPlannerId(data.planner.id)
         // Show "자동저장됨" next to the edited plan for 2 seconds
         if (editedPlanId) {
@@ -364,9 +399,31 @@ export function DailyPlannerPage({
   }
 
   const handleDeletePlan = async (planId: string) => {
+    // 삭제할 플랜 찾기
+    const planToDelete = plans.find((plan) => plan.id === planId)
+    const subjectId = planToDelete?.subject_id
+
+    // 플래너에서 삭제
     const updatedPlans = plans.filter((plan) => plan.id !== planId)
     setPlans(updatedPlans)
     await savePlannerToDB(updatedPlans, notes)
+
+    // subject_id가 있으면 subjects 테이블에서도 삭제 (soft delete)
+    if (subjectId) {
+      const effectiveOrgId = orgId || (process.env.NODE_ENV !== 'production'
+        ? (process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000')
+        : null)
+
+      try {
+        await fetch(`/api/subjects?id=${subjectId}&service=1&orgId=${effectiveOrgId}`, {
+          method: 'DELETE',
+        })
+        // 부모 컴포넌트에 삭제된 과목 알림
+        onSubjectDeleted?.(subjectId)
+      } catch (error) {
+        console.error('Failed to delete subject:', error)
+      }
+    }
   }
 
   const completedCount = plans.filter((p) => p.completed).length
@@ -382,7 +439,7 @@ export function DailyPlannerPage({
   // Calculate outing stats
   const outingCount = outingRecords.length
   const totalOutingMinutes = outingRecords.reduce((acc, record) => {
-    return acc + (record.duration_minutes || 0)
+    return acc + ((record as any).duration_minutes || 0)
   }, 0)
 
   return (
@@ -418,6 +475,21 @@ export function DailyPlannerPage({
       {/* Content */}
       <div className="flex-1 overflow-y-auto pb-6">
         <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+          {/* Teacher Feedback Alert */}
+          {feedback && (
+            <Card className="bg-red-50 border-red-300 border-2">
+              <CardContent className="p-4">
+                <p className="text-sm font-semibold text-red-700 mb-1">
+                  선생님 피드백
+                </p>
+                <p className="text-base text-red-800 whitespace-pre-wrap">{feedback.feedback}</p>
+                <p className="text-xs text-red-400 mt-2">
+                  {new Date(feedback.updated_at).toLocaleString('ko-KR')}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Sleep & Outing Stats */}
           {statsLoaded && (sleepCount > 0 || outingCount > 0) && (
             <div className="grid grid-cols-2 gap-3">

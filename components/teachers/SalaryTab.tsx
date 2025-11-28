@@ -66,11 +66,11 @@ export function SalaryTab({ teacher }: SalaryTabProps) {
         // 현재 월 급여 조회
         const response = await fetch(`/api/teachers/${teacher.id}/salary`)
         if (!response.ok) {
-          const result = await response.json()
+          const result = (await response.json()) as any
           throw new Error(result.error || '급여 정보 조회 실패')
         }
 
-        const data = await response.json()
+        const data = (await response.json()) as SalaryData
         setSalaryData(data)
         setDisplayCount(10) // Reset display count when data changes
       } catch (err) {

@@ -59,6 +59,10 @@ interface ScheduledClass {
   teacher_name: string
   class_type: '1:1' | '1:다수'
   students: { id: string; name: string }[]
+  day?: string
+  class_id?: string
+  subject?: string
+  teacher_id?: string
 }
 
 // Today's date
@@ -441,7 +445,7 @@ export default function LessonsPage() {
         method: 'DELETE',
       })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
+        const err = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(err.error || '삭제에 실패했습니다.')
       }
       setLessons((prev) => prev.filter((l) => l.id !== selectedLesson.id))
@@ -498,7 +502,7 @@ export default function LessonsPage() {
       })
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
+        const err = await response.json().catch(() => ({})) as { error?: string }
         throw new Error(err.error || '수업일지 저장에 실패했습니다.')
       }
 

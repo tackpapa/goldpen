@@ -240,12 +240,12 @@ export default function LiveAttendancePage() {
 
         const response = await fetch(url)
         if (!response.ok) throw new Error('weather fetch fail')
-        const data = await response.json()
+        const data = await response.json() as { main: { temp: number }; weather?: { description?: string; main?: string }[] }
         setTemperature(`${Math.round(data.main.temp)}°`)
         setWeatherDescription(data.weather?.[0]?.description || '날씨 정보')
         const condition = data.weather?.[0]?.main
         if (condition === 'Clear') setWeather('sunny')
-        else if (['Rain', 'Drizzle', 'Thunderstorm'].includes(condition)) setWeather('rainy')
+        else if (condition && ['Rain', 'Drizzle', 'Thunderstorm'].includes(condition)) setWeather('rainy')
         else setWeather('cloudy')
       } catch (err) {
         setTemperature('--°')
@@ -282,7 +282,7 @@ export default function LiveAttendancePage() {
       try {
         const response = await fetch('/api/seat-assignments', { credentials: 'include' })
         if (response.ok) {
-          const data = await response.json()
+          const data = await response.json() as { assignments?: any[] }
           const assignmentsWithCodes = data.assignments?.map((a: any) => ({
             seatNumber: a.seatNumber,
             studentId: a.studentId,
@@ -322,11 +322,11 @@ export default function LiveAttendancePage() {
       try {
         const res = await fetch(`/api/organizations/${institutionName}`)
         if (res.ok) {
-          const data = await res.json()
+          const data = await res.json() as { organization?: { name?: string; logo_url?: string | null } }
           if (data.organization) {
             setOrganization((prev) => ({
-              name: data.organization.name || prev.name,
-              logo_url: data.organization.logo_url ?? prev.logo_url,
+              name: data.organization?.name || prev.name,
+              logo_url: data.organization?.logo_url ?? prev.logo_url,
             }))
           }
         } else {
@@ -388,7 +388,7 @@ export default function LiveAttendancePage() {
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { student?: { name?: string } }
         // 이름 보정
         if (data.student?.name) setWelcomeName(data.student.name)
         // 상태는 이미 옵티 적용됨

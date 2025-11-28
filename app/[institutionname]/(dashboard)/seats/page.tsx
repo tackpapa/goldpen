@@ -27,13 +27,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Users, UserCheck, UserX, Settings2, Armchair, Moon, DoorOpen, Copy, Check } from 'lucide-react'
+import { Users, UserCheck, UserX, Settings2, Armchair, Moon, DoorOpen, Copy, Check, ClipboardList } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import type { Student } from '@/lib/types/database'
 import { useAllSeatsRealtime } from '@/hooks/use-all-seats-realtime'
 import { useSeatAssignmentsRealtime } from '@/hooks/use-seat-assignments-realtime'
 import { createClient } from '@/lib/supabase/client'
+import { StudentPlannerModal } from '@/components/seats/StudentPlannerModal'
 
 // LiveScreen State Types
 interface LiveScreenState {
@@ -75,6 +76,7 @@ interface OutingRecord {
 interface CallRecord {
   id: string
   created_at: string
+  org_id: string
   student_id: string
   seat_number: number
   date: string
@@ -455,18 +457,20 @@ function SeatCard({
   handleCallStudent,
   handleSleepExpired,
   handleUsageTimeExpired,
+  onOpenPlanner,
   students
 }: {
   seat: any
   sleepRecord: SleepRecord | null
   outingRecord: OutingRecord | null
-  getCardStyle: (status: string) => string
-  getStatusBadge: (status: string) => JSX.Element
+  getCardStyle: (status: Seat['status']) => string
+  getStatusBadge: (status: Seat['status']) => JSX.Element
   handleSeatClick: (seat: any) => void
   handleToggleAttendance: (seatId: string) => void
   handleCallStudent: (seatNumber: number, studentId: string, studentName: string) => void
   handleSleepExpired: (seatNumber: number, studentName: string) => void
   handleUsageTimeExpired: (seatNumber: number, studentName: string) => void
+  onOpenPlanner: (studentId: string, studentName: string) => void
   students: LocalStudent[]
 }) {
   // Determine card style based on live status
@@ -576,18 +580,33 @@ function SeatCard({
                   {seat.status === 'checked_in' ? '하원 처리' : '등원 처리'}
                 </Button>
                 {seat.status === 'checked_in' && seat.student_id && (
-                  <Button
-                    size="sm"
-                    className="w-full bg-red-600 text-white hover:bg-red-700"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      if (seat.student_id && seat.student_name) {
-                        handleCallStudent(seat.number, seat.student_id, seat.student_name)
-                      }
-                    }}
-                  >
-                    호출
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-red-600 text-white hover:bg-red-700"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (seat.student_id && seat.student_name) {
+                          handleCallStudent(seat.number, seat.student_id, seat.student_name)
+                        }
+                      }}
+                    >
+                      호출
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-blue-300 text-blue-600 hover:bg-blue-50"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (seat.student_id && seat.student_name) {
+                          onOpenPlanner(seat.student_id, seat.student_name)
+                        }
+                      }}
+                    >
+                      플래너
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -666,6 +685,10 @@ export default function SeatsPage() {
   const [callMessage, setCallMessage] = useState('카운터로 와주세요')
   const [callStudentInfo, setCallStudentInfo] = useState<{ seatNumber: number; studentId: string; studentName: string } | null>(null)
 
+  // Planner modal state
+  const [isPlannerModalOpen, setIsPlannerModalOpen] = useState(false)
+  const [plannerStudentInfo, setPlannerStudentInfo] = useState<{ studentId: string; studentName: string } | null>(null)
+
   // Track call records for each seat
   const [callRecords, setCallRecords] = useState<Map<number, CallRecord>>(new Map())
 
@@ -742,15 +765,34 @@ export default function SeatsPage() {
           fetch(`/api/seat-assignments${serviceQs}`, { credentials: 'include' }),
         ])
 
-        const configData = await configRes.json()
-        const assignmentsData = await assignmentsRes.json()
+        interface SeatConfigResponse {
+          totalSeats?: number
+          seatTypes?: { id?: string; startNumber: number; endNumber: number; typeName: string }[]
+          orgId?: string
+        }
+        interface SeatAssignmentsResponse {
+          assignments?: Array<{
+            seatNumber: number
+            studentId: string
+            studentName: string | null
+            studentGrade: string | null
+            status: string
+            checkInTime: string | null
+            sessionStartTime: string | null
+            remainingMinutes: number | null
+            passType: 'hours' | 'days' | null
+            remainingDays: number | null
+          }>
+        }
+        const configData = await configRes.json() as SeatConfigResponse
+        const assignmentsData = await assignmentsRes.json() as SeatAssignmentsResponse
 
         let total = 20
         let types: SeatType[] = []
 
         if (configRes.ok && configData.totalSeats) {
           total = configData.totalSeats
-          types = (configData.seatTypes || []).map((t: any) => ({
+          types = (configData.seatTypes || []).map((t) => ({
             id: t.id || `type-${Date.now()}-${Math.random()}`,
             startNumber: t.startNumber,
             endNumber: t.endNumber,
@@ -850,25 +892,16 @@ export default function SeatsPage() {
 
   // Realtime status for all seats (optimized: 2 channels for all seats)
   const allStudentIds = seats.filter(s => s.student_id).map(s => s.student_id!)
-  const { sleepRecords, outingRecords } = useAllSeatsRealtime(allStudentIds)
+  const { sleepRecords, outingRecords } = useAllSeatsRealtime(allStudentIds, orgId)
 
-  // Subscribe to call_records (org 스코프)
+  // Subscribe to call_records (org 스코프) - orgId state가 있을 때만 구독
   useEffect(() => {
-    const supabase = createClient()
-    let orgId: string | null = null
+    if (!orgId) return // orgId가 없으면 구독하지 않음
 
+    const supabase = createClient()
     const today = new Date().toISOString().split('T')[0]
 
-    const fetchOrg = async () => {
-      try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
-        const json = await res.json()
-        orgId = json?.org_id || json?.orgId || null
-      } catch {}
-    }
-
     const fetchCallRecords = async () => {
-      if (!orgId) return
       const { data, error } = await supabase
         .from('call_records')
         .select('*')
@@ -890,94 +923,86 @@ export default function SeatsPage() {
       }
     }
 
-    const setupRealtime = () => {
-      if (!orgId) return null
-      return supabase
-        .channel('call-records-all')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'call_records',
-            filter: `org_id=eq.${orgId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const record = payload.new as CallRecord
-              setCallRecords((prev) => {
-                const newMap = new Map(prev)
-                if (record.status === 'calling' || record.status === 'acknowledged') {
-                  newMap.set(record.seat_number, record)
-                } else {
-                  newMap.delete(record.seat_number)
-                }
-                return newMap
-              })
-            } else if (payload.eventType === 'DELETE') {
-              const record = payload.old as CallRecord
-              setCallRecords((prev) => {
-                const newMap = new Map(prev)
+    fetchCallRecords()
+
+    // Realtime 구독
+    console.log('[Seats] 🔌 Subscribing to call_records with org_id:', orgId)
+    const channel = supabase
+      .channel('call-records-all')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'call_records',
+          filter: `org_id=eq.${orgId}`,
+        },
+        (payload) => {
+          console.log('[Seats] 📞 Call record changed:', payload)
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const record = payload.new as CallRecord
+            setCallRecords((prev) => {
+              const newMap = new Map(prev)
+              if (record.status === 'calling' || record.status === 'acknowledged') {
+                newMap.set(record.seat_number, record)
+              } else {
                 newMap.delete(record.seat_number)
-                return newMap
-              })
-            }
-          }
-        )
-        .subscribe()
-    }
-
-    let channel: any
-
-    fetchOrg().then(() => {
-      fetchCallRecords()
-      channel = setupRealtime()
-    })
-
-    return () => {
-      channel?.unsubscribe()
-    }
-  }, [])
-
-  // Subscribe to manager_calls (org 스코프)
-  useEffect(() => {
-    const supabase = createClient()
-    let orgId: string | null = null
-
-    const fetchOrg = async () => {
-      try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
-        const json = await res.json()
-        orgId = json?.org_id || json?.orgId || null
-      } catch {}
-    }
-
-    let channel: any
-    fetchOrg().then(() => {
-      if (!orgId) return
-      channel = supabase
-        .channel('manager-calls-all')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'manager_calls',
-            filter: `org_id=eq.${orgId}`,
-          },
-          (payload) => {
-            const record = payload.new as any
-            setManagerCallAlert({
-              seatNumber: record.seat_number,
-              studentName: record.student_name || '학생',
+              }
+              return newMap
+            })
+          } else if (payload.eventType === 'DELETE') {
+            const record = payload.old as CallRecord
+            setCallRecords((prev) => {
+              const newMap = new Map(prev)
+              newMap.delete(record.seat_number)
+              return newMap
             })
           }
-        )
-        .subscribe()
-    })
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Seats] 🔌 Call records channel status:', status)
+      })
 
-    return () => channel?.unsubscribe()
-  }, [])
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [orgId])
+
+  // Subscribe to manager_calls (org 스코프) - orgId state가 있을 때만 구독
+  useEffect(() => {
+    if (!orgId) return // orgId가 없으면 구독하지 않음
+
+    const supabase = createClient()
+
+    console.log('[Seats] 🔌 Subscribing to manager_calls with org_id:', orgId)
+    const channel = supabase
+      .channel('manager-calls-all')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'manager_calls',
+          filter: `org_id=eq.${orgId}`,
+        },
+        (payload) => {
+          console.log('[Seats] 🚨 Manager call received:', payload)
+          const record = payload.new as any
+          setManagerCallAlert({
+            seatNumber: record.seat_number,
+            studentName: record.student_name || '학생',
+          })
+        }
+      )
+      .subscribe((status) => {
+        console.log('[Seats] 🔌 Manager calls channel status:', status)
+      })
+
+    return () => {
+      channel.unsubscribe()
+    }
+  }, [orgId])
 
   // Play alarm when manager call is received
   useEffect(() => {
@@ -1155,15 +1180,29 @@ export default function SeatsPage() {
 
   // Send call to student
   const handleSendCall = async () => {
-    if (!callStudentInfo) return
+    if (!callStudentInfo || !orgId) {
+      toast({
+        title: '호출 실패',
+        description: '학생 또는 기관 정보가 없습니다.',
+        variant: 'destructive',
+      })
+      return
+    }
 
     try {
       const today = new Date().toISOString().split('T')[0]
       const supabase = createClient()
 
-      const { error } = await supabase
+      console.log('[Student Call] 📞 Inserting call record:', {
+        org_id: orgId,
+        student_id: callStudentInfo.studentId,
+        seat_number: callStudentInfo.seatNumber,
+      })
+
+      const { data, error } = await supabase
         .from('call_records')
         .insert({
+          org_id: orgId,
           student_id: callStudentInfo.studentId,
           seat_number: callStudentInfo.seatNumber,
           date: today,
@@ -1171,8 +1210,14 @@ export default function SeatsPage() {
           message: callMessage,
           status: 'calling',
         })
+        .select()
 
-      if (error) throw error
+      if (error) {
+        console.error('[Student Call] ❌ Insert failed:', error)
+        throw error
+      }
+
+      console.log('[Student Call] ✅ Insert successful:', data)
 
       setCallModalOpen(false)
       toast({
@@ -1271,7 +1316,7 @@ export default function SeatsPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json() as { error?: string }
 
       if (!response.ok) {
         toast({
@@ -1368,7 +1413,7 @@ export default function SeatsPage() {
           }),
         })
 
-        const data = await response.json()
+        const data = await response.json() as { error?: string }
 
         if (!response.ok) {
           toast({
@@ -1436,7 +1481,12 @@ export default function SeatsPage() {
           }),
         })
 
-        const data = await response.json()
+        interface StudentCreateResponse {
+          error?: string
+          student?: { id: string }
+          id?: string
+        }
+        const data = await response.json() as StudentCreateResponse
 
         if (!response.ok) {
           toast({
@@ -1447,7 +1497,7 @@ export default function SeatsPage() {
           return
         }
 
-        const newStudentId = data.student?.id || data.id
+        const newStudentId = data.student?.id || data.id || ''
 
         // Add to students state (optimistic)
         const prevStudents = students
@@ -1464,7 +1514,7 @@ export default function SeatsPage() {
           seat.id === selectedSeat.id
             ? {
                 ...seat,
-                student_id: newStudentId,
+                student_id: newStudentId || null,
                 student_name: newStudentName.trim(),
                 status: 'checked_out' as const,
               }
@@ -1482,7 +1532,7 @@ export default function SeatsPage() {
           }),
         })
 
-        const assignData = await assignResponse.json()
+        const assignData = await assignResponse.json() as { error?: string }
 
         if (!assignResponse.ok) {
           setSeats(prevSeats)
@@ -1540,7 +1590,7 @@ export default function SeatsPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json() as { error?: string }
 
       if (!response.ok) {
         setSeats(prevSeats)
@@ -1598,7 +1648,7 @@ export default function SeatsPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json() as { error?: string }
 
       if (!response.ok) {
         setSeats(prevSeats)
@@ -1776,6 +1826,10 @@ export default function SeatsPage() {
                 handleCallStudent={handleCallStudent}
                 handleSleepExpired={handleSleepExpired}
                 handleUsageTimeExpired={handleUsageTimeExpired}
+                onOpenPlanner={(studentId, studentName) => {
+                  setPlannerStudentInfo({ studentId, studentName })
+                  setIsPlannerModalOpen(true)
+                }}
                 students={students}
               />
             ))}
@@ -1909,6 +1963,24 @@ export default function SeatsPage() {
                 : '학생을 선택하거나 새로 등록하여 좌석을 배정하세요'}
             </DialogDescription>
           </DialogHeader>
+
+          {/* 플래너 버튼 - 학생이 배정된 경우에만 표시 */}
+          {selectedSeat?.student_id && selectedSeat?.student_name && (
+            <Button
+              variant="outline"
+              className="w-full gap-2 border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700"
+              onClick={() => {
+                setPlannerStudentInfo({
+                  studentId: selectedSeat.student_id!,
+                  studentName: selectedSeat.student_name!,
+                })
+                setIsPlannerModalOpen(true)
+              }}
+            >
+              <ClipboardList className="h-4 w-4" />
+              플래너 확인 및 피드백
+            </Button>
+          )}
 
           <Tabs value={assignmentTab} onValueChange={(v) => setAssignmentTab(v as 'existing' | 'new')}>
             <TabsList className="grid w-full grid-cols-2">
@@ -2157,6 +2229,20 @@ export default function SeatsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Student Planner Modal */}
+      {plannerStudentInfo && (
+        <StudentPlannerModal
+          isOpen={isPlannerModalOpen}
+          onClose={() => {
+            setIsPlannerModalOpen(false)
+            setPlannerStudentInfo(null)
+          }}
+          studentId={plannerStudentInfo.studentId}
+          studentName={plannerStudentInfo.studentName}
+          orgId={orgId || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'}
+        />
+      )}
 
       {/* Manager Call Alert - Full Screen Red Overlay */}
       {managerCallAlert && (

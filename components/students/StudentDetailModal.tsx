@@ -27,6 +27,7 @@ interface StudentDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onUpdate?: (student: Student) => void
+  initialTab?: string
 }
 
 export function StudentDetailModal({
@@ -34,8 +35,16 @@ export function StudentDetailModal({
   open,
   onOpenChange,
   onUpdate,
+  initialTab = 'info',
 }: StudentDetailModalProps) {
-  const [activeTab, setActiveTab] = useState('info')
+  const [activeTab, setActiveTab] = useState(initialTab)
+
+  // initialTab이 변경되면 탭 업데이트
+  useEffect(() => {
+    if (open && initialTab) {
+      setActiveTab(initialTab)
+    }
+  }, [open, initialTab])
 
   // Fetch all modal data when modal is open
   const { data: modalData, loading, refetch } = useStudentModalData(
@@ -103,7 +112,7 @@ export function StudentDetailModal({
             </TabsTrigger>
             <TabsTrigger value="payment" className="flex items-center gap-2">
               <CreditCard className="h-4 w-4" />
-              <span className="hidden sm:inline">결제 관리</span>
+              <span className="hidden sm:inline">결제</span>
             </TabsTrigger>
             <TabsTrigger value="payment-history" className="flex items-center gap-2">
               <History className="h-4 w-4" />
@@ -128,6 +137,7 @@ export function StudentDetailModal({
                 enrollments={modalData?.enrollments}
                 loading={loading}
                 onRefresh={refetch}
+                branches={(modalData as any)?.branches}
               />
             </TabsContent>
 
@@ -167,6 +177,7 @@ export function StudentDetailModal({
                 student={currentStudent}
                 payments={modalData?.payments}
                 loading={loading}
+                onRefresh={refetch}
               />
             </TabsContent>
 

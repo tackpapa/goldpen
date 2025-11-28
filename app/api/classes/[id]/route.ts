@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { updateClassSchema } from '@/lib/validations/class'
 import { ZodError } from 'zod'
 import { syncSchedulesHelper } from './sync-schedule'
+import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -110,7 +111,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (validated.schedule) {
       await syncSchedulesHelper({
         supabase: db,
-        orgId,
+        orgId: orgId || '',
         classId: params.id,
         schedule: validated.schedule,
         roomName: validated.room,
@@ -120,6 +121,21 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       ...classData,
       schedule: Array.isArray(classData.schedule) ? classData.schedule : [],
     }
+
+    // 활동 로그 기록
+    await logActivity({
+      orgId: orgId!,
+      userId: user?.id || null,
+      userName: user?.email?.split('@')[0] || '시스템',
+      userRole: null,
+      actionType: 'update',
+      entityType: 'class',
+      entityId: classData.id,
+      entityName: classData.name,
+      description: actionDescriptions.class.update(classData.name || '이름 없음'),
+      request,
+    })
+
     return Response.json({ class: normalized, message: '반 정보가 수정되었습니다' })
   } catch (error: any) {
     if (error instanceof ZodError) {
@@ -155,8 +171,33 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       return Response.json({ error: '반 삭제 권한이 없습니다' }, { status: 403 })
     }
 
+    // 삭제 전 반 정보 조회 (로그용)
+    const { data: classToDelete } = await db
+      .from('classes')
+      .select('id, name')
+      .eq('id', params.id)
+      .eq('org_id', orgId)
+      .single()
+
     const { error } = await db.from('classes').delete().eq('id', params.id).eq('org_id', orgId)
     if (error) return Response.json({ error: '반 삭제 실패' }, { status: 500 })
+
+    // 활동 로그 기록
+    if (classToDelete) {
+      await logActivity({
+        orgId: orgId!,
+        userId: user?.id || null,
+        userName: user?.email?.split('@')[0] || '시스템',
+        userRole: role,
+        actionType: 'delete',
+        entityType: 'class',
+        entityId: params.id,
+        entityName: classToDelete.name,
+        description: actionDescriptions.class.delete(classToDelete.name || '이름 없음'),
+        request,
+      })
+    }
+
     return Response.json({ message: '반이 삭제되었습니다' })
   } catch (error: any) {
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })

@@ -36,9 +36,9 @@ const salaryTypeMap = {
 const normalizeSubjects = (subjects: Teacher['subjects']) => {
   if (Array.isArray(subjects)) return subjects.filter((s): s is string => Boolean(s))
   if (typeof subjects === 'string')
-    return subjects
+    return (subjects as string)
       .split(',')
-      .map((s) => s.trim())
+      .map((s: any) => s.trim())
       .filter(Boolean)
   return []
 }
@@ -74,7 +74,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
   const handleRemoveSubject = (subject: string) => {
     setLocalTeacher({
       ...localTeacher,
-      subjects: (localTeacher.subjects ?? []).filter((s) => s !== subject),
+      subjects: (localTeacher.subjects ?? []).filter((s: any) => s !== subject),
     })
   }
 
@@ -165,7 +165,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               </Button>
             </div>
             <div className="flex flex-wrap gap-2 mt-2">
-              {(localTeacher.subjects ?? []).map((subject) => (
+              {(localTeacher.subjects ?? []).map((subject: any) => (
                 <Badge key={subject} variant="secondary">
                   {subject}
                   <button

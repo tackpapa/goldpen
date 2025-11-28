@@ -50,13 +50,13 @@ export function useStudentModalData(
         throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      const result = await response.json()
+      const result = (await response.json()) as any
 
       if (result.error) {
         throw new Error(result.error)
       }
 
-      setData(result)
+      setData(result as StudentModalData)
     } catch (err) {
       console.error('Failed to fetch student modal data:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')

@@ -1,4 +1,3 @@
-import { e2eBypass } from '@/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
 import { createClient } from '@supabase/supabase-js'
@@ -7,10 +6,23 @@ import { NextRequest } from 'next/server'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
+interface PaymentBody {
+  org_id: string
+  student_id: string
+  student_name: string
+  amount: number
+  payment_method: string
+  revenue_category_id?: string
+  revenue_category_name?: string
+  class_credits?: { hours: number }
+  study_room_pass?: { type: 'hours' | 'days'; amount: number }
+  notes?: string
+}
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
-    const body = await request.json()
+    const body = await request.json() as PaymentBody
 
     const {
       org_id,

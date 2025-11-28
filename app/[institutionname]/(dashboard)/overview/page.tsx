@@ -2,11 +2,11 @@
 
 export const runtime = 'edge'
 
-
 import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { Plus, Loader2 } from 'lucide-react'
 import { Widget } from '@/lib/types/widget'
+import { WidgetData, emptyWidgetData } from '@/lib/types/widget-data'
 import { getEnabledWidgets, saveWidgetsConfig, getWidgetsConfig } from '@/lib/config/widgets'
 import { WidgetManager } from '@/components/dashboard/WidgetManager'
 import { DraggableWidget } from '@/components/dashboard/DraggableWidget'
@@ -30,6 +30,8 @@ export default function OverviewPage() {
   const [currentTime, setCurrentTime] = useState(new Date())
   const [widgets, setWidgets] = useState<Widget[]>([])
   const [widgetManagerOpen, setWidgetManagerOpen] = useState(false)
+  const [widgetData, setWidgetData] = useState<WidgetData>(emptyWidgetData)
+  const [isLoading, setIsLoading] = useState(true)
 
   // 드래그 센서 설정
   const sensors = useSensors(
@@ -42,6 +44,32 @@ export default function OverviewPage() {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   )
+
+  // 위젯 데이터 fetch
+  useEffect(() => {
+    const fetchWidgetData = async () => {
+      try {
+        setIsLoading(true)
+        const response = await fetch('/api/widgets')
+        if (response.ok) {
+          const result = await response.json() as { data?: WidgetData }
+          if (result.data) {
+            setWidgetData(result.data)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch widget data:', error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchWidgetData()
+
+    // 30초마다 데이터 갱신
+    const refreshInterval = setInterval(fetchWidgetData, 30000)
+    return () => clearInterval(refreshInterval)
+  }, [])
 
   // 위젯 설정 로드
   useEffect(() => {
@@ -118,10 +146,15 @@ export default function OverviewPage() {
             오늘의 운영 현황을 확인하세요
           </p>
         </div>
-        <Button onClick={() => setWidgetManagerOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          위젯 추가
-        </Button>
+        <div className="flex items-center gap-2">
+          {isLoading && (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          )}
+          <Button onClick={() => setWidgetManagerOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            위젯 추가
+          </Button>
+        </div>
       </div>
 
       {/* Empty State */}
@@ -159,6 +192,7 @@ export default function OverviewPage() {
                   widget={widget}
                   onRemove={() => handleRemoveWidget(widget.id)}
                   currentTime={currentTime}
+                  data={widgetData}
                 />
               ))}
             </div>

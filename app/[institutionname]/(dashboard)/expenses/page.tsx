@@ -99,7 +99,7 @@ const { toast } = useToast()
     const loadCategories = async () => {
       try {
         const res = await fetch(`/api/settings/expense-categories?slug=${slug}`, { credentials: 'include' })
-        const data = await res.json()
+        const data = await res.json() as { categories?: ExpenseCategory[] }
         if (res.ok && data.categories) {
           expenseCategoryManager.setCategories(data.categories)
           setExpenseCategories(expenseCategoryManager.getCategories())
@@ -148,7 +148,7 @@ const { toast } = useToast()
   const refreshExpenseCategories = async () => {
     try {
       const res = await fetch(`/api/settings/expense-categories?slug=${slug}`, { credentials: 'include' })
-      const data = await res.json()
+      const data = await res.json() as { categories?: ExpenseCategory[] }
       if (res.ok && data.categories) {
         expenseCategoryManager.setCategories(data.categories)
         setExpenseCategories(expenseCategoryManager.getCategories())
@@ -317,13 +317,17 @@ const { toast } = useToast()
         }),
       })
 
-      const result = await response.json()
+      interface ExpenseResponse {
+        error?: string
+        expense?: ExpenseRecord
+      }
+      const result = await response.json() as ExpenseResponse
       if (!response.ok) {
         throw new Error(result.error || '지출 저장 실패')
       }
 
       const saved: ExpenseRecord = {
-        ...result.expense,
+        ...result.expense!,
         category_id: result.expense?.category_id || categoryName,
         category_name: result.expense?.category_name || categoryName,
         is_recurring: false,

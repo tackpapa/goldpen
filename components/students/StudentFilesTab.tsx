@@ -15,7 +15,7 @@ interface StudentFile {
   name: string
   type: string
   size: number
-  url: string | null
+  url?: string
   uploaded_at: string
 }
 
@@ -41,7 +41,7 @@ export function StudentFilesTab({ student, onUpdate, onRefresh }: StudentFilesTa
       setLoading(true)
       const res = await fetch(`/api/students/${student.id}/files`)
       if (res.ok) {
-        const data = await res.json()
+        const data = await res.json() as { files?: StudentFile[] }
         setFiles(data.files || [])
       }
     } catch (error) {
@@ -77,14 +77,14 @@ export function StudentFilesTab({ student, onUpdate, onRefresh }: StudentFilesTa
         })
 
         if (res.ok) {
-          const data = await res.json()
+          const data = await res.json() as { file: StudentFile }
           setFiles((prev) => [data.file, ...prev])
           toast({
             title: '파일 업로드 완료',
             description: `${file.name}이(가) 업로드되었습니다.`,
           })
         } else {
-          const error = await res.json()
+          const error = await res.json() as { error?: string }
           toast({
             title: '업로드 실패',
             description: error.error || '파일 업로드에 실패했습니다.',
@@ -139,7 +139,7 @@ export function StudentFilesTab({ student, onUpdate, onRefresh }: StudentFilesTa
 
   const handleViewFile = (file: StudentFile) => {
     if (file.url) {
-      window.open(file.url, '_blank', 'noopener,noreferrer')
+      window.open(file.url ?? undefined, '_blank', 'noopener,noreferrer')
     }
   }
 

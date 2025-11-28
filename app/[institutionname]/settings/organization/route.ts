@@ -51,7 +51,7 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const { db, orgId } = await getSupabaseWithOrg(request)
-    const body = await request.json()
+    const body = await request.json() as Record<string, any>
 
     const payload: Record<string, any> = { ...body }
     delete payload.org_id

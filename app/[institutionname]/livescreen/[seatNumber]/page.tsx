@@ -49,6 +49,38 @@ import type {
 } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 
+// 알람 비프음 재생 함수
+const playAlarmBeep = () => {
+  try {
+    const context = new (window.AudioContext || (window as any).webkitAudioContext)()
+
+    // 비프음 1회
+    const playBeep = (delay: number = 0) => {
+      const oscillator = context.createOscillator()
+      const gainNode = context.createGain()
+      oscillator.connect(gainNode)
+      gainNode.connect(context.destination)
+      oscillator.type = 'sine'
+      oscillator.frequency.setValueAtTime(800, context.currentTime + delay)
+      gainNode.gain.setValueAtTime(0.3, context.currentTime + delay)
+      oscillator.start(context.currentTime + delay)
+      oscillator.stop(context.currentTime + delay + 0.2)
+    }
+
+    // 삑삑 두 번
+    playBeep(0)
+    playBeep(0.3)
+
+    // 1초 후 다시 삑삑 두 번
+    setTimeout(() => {
+      playBeep(0)
+      playBeep(0.3)
+    }, 1000)
+  } catch (err) {
+    console.error('Failed to play beep:', err)
+  }
+}
+
 interface PageProps {
   params: {
     institutionname: string
@@ -78,11 +110,17 @@ export default function LiveScreenPage({ params }: PageProps) {
   useEffect(() => {
     const fetchStudentInfo = async () => {
       try {
-        const response = await fetch('/api/seat-assignments', { credentials: 'include' })
+        // 개발 모드에서 seats 페이지와 동일하게 demo orgId 사용
+        const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+        const serviceQs = process.env.NODE_ENV !== 'production' ? `?service=1&orgId=${demoOrgId}` : ''
+
+        const response = await fetch(`/api/seat-assignments${serviceQs}`, { credentials: 'include' })
         if (response.ok) {
-          const data = await response.json()
+          const data = await response.json() as { orgId?: string; assignments?: any[] }
+          console.log('[LiveScreen] 📦 Seat assignments response:', { orgId: data.orgId, assignmentsCount: data.assignments?.length })
           const assignment = data.assignments?.find((a: any) => a.seatNumber === parseInt(seatNumber))
           if (assignment && assignment.studentId) {
+            console.log('[LiveScreen] ✅ Found assignment:', { studentId: assignment.studentId, orgId: assignment.orgId })
             setStudentId(assignment.studentId)
             setStudentName(assignment.studentName || '학생')
             setOrgId(assignment.orgId || null)
@@ -115,22 +153,25 @@ export default function LiveScreenPage({ params }: PageProps) {
 
     const fetchAllData = async () => {
       try {
+        // 개발 모드에서 service 쿼리 파라미터 추가
+        const serviceParams = process.env.NODE_ENV !== 'production' ? `&service=1&orgId=${orgId}` : ''
+
         const [subjectsRes, statsRes, plannerRes] = await Promise.all([
-          fetch(`/api/subjects?studentId=${studentId}`, { credentials: 'include' }),
-          fetch(`/api/daily-study-stats?studentId=${studentId}&date=${getTodayDate()}`, { credentials: 'include' }),
-          fetch(`/api/daily-planners?studentId=${studentId}`, { credentials: 'include' }),
+          fetch(`/api/subjects?studentId=${studentId}${serviceParams}`, { credentials: 'include' }),
+          fetch(`/api/daily-study-stats?studentId=${studentId}&date=${getTodayDate()}${serviceParams}`, { credentials: 'include' }),
+          fetch(`/api/daily-planners?studentId=${studentId}${serviceParams}`, { credentials: 'include' }),
         ])
 
         if (subjectsRes.ok) {
-          const data = await subjectsRes.json()
+          const data = await subjectsRes.json() as { subjects?: Subject[] }
           setSubjects(data.subjects || [])
         }
         if (statsRes.ok) {
-          const data = await statsRes.json()
+          const data = await statsRes.json() as { stats?: SubjectStatistics[] }
           setStatistics(data.stats || [])
         }
         if (plannerRes.ok) {
-          const data = await plannerRes.json()
+          const data = await plannerRes.json() as { planner?: DailyPlanner | null }
           setDailyPlanner(data.planner || null)
         }
       } catch (error) {
@@ -180,11 +221,15 @@ export default function LiveScreenPage({ params }: PageProps) {
 
   // Fetch rankings from DB
   useEffect(() => {
+    if (!orgId) return
+
     const fetchRankings = async () => {
       try {
-        const response = await fetch('/api/study-time-rankings', { credentials: 'include' })
+        // 개발 모드에서 service 쿼리 파라미터 추가
+        const serviceParams = process.env.NODE_ENV !== 'production' ? `?service=1&orgId=${orgId}` : ''
+        const response = await fetch(`/api/study-time-rankings${serviceParams}`, { credentials: 'include' })
         if (response.ok) {
-          const data = await response.json()
+          const data = await response.json() as { rankings?: { daily: StudyTimeRanking[]; weekly: StudyTimeRanking[]; monthly: StudyTimeRanking[] } }
           setRankings(data.rankings || { daily: [], weekly: [], monthly: [] })
         }
       } catch (error) {
@@ -192,7 +237,7 @@ export default function LiveScreenPage({ params }: PageProps) {
       }
     }
     fetchRankings()
-  }, [])
+  }, [orgId])
 
   // Removed localStorage planner loading - now fetched from DB in fetchAllData
 
@@ -415,22 +460,28 @@ export default function LiveScreenPage({ params }: PageProps) {
     }
   }, [currentSleep])
 
-  // Subscribe to call_records for this student (org 스코프)
+  // 잠자기 15분 만료 시 알람 비프음 재생
   useEffect(() => {
+    if (currentSleep && sleepRemainingSeconds === 0) {
+      playAlarmBeep()
+    }
+  }, [currentSleep, sleepRemainingSeconds])
+
+  // 매니저 호출 수신 시 알람 비프음 재생
+  useEffect(() => {
+    if (currentCall) {
+      playAlarmBeep()
+    }
+  }, [currentCall])
+
+  // Subscribe to call_records for this student (org 스코프) - orgId state가 있을 때만 구독
+  useEffect(() => {
+    if (!orgId || !studentId) return // orgId와 studentId가 없으면 구독하지 않음
+
     const supabase = createClient()
     const today = new Date().toISOString().split('T')[0]
-    let orgId: string | null = null
-
-    const fetchOrg = async () => {
-      try {
-        const res = await fetch('/api/auth/me', { credentials: 'include' })
-        const json = await res.json()
-        orgId = json?.org_id || json?.orgId || null
-      } catch {}
-    }
 
     const fetchCurrentCall = async () => {
-      if (!orgId) return
       const { data, error } = await supabase
         .from('call_records')
         .select('*')
@@ -451,52 +502,68 @@ export default function LiveScreenPage({ params }: PageProps) {
       setCurrentCall(data)
     }
 
-    let channel: any
-    const setup = async () => {
-      await fetchOrg()
-      await fetchCurrentCall()
-      if (!orgId) return
-      channel = supabase
-        .channel(`call-${studentId}-${seatNumber}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'call_records',
-            filter: `org_id=eq.${orgId}`,
-          },
-          (payload) => {
-            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-              const record = payload.new as CallRecord
-              if (
-                record.org_id === orgId &&
-                record.student_id === studentId &&
-                record.seat_number === parseInt(seatNumber) &&
-                record.date === today &&
-                record.status === 'calling'
-              ) {
-                setCurrentCall(record)
-              } else if (record.status === 'acknowledged') {
-                setCurrentCall(null)
-              }
-            } else if (payload.eventType === 'DELETE') {
-              const record = payload.old as CallRecord
-              if (record.student_id === studentId && record.seat_number === parseInt(seatNumber)) {
-                setCurrentCall(null)
-              }
+    fetchCurrentCall()
+
+    // Realtime 구독 - 필터 없이 모든 이벤트 수신 후 클라이언트에서 필터링
+    console.log('[LiveScreen] 🔌 Subscribing to call_records (no filter) - will filter client-side')
+    console.log('[LiveScreen] 📋 Expected values: org_id:', orgId, 'student_id:', studentId, 'seat_number:', seatNumber)
+    const channel = supabase
+      .channel(`call-${studentId}-${seatNumber}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'call_records',
+        },
+        (payload) => {
+          console.log('[LiveScreen] 📞 Call record changed:', payload)
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const record = payload.new as CallRecord
+            // 디버깅: 비교 값 확인
+            console.log('[LiveScreen] 🔍 Comparing values:', {
+              'record.org_id': record.org_id,
+              'expected orgId': orgId,
+              'org_id match': record.org_id === orgId,
+              'record.student_id': record.student_id,
+              'expected studentId': studentId,
+              'student_id match': record.student_id === studentId,
+              'record.seat_number': record.seat_number,
+              'expected seatNumber': parseInt(seatNumber),
+              'seat_number match': record.seat_number === parseInt(seatNumber),
+              'record.date': record.date,
+              'expected today': today,
+              'date match': record.date === today,
+              'record.status': record.status,
+            })
+            if (
+              record.org_id === orgId &&
+              record.student_id === studentId &&
+              record.seat_number === parseInt(seatNumber) &&
+              record.date === today &&
+              record.status === 'calling'
+            ) {
+              console.log('[LiveScreen] ✅ All conditions matched! Showing call modal')
+              setCurrentCall(record)
+            } else if (record.status === 'acknowledged') {
+              setCurrentCall(null)
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const record = payload.old as CallRecord
+            if (record.student_id === studentId && record.seat_number === parseInt(seatNumber)) {
+              setCurrentCall(null)
             }
           }
-        )
-        .subscribe()
-    }
-
-    setup()
+        }
+      )
+      .subscribe((status) => {
+        console.log('[LiveScreen] 🔌 Call records channel status:', status)
+      })
 
     return () => {
-      channel?.unsubscribe()
+      channel.unsubscribe()
     }
-  }, [studentId, seatNumber])
+  }, [orgId, studentId, seatNumber])
 
   // Handlers
   const handleSavePlanner = (planner: DailyPlanner) => {
@@ -873,7 +940,8 @@ export default function LiveScreenPage({ params }: PageProps) {
         {activeView === 'timer' && (
           <div className="h-full flex flex-col">
             <SubjectTimer
-              studentId={studentId}
+              studentId={studentId || ''}
+              orgId={orgId || undefined}
               containerRef={containerRef}
               theme={theme}
               onSubjectsChange={setSubjects}
@@ -888,7 +956,8 @@ export default function LiveScreenPage({ params }: PageProps) {
 
         {activeView === 'planner' && (
           <DailyPlannerPage
-            studentId={studentId}
+            studentId={studentId || ''}
+            orgId={orgId || undefined}
             seatNumber={parseInt(seatNumber)}
             subjects={subjects}
             existingPlanner={dailyPlanner || undefined}
@@ -900,14 +969,19 @@ export default function LiveScreenPage({ params }: PageProps) {
               setActiveView('timer')
             }}
             onCompletedSubjectsChange={setCompletedSubjectIds}
+            onSubjectDeleted={(subjectId) => {
+              // subjects 상태에서 삭제된 과목 제거
+              setSubjects(prev => prev.filter(s => s.id !== subjectId))
+            }}
             initialPlanner={dailyPlanner}
             dataLoaded={dataLoaded}
+            isVisible={activeView === 'planner'}
           />
         )}
 
         {activeView === 'ranking' && (
           <StudyTimeRankingDisplay
-            studentId={studentId}
+            studentId={studentId || ''}
             rankings={rankings}
             myTotalMinutes={{
               daily: studyTimeMinutes,
@@ -919,7 +993,7 @@ export default function LiveScreenPage({ params }: PageProps) {
 
         {activeView === 'stats' && (
           <>
-            <StudyStatistics studentId={studentId} />
+            <StudyStatistics studentId={studentId || ''} />
             {/* Spacer for bottom navigation */}
             <div className="h-20" />
           </>
@@ -1055,7 +1129,7 @@ export default function LiveScreenPage({ params }: PageProps) {
       <DailyPlannerModal
         open={isPlannerOpen}
         onOpenChange={setIsPlannerOpen}
-        studentId={studentId}
+        studentId={studentId || ''}
         seatNumber={parseInt(seatNumber)}
         existingPlanner={dailyPlanner || undefined}
         onSave={handleSavePlanner}
@@ -1064,7 +1138,7 @@ export default function LiveScreenPage({ params }: PageProps) {
       <OutingModal
         open={isOutingModalOpen}
         onOpenChange={setIsOutingModalOpen}
-        studentId={studentId}
+        studentId={studentId || ''}
         seatNumber={parseInt(seatNumber)}
         onOutingStart={handleOutingStart}
       />

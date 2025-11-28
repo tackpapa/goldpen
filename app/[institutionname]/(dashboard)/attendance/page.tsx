@@ -190,8 +190,9 @@ export default function AttendancePage() {
         attendance?: Attendance[]
         todayStudents?: TodayStudent[]
         weeklyStats?: WeeklyStatItem[]
-        studentRates?: StudentAttendanceRateItem[]
+        studentRates?: any[]
         selectedDate?: string
+        error?: string
       }
 
       if (!response.ok) {
@@ -343,7 +344,7 @@ export default function AttendancePage() {
         })
       }
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
+        const body = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(body.error || '저장 실패')
       }
       toast({
@@ -355,8 +356,8 @@ export default function AttendancePage() {
       // rollback to present if failed
       setTodayAttendance(prev => prev.map(r => {
         if (r.student_id !== studentId) return r
-        const updatedClasses = r.classes.map(c => c.class_id === classId ? { ...c, status: 'present' } : c)
-        const agg = updatedClasses.reduce((min, c) => Math.min(min, statusPriority[c.status]), 99)
+        const updatedClasses = r.classes.map(c => c.class_id === classId ? { ...c, status: 'present' as AttendanceStatus } : c)
+        const agg = updatedClasses.reduce((min, c) => Math.min(min, statusPriority[c.status as AttendanceStatus] ?? 99), 99)
         const aggStatus = (Object.keys(statusPriority) as AttendanceStatus[]).find(s => statusPriority[s] === agg) || 'present'
         return { ...r, classes: updatedClasses, status: aggStatus }
       }))
@@ -691,8 +692,8 @@ export default function AttendancePage() {
           {attendanceHistory.map((record) => {
             const statusInfo = statusMap[record.status]
             const Icon = statusInfo.icon
-            const studentName = record.student?.name || record.student_id
-            const className = record.class?.name || record.class_id
+            const studentName = (record as any).student?.name || record.student_id
+            const className = (record as any).class?.name || record.class_id
             return (
               <tr key={record.id} className="border-b">
                 <td className="p-2">{record.date}</td>

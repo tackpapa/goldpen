@@ -9,6 +9,7 @@
  */
 
 import { readFileSync } from 'fs'
+// @ts-ignore - pg types not available in this context
 import { Client } from 'pg'
 
 // Supabase DB Connection String from environment
@@ -75,7 +76,7 @@ async function main() {
     console.log('┌──────────────────┬───────┐')
     console.log('│   Table Name     │ Count │')
     console.log('├──────────────────┼───────┤')
-    result.rows.forEach(row => {
+    result.rows.forEach((row: any) => {
       console.log(`│ ${row.table_name.padEnd(16)} │ ${String(row.count).padStart(5)} │`)
     })
     console.log('└──────────────────┴───────┘\n')
@@ -95,7 +96,7 @@ async function main() {
     `
     const gradeResult = await client.query(gradeQuery)
 
-    gradeResult.rows.forEach(row => {
+    gradeResult.rows.forEach((row: any) => {
       console.log(`  ${row.grade_group}: ${row.count}명`)
     })
 

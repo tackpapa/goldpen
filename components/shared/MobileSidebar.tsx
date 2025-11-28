@@ -13,7 +13,7 @@ import {
 import { navigationItems, getFilteredNavigation, type BadgeType } from '@/lib/config/navigation'
 
 const BadgeComponent = ({ type, isActive }: { type: BadgeType; isActive: boolean }) => {
-  const badgeStyles = {
+  const badgeStyles: Record<BadgeType, string> = {
     '학원용': isActive
       ? 'bg-blue-100 text-blue-700'
       : 'bg-blue-50/50 text-blue-600',
@@ -23,6 +23,9 @@ const BadgeComponent = ({ type, isActive }: { type: BadgeType; isActive: boolean
     '공부방': isActive
       ? 'bg-orange-100 text-orange-700'
       : 'bg-orange-50/50 text-orange-600',
+    '강사용': isActive
+      ? 'bg-purple-100 text-purple-700'
+      : 'bg-purple-50/50 text-purple-600',
   }
 
   return (

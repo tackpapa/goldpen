@@ -191,7 +191,7 @@ export function Sidebar() {
       try {
         const slug = window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
         const res = await fetch(`/api/settings?slug=${slug}`, { credentials: 'include' })
-        const data = await res.json()
+        const data = await res.json() as { organization?: { name?: string; logo_url?: string } }
         if (res.ok && data.organization) {
           if (data.organization.name) {
             setOrganizationName(data.organization.name)

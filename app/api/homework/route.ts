@@ -267,7 +267,7 @@ export async function GET(request: Request) {
       )
     }
 
-    const homeworkIds = (homework ?? []).map((hw) => hw.id)
+    const homeworkIds = (homework ?? []).map((hw: any) => hw.id)
 
     let submissions: HomeworkSubmissionRow[] = []
     if (homeworkIds.length) {
@@ -310,7 +310,7 @@ export async function GET(request: Request) {
       }
     }
 
-    let teachersRows: TeacherEntry[] = []
+    let teachersRows: (TeacherEntry & { user_id?: string | null })[] = []
     {
       const { data, error } = await db
         .from('teachers')
@@ -363,7 +363,7 @@ export async function GET(request: Request) {
       enrollmentsByClass.set(en.class_id, list)
     })
 
-    const normalizedHomework: HomeworkRow[] = (homework || []).map((hw) => ({
+    const normalizedHomework: HomeworkRow[] = (homework || []).map((hw: any) => ({
       id: hw.id,
       title: hw.title,
       description: hw.description ?? null,
@@ -434,6 +434,8 @@ export async function GET(request: Request) {
       classHomeworkStats,
       teachers: teachersRows,
       count: normalizedHomework.length,
+    }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
     console.error('[Homework GET] Unexpected error:', error)

@@ -156,7 +156,15 @@ export default function BillingPage() {
         setError(null)
 
         const res = await fetch(dataEndpoint, { credentials: 'include' })
-        const json = await res.json()
+        interface BillingDataResponse {
+          error?: string
+          transactions?: any[]
+          expenses?: any[]
+          expenseCategories?: any[]
+          teacherSalaries?: any[]
+          students?: any[]
+        }
+        const json = await res.json() as BillingDataResponse
         if (!res.ok) throw new Error(json?.error || '데이터 조회 실패')
 
         setBillingTransactions(json.transactions || [])
@@ -290,10 +298,10 @@ export default function BillingPage() {
     expenses
       .filter(exp => exp.expense_date.startsWith(monthKey))
       .forEach((exp) => {
-        const categoryName = exp.category?.name || '기타'
+        const categoryName = exp.category?.name || exp.description || '기타'
         const categoryColor = exp.category?.color || '#6b7280'
         const current = categoryTotals.get(categoryName) || { name: categoryName, value: 0, color: categoryColor }
-        current.value += exp.amount / 100 // Convert cents to won
+        current.value += exp.amount || 0
         categoryTotals.set(categoryName, current)
       })
 

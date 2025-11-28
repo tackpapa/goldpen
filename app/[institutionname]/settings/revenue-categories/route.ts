@@ -81,8 +81,8 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { db, orgId } = await getSupabaseWithOrg(request)
-    const body = await request.json()
-    const id = body?.id as string | undefined
+    const body = await request.json() as { id?: string }
+    const id = body?.id
     if (!id) return Response.json({ error: 'id가 필요합니다' }, { status: 400 })
     const { error } = await db.from('revenue_categories').delete().eq('id', id).eq('org_id', orgId)
     if (error) throw error

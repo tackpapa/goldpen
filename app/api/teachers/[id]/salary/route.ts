@@ -103,8 +103,8 @@ export async function GET(
         }
       })
 
-      const totalHours = lessonsWithAmount.reduce((sum, l) => sum + l.duration_hours, 0)
-      const totalAmount = lessonsWithAmount.reduce((sum, l) => sum + l.amount, 0)
+      const totalHours = lessonsWithAmount.reduce((sum: any, l: any) => sum + l.duration_hours, 0)
+      const totalAmount = lessonsWithAmount.reduce((sum: any, l: any) => sum + l.amount, 0)
 
       return Response.json({
         period,

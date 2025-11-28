@@ -95,11 +95,11 @@ export default function KakaoPage() {
       setIsLoading(true)
       const response = await fetch(`/api/admin/kakao?period=${period}`)
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { stats?: any; organization_usages?: any[]; recent_usages?: any[]; daily_stats?: any[] }
         setStats(data.stats)
-        setOrgUsages(data.organization_usages)
-        setRecentUsages(data.recent_usages)
-        setDailyStats(data.daily_stats)
+        setOrgUsages(data.organization_usages || [])
+        setRecentUsages(data.recent_usages || [])
+        setDailyStats(data.daily_stats || [])
       }
     } catch (error) {
       console.error('Failed to load kakao data:', error)

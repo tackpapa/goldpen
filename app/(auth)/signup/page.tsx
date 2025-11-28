@@ -57,7 +57,11 @@ export default function SignupPage() {
         }),
       })
 
-      const result = await response.json()
+      interface SignupResponse {
+        error?: string
+        org?: { name: string }
+      }
+      const result = await response.json() as SignupResponse
 
       if (!response.ok) {
         toast({
@@ -70,7 +74,7 @@ export default function SignupPage() {
 
       toast({
         title: '회원가입 성공',
-        description: `${result.org.name}에 오신 것을 환영합니다!`,
+        description: `${result.org?.name}에 오신 것을 환영합니다!`,
       })
 
       router.push('/login')

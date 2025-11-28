@@ -100,7 +100,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       students = data || []
       studentsError = error
     } else if (classes && classes.length > 0) {
-      const classIds = classes.map((c) => c.id)
+      const classIds = classes.map((c: any) => c.id)
       const { data, error } = await db
         .from('class_students')
         .select('student_id, students(id,name,grade,school,status,phone)')

@@ -91,7 +91,7 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
         credentials: 'include',
       })
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { stats?: SubjectStatistics[] }
         const stats = data.stats || []
         setTodayStats(stats)
         const total = stats.reduce((sum: number, stat: any) => sum + stat.total_seconds, 0)
@@ -119,7 +119,7 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
         credentials: 'include',
       })
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { stats?: SubjectStatistics[] }
         const stats = data.stats || []
         setYesterdayStats(stats)
         const total = stats.reduce((sum: number, stat: any) => sum + stat.total_seconds, 0)

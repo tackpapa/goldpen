@@ -29,7 +29,7 @@ export async function GET(request: Request) {
 
     const { data: rooms, error } = await db
       .from('rooms')
-      .select('id, name, capacity, status')
+      .select('id, name, capacity, status, notes')
       .eq('org_id', orgId)
       .order('name', { ascending: true })
 
@@ -49,7 +49,9 @@ export async function GET(request: Request) {
       return Response.json({ error: '강의실 조회 실패', details: error }, { status: 500 })
     }
 
-    return Response.json({ rooms: rooms || [] })
+    return Response.json({ rooms: rooms || [] }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('[Rooms GET] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error?.message || error }, { status: 500 })

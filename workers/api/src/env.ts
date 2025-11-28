@@ -7,6 +7,9 @@ export interface Env {
   NEXT_PUBLIC_SUPABASE_ANON_KEY: string
   SUPABASE_SERVICE_ROLE_KEY?: string // Optional: for admin operations
 
+  // Environment
+  ENVIRONMENT?: string // 'production' | 'development'
+
  // App Config
   NEXT_PUBLIC_APP_URL?: string
 

@@ -24,7 +24,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
     let studentIds: string[] = []
     if (!enrollErr && enrollments) {
-      studentIds = enrollments.map((e) => e.student_id).filter(Boolean) as string[]
+      studentIds = enrollments.map((e: any) => e.student_id).filter(Boolean) as string[]
     }
 
     // 2) fallback: students.class_id 기준 (만약 enrollments 비어 있을 때)
@@ -35,7 +35,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
         .eq('class_id', classId)
         .eq('org_id', orgId)
       if (!studentErr && studentRows) {
-        studentIds = studentRows.map((s) => s.id)
+        studentIds = studentRows.map((s: any) => s.id)
       }
     }
 
@@ -65,7 +65,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     // 새 배정 삽입
     if (student_ids.length) {
-      const enrollPayload = studentRows.map((s) => ({
+      const enrollPayload = studentRows.map((s: any) => ({
         org_id: orgId,
         class_id: classId,
         student_id: s.id,

@@ -194,9 +194,9 @@ export default function UsersPage() {
       )
 
       if (response.ok) {
-        const data = await response.json()
-        setUsers(data.users)
-        setTotalCount(data.total)
+        const data = await response.json() as { users?: any[]; total?: number }
+        setUsers(data.users || [])
+        setTotalCount(data.total || 0)
       }
     } catch (error) {
       console.error('Failed to load users:', error)

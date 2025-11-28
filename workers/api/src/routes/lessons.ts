@@ -89,7 +89,7 @@ app.get("/", async (c) => {
         );
 
         const schedules: any[] = [];
-        schedRes.rows.forEach((r) => {
+        schedRes.rows.forEach((r: any) => {
           const scheduleArr = Array.isArray(r.schedule) ? r.schedule : [];
           scheduleArr.forEach((s: any) => {
             if (!s) return;
@@ -117,12 +117,12 @@ app.get("/", async (c) => {
         return {
           lessons,
           stats: {
-            monthlyProgressData: monthly.rows.map((r) => ({
+            monthlyProgressData: monthly.rows.map((r: any) => ({
               month: r.month,
               planned: r.lessons, // 계획 데이터 없으므로 동일 값 사용
               lessons: r.lessons,
             })),
-            comprehensionTrendData: comp.rows.map((r) => ({
+            comprehensionTrendData: comp.rows.map((r: any) => ({
               week: r.week,
               high: r.high,
               medium: r.medium,

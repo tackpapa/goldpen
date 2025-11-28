@@ -6,9 +6,11 @@ export const runtime = 'edge'
 import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useClasses, useStudents, useTeachersOverview, useRooms, useClassEnrollments } from '@/lib/swr'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { DataTable } from '@/components/ui/data-table'
+import { PageSkeleton } from '@/components/ui/skeleton'
 import {
   Dialog,
   DialogContent,
@@ -76,6 +78,15 @@ export default function ClassesPage() {
   usePageAccess('classes')
 
   const { toast } = useToast()
+
+  // SWR hooks로 데이터 페칭
+  const { classes: swrClasses, isLoading: classesLoading, refresh: refreshClasses } = useClasses()
+  const { students: swrStudents, isLoading: studentsLoading } = useStudents()
+  const { teachers: swrTeachers, isLoading: teachersLoading } = useTeachersOverview()
+  const { rooms: swrRooms, isLoading: roomsLoading } = useRooms()
+  const { enrollments: swrEnrollments, isLoading: enrollmentsLoading } = useClassEnrollments()
+
+  // 로컬 상태 (optimistic updates 용)
   const [classes, setClasses] = useState<Class[]>([])
   const [allStudents, setAllStudents] = useState<StudentForAssignment[]>([])
   const [classEnrollments, setClassEnrollments] = useState<any[]>([])
@@ -84,9 +95,6 @@ export default function ClassesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingClass, setEditingClass] = useState<Class | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [page, setPage] = useState(0)
-  const [hasMore, setHasMore] = useState(true)
-  const [totalCount, setTotalCount] = useState(0)
   const [filterTeacherId, setFilterTeacherId] = useState<string | null>(null)
   const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>([])
   const [teacherSchedules, setTeacherSchedules] = useState<TeacherScheduleSlot[]>([])
@@ -125,120 +133,43 @@ export default function ClassesPage() {
     schedule: Array.isArray(cls.schedule) ? cls.schedule : [],
   })
 
-  const fetchClasses = async (pageNum: number = 0, append: boolean = false) => {
-    if (!append) setIsLoading(true)
-
-    try {
-      const limit = 15
-      const offset = pageNum * limit
-      const params = new URLSearchParams({
-        limit: limit.toString(),
-        offset: offset.toString(),
-      })
-
+  // SWR 데이터를 로컬 상태에 동기화
+  useEffect(() => {
+    if (swrClasses.length > 0) {
+      let filtered = swrClasses.map(normalizeClassSchedule)
       if (filterTeacherId) {
-        params.append('teacher_id', filterTeacherId)
+        filtered = filtered.filter(c => c.teacher_id === filterTeacherId)
       }
-
-      const response = await fetch(`/api/classes?${params.toString()}`, { credentials: 'include' })
-      const data = await response.json() as { classes?: Class[]; total?: number; error?: string }
-
-      if (response.ok) {
-        const normalized = (data.classes || []).map(normalizeClassSchedule)
-
-        if (append) {
-          setClasses(prev => [...prev, ...normalized])
-        } else {
-          setClasses(normalized)
-        }
-
-        setTotalCount(data.total || 0)
-        setHasMore(normalized.length === limit)
-      } else {
-        toast({
-          title: '데이터 로드 실패',
-          description: data.error || '반 목록을 불러올 수 없습니다.',
-          variant: 'destructive',
-        })
-      }
-    } catch (error) {
-      toast({
-        title: '오류 발생',
-        description: '서버와 통신할 수 없습니다.',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsLoading(false)
+      setClasses(filtered)
     }
-  }
-
-  const loadMore = () => {
-    if (hasMore && !isLoading) {
-      const nextPage = page + 1
-      setPage(nextPage)
-      fetchClasses(nextPage, true)
-    }
-  }
+  }, [swrClasses, filterTeacherId])
 
   useEffect(() => {
-    setPage(0)
-    setClasses([])
-    fetchClasses(0, false)
-
-    const fetchStudents = async () => {
-      try {
-        const response = await fetch('/api/students', { credentials: 'include', credentials: 'include' })
-        const data = await response.json() as { students?: StudentForAssignment[]; error?: string }
-
-        if (response.ok) {
-          setAllStudents(data.students || [])
-        }
-      } catch (error) {
-        console.error('Failed to fetch students:', error)
-      }
+    if (swrStudents.length > 0) {
+      setAllStudents(swrStudents)
     }
+  }, [swrStudents])
 
-    const fetchTeachers = async () => {
-      try {
-        const res = await fetch('/api/teachers/overview', { credentials: 'include' })
-        const data = await res.json() as { teachers?: { id: string; name: string }[] }
-        if (res.ok && data.teachers) {
-          setTeachers(data.teachers.map((t) => ({ id: t.id, name: t.name })))
-        }
-      } catch (e) {
-        console.error('Failed to fetch teachers', e)
-      }
+  useEffect(() => {
+    if (swrTeachers.length > 0) {
+      setTeachers(swrTeachers.map((t: any) => ({ id: t.id, name: t.name })))
     }
+  }, [swrTeachers])
 
-    const fetchRooms = async () => {
-      try {
-        const res = await fetch('/api/rooms', { credentials: 'include' })
-        const data = await res.json() as { rooms?: { id: string; name: string }[] }
-        if (res.ok && data.rooms) {
-          setRooms(data.rooms.map((r) => ({ id: r.id, name: r.name })))
-        }
-      } catch (e) {
-        console.error('Failed to fetch rooms', e)
-      }
+  useEffect(() => {
+    if (swrRooms.length > 0) {
+      setRooms(swrRooms.map((r: any) => ({ id: r.id, name: r.name })))
     }
+  }, [swrRooms])
 
-    const fetchClassEnrollments = async () => {
-      try {
-        const res = await fetch('/api/class-enrollments', { credentials: 'include' })
-        const data = await res.json() as { enrollments?: any[] }
-        if (res.ok && data.enrollments) {
-          setClassEnrollments(data.enrollments)
-        }
-      } catch (e) {
-        console.error('Failed to fetch class enrollments', e)
-      }
+  useEffect(() => {
+    if (swrEnrollments.length > 0) {
+      setClassEnrollments(swrEnrollments)
     }
+  }, [swrEnrollments])
 
-    fetchStudents()
-    fetchTeachers()
-    fetchRooms()
-    fetchClassEnrollments()
-  }, [filterTeacherId, toast])
+  // 로딩 상태 통합
+  const isInitialLoading = classesLoading && classes.length === 0
 
   // 선택된 강사의 기존 스케줄 불러오기 (충돌 검사용)
   useEffect(() => {
@@ -428,9 +359,28 @@ export default function ClassesPage() {
     setIsDialogOpen(true)
   }
 
-  const handleViewStudents = (classData: Class) => {
+  // 선택된 반의 학생 목록 (모달 열 때 직접 fetch)
+  const [selectedClassEnrollments, setSelectedClassEnrollments] = useState<any[]>([])
+  const [studentListLoading, setStudentListLoading] = useState(false)
+
+  const handleViewStudents = async (classData: Class) => {
     setSelectedClass(classData)
+    setSelectedClassEnrollments([])
+    setStudentListLoading(true)
     setIsStudentListOpen(true)
+
+    try {
+      // 해당 반의 enrollment를 직접 fetch
+      const res = await fetch(`/api/class-enrollments?class_id=${classData.id}`, { credentials: 'include' })
+      const data = await res.json() as { enrollments?: any[] }
+      if (res.ok && data.enrollments) {
+        setSelectedClassEnrollments(data.enrollments)
+      }
+    } catch (error) {
+      console.error('Failed to fetch class enrollments:', error)
+    } finally {
+      setStudentListLoading(false)
+    }
   }
 
   const handleOpenAssignStudentDialog = async (classData: Class) => {
@@ -568,7 +518,7 @@ export default function ClassesPage() {
           setClassForAssignment(null)
           setSelectedStudents([])
         } else {
-          const err = await res.json()
+          const err = await res.json() as { error?: string }
           // 롤백
           setClasses(prevClasses)
           setAllStudents(prevAllStudents)
@@ -670,10 +620,8 @@ export default function ClassesPage() {
           })
           setIsDialogOpen(false)
           reset()
-          // 목록 새로고침
-          setPage(0)
-          setClasses([])
-          fetchClasses(0, false)
+          // SWR 캐시 갱신
+          refreshClasses()
         } else {
           const error = await response.json() as { error?: string }
           toast({
@@ -697,10 +645,8 @@ export default function ClassesPage() {
           })
           setIsDialogOpen(false)
           reset()
-          // 목록 새로고침
-          setPage(0)
-          setClasses([])
-          fetchClasses(0, false)
+          // SWR 캐시 갱신
+          refreshClasses()
         } else {
           const error = await response.json() as { error?: string }
           toast({
@@ -719,6 +665,11 @@ export default function ClassesPage() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // 초기 로딩 시 스켈레톤 표시
+  if (isInitialLoading) {
+    return <PageSkeleton />
   }
 
   return (
@@ -757,34 +708,14 @@ export default function ClassesPage() {
             ))}
           </div>
 
-          <div className="overflow-x-auto">
-            <DataTable
-              columns={columns}
-              data={classes}
-              searchKey="name"
-              searchPlaceholder="반 이름으로 검색..."
-              disablePagination={true}
-            />
-          </div>
-
-          {/* 무한 스크롤 트리거 */}
-          {hasMore && (
-            <div className="flex justify-center py-4">
-              <Button
-                variant="outline"
-                onClick={loadMore}
-                disabled={isLoading}
-              >
-                {isLoading ? '로딩 중...' : '더 보기'}
-              </Button>
-            </div>
-          )}
-
-          {!hasMore && classes.length > 0 && (
-            <div className="text-center py-4 text-sm text-muted-foreground">
-              전체 {totalCount}개의 반을 모두 불러왔습니다
-            </div>
-          )}
+          <DataTable
+            columns={columns}
+            data={classes}
+            searchKey="name"
+            searchPlaceholder="반 이름으로 검색..."
+            infiniteScroll
+            pageSize={20}
+          />
         </CardContent>
       </Card>
 
@@ -1059,66 +990,55 @@ export default function ClassesPage() {
           </DialogHeader>
 
           <div className="space-y-4">
-            {(() => {
-              // class_enrollments에서 해당 반의 학생 찾기
-              const classEnrollmentsList = classEnrollments.filter(
-                (enrollment) => enrollment.class_id === selectedClass?.id
-              )
+            {studentListLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : selectedClassEnrollments.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">
+                등록된 학생이 없습니다.
+              </p>
+            ) : (
+              <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
+                <table className="w-full">
+                  <thead className="bg-muted/50 sticky top-0">
+                    <tr>
+                      <th className="text-left px-4 py-3 font-medium text-sm">학생 이름</th>
+                      <th className="text-left px-4 py-3 font-medium text-sm">학년</th>
+                      <th className="text-left px-4 py-3 font-medium text-sm">학교</th>
+                      <th className="text-left px-4 py-3 font-medium text-sm">수업 잔여 크레딧</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {selectedClassEnrollments.map((enrollment) => {
+                      const studentData = enrollment.students
+                      if (!studentData) return null
 
-              if (classEnrollmentsList.length === 0) {
-                return (
-                  <p className="text-center text-muted-foreground py-8">
-                    등록된 학생이 없습니다.
-                  </p>
-                )
-              }
+                      // credit은 시간 단위로 저장됨
+                      const creditHours = studentData.credit || 0
 
-              return (
-                <div className="border rounded-lg overflow-hidden max-h-96 overflow-y-auto">
-                  <table className="w-full">
-                    <thead className="bg-muted/50">
-                      <tr>
-                        <th className="text-left px-4 py-3 font-medium text-sm">학생 이름</th>
-                        <th className="text-left px-4 py-3 font-medium text-sm">학년</th>
-                        <th className="text-left px-4 py-3 font-medium text-sm">학교</th>
-                        <th className="text-left px-4 py-3 font-medium text-sm">수업 잔여 크레딧</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {classEnrollmentsList.map((enrollment) => {
-                        const studentData = enrollment.students
-                        if (!studentData) return null
-
-                        const remainingHours = studentData.remaining_minutes
-                          ? Math.floor(studentData.remaining_minutes / 60)
-                          : 0
-                        const remainingMins = studentData.remaining_minutes
-                          ? studentData.remaining_minutes % 60
-                          : 0
-
-                        return (
-                          <tr key={enrollment.id} className="hover:bg-muted/30 transition-colors">
-                            <td className="px-4 py-3 font-medium">{studentData.name}</td>
-                            <td className="px-4 py-3 text-muted-foreground">{studentData.grade || '-'}</td>
-                            <td className="px-4 py-3 text-muted-foreground">{studentData.school || '-'}</td>
-                            <td className="px-4 py-3">
-                              {studentData.remaining_minutes !== null && studentData.remaining_minutes !== undefined ? (
-                                <span className="text-sm">
-                                  {remainingHours > 0 && `${remainingHours}시간 `}
-                                  {remainingMins}분
-                                </span>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )
-            })()}
+                      return (
+                        <tr key={enrollment.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-4 py-3 font-medium">{studentData.name}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{studentData.grade || '-'}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{studentData.school || '-'}</td>
+                          <td className="px-4 py-3">
+                            {creditHours > 0 ? (
+                              <span className="text-sm">{creditHours}시간</span>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="text-sm text-muted-foreground text-center">
+              총 {selectedClassEnrollments.filter(e => e.students).length}명
+            </div>
           </div>
 
           <DialogFooter>

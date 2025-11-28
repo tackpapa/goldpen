@@ -38,7 +38,7 @@ app.get("/", async (c) => {
         `,
         [DEMO_ORG],
       );
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         ...row,
         subjects: row.subjects || [],
         assigned_students_count: Number(row.assigned_students_count || 0),

@@ -61,7 +61,7 @@ export type StudentInput = z.infer<typeof StudentSchema>
  */
 export const ConsultationSchema = z.object({
   student_name: z.string().min(1, '학생 이름을 입력해주세요'),
-  student_grade: z.number().int().min(1).max(12).optional(),
+  student_grade: z.string().optional(),
   parent_name: z.string().min(1, '학부모 이름을 입력해주세요'),
   parent_phone: z.string().min(1, '전화번호를 입력해주세요'),
   parent_email: z.string().email('올바른 이메일 형식이 아닙니다').optional(),

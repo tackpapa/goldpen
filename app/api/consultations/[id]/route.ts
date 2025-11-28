@@ -1,84 +1,164 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { updateConsultationSchema } from '@/lib/validations/consultation'
 import { ZodError } from 'zod'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
+import { logActivityWithContext, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 export const runtime = 'edge'
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+// GET /api/consultations/[id] - Get single consultation
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    const { id } = await params
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-    const { data: userProfile } = await supabase.from('users').select('org_id').eq('id', user.id).single()
-    if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-
-    const { data: consultationData, error } = await supabase
+    const { data: consultation, error } = await db
       .from('consultations')
-      .select('*, student:student_id(id, name), teacher:teacher_id(id, name)')
-      .eq('id', params.id)
-      .eq('org_id', userProfile.org_id)
+      .select('*')
+      .eq('id', id)
+      .eq('org_id', orgId)
       .single()
 
-    if (error || !consultationData) return Response.json({ error: '상담 기록을 찾을 수 없습니다' }, { status: 404 })
-    return Response.json({ consultation: consultationData })
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return Response.json({ error: '상담을 찾을 수 없습니다' }, { status: 404 })
+      }
+      console.error('[Consultations GET by ID] Error:', error)
+      return Response.json({ error: '상담 조회 실패' }, { status: 500 })
+    }
+
+    return Response.json({ consultation })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    console.error('[Consultations GET by ID] Unexpected:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+// PATCH /api/consultations/[id] - Update consultation
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-
-    const { data: userProfile } = await supabase.from('users').select('org_id').eq('id', user.id).single()
-    if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+    const { id } = await params
+    const { db, orgId, user, role } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = updateConsultationSchema.parse(body)
 
-    if (Object.keys(validated).length === 0) {
-      return Response.json({ error: '수정할 데이터가 없습니다' }, { status: 400 })
-    }
+    // Build update object - only include fields that are present in the request
+    const updateData: Record<string, any> = {}
 
-    const { data: consultationData, error } = await supabase
+    if (validated.student_name !== undefined) updateData.student_name = validated.student_name
+    if (validated.student_grade !== undefined) updateData.student_grade = validated.student_grade
+    if (validated.parent_name !== undefined) updateData.parent_name = validated.parent_name
+    if (validated.parent_phone !== undefined) updateData.parent_phone = validated.parent_phone
+    if (validated.parent_email !== undefined) updateData.parent_email = validated.parent_email
+    if (validated.goals !== undefined) updateData.goals = validated.goals
+    if (validated.preferred_times !== undefined) updateData.preferred_times = validated.preferred_times
+    if (validated.scheduled_date !== undefined) updateData.scheduled_date = validated.scheduled_date
+    if (validated.status !== undefined) updateData.status = validated.status
+    if (validated.notes !== undefined) updateData.notes = validated.notes
+    if (validated.result !== undefined) updateData.result = validated.result
+    if (validated.enrolled_date !== undefined) updateData.enrolled_date = validated.enrolled_date
+    if (validated.images !== undefined) updateData.images = validated.images
+
+    const { data: consultation, error } = await db
       .from('consultations')
-      .update(validated)
-      .eq('id', params.id)
-      .eq('org_id', userProfile.org_id)
+      .update(updateData)
+      .eq('id', id)
+      .eq('org_id', orgId)
       .select()
       .single()
 
-    if (error) return Response.json({ error: '상담 정보 수정 실패' }, { status: 500 })
-    return Response.json({ consultation: consultationData, message: '상담 정보가 수정되었습니다' })
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return Response.json({ error: '상담을 찾을 수 없습니다' }, { status: 404 })
+      }
+      console.error('[Consultations PATCH] Error:', error)
+      return Response.json({ error: '상담 업데이트 실패', details: error.message }, { status: 500 })
+    }
+
+    // 활동 로그 기록
+    await logActivityWithContext(
+      { orgId, user, role },
+      {
+        type: 'update',
+        entityType: 'consultation',
+        entityId: consultation.id,
+        entityName: consultation.student_name,
+        description: actionDescriptions.consultation.update(consultation.student_name || '이름 없음'),
+      },
+      request
+    )
+
+    return Response.json({ consultation, message: '상담이 업데이트되었습니다' })
   } catch (error: any) {
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    console.error('[Consultations PATCH] Unexpected:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+// DELETE /api/consultations/[id] - Delete consultation
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    const { id } = await params
+    const { db, orgId, user, role } = await getSupabaseWithOrg(request)
 
-    const { data: userProfile } = await supabase.from('users').select('org_id, role').eq('id', user.id).single()
-    if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    if (!['owner', 'manager'].includes(userProfile.role)) {
-      return Response.json({ error: '상담 삭제 권한이 없습니다' }, { status: 403 })
+    // 삭제 전 상담 정보 조회 (로그용)
+    const { data: consultationToDelete } = await db
+      .from('consultations')
+      .select('id, student_name')
+      .eq('id', id)
+      .eq('org_id', orgId)
+      .single()
+
+    const { error } = await db
+      .from('consultations')
+      .delete()
+      .eq('id', id)
+      .eq('org_id', orgId)
+
+    if (error) {
+      console.error('[Consultations DELETE] Error:', error)
+      return Response.json({ error: '상담 삭제 실패', details: error.message }, { status: 500 })
     }
 
-    const { error } = await supabase.from('consultations').delete().eq('id', params.id).eq('org_id', userProfile.org_id)
-    if (error) return Response.json({ error: '상담 삭제 실패' }, { status: 500 })
-    return Response.json({ message: '상담 기록이 삭제되었습니다' })
+    // 활동 로그 기록
+    if (consultationToDelete) {
+      await logActivityWithContext(
+        { orgId, user, role },
+        {
+          type: 'delete',
+          entityType: 'consultation',
+          entityId: id,
+          entityName: consultationToDelete.student_name,
+          description: actionDescriptions.consultation.delete(consultationToDelete.student_name || '이름 없음'),
+        },
+        request
+      )
+    }
+
+    return Response.json({ success: true, message: '상담이 삭제되었습니다' })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    console.error('[Consultations DELETE] Unexpected:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }
 }

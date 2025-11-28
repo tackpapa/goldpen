@@ -12,19 +12,23 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { LogOut, User, Settings, Menu } from 'lucide-react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 import { MobileSidebar } from './MobileSidebar'
 
 export function Header() {
   const router = useRouter()
+  const pathname = usePathname()
   const { toast } = useToast()
   const supabase = createClient()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [userRole, setUserRole] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('사용자')
   const [userEmail, setUserEmail] = useState<string>('')
+
+  // URL에서 institution 이름 추출
+  const institutionName = pathname?.split('/')[1] || 'goldpen'
 
   // Get user info from Supabase Auth and localStorage
   useEffect(() => {
@@ -128,11 +132,11 @@ export function Header() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push('/dashboard/settings' as any)}>
+            <DropdownMenuItem onClick={() => router.push(`/${institutionName}/settings` as any)}>
               <User className="mr-2 h-4 w-4" />
               <span>프로필</span>
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push('/dashboard/settings' as any)}>
+            <DropdownMenuItem onClick={() => router.push(`/${institutionName}/settings` as any)}>
               <Settings className="mr-2 h-4 w-4" />
               <span>설정</span>
             </DropdownMenuItem>

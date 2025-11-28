@@ -106,12 +106,12 @@ export async function GET(request: Request) {
     }
 
     const studentMap = new Map<string, number>()
-    ;(students || []).forEach((s) => {
+    ;(students || []).forEach((s: any) => {
       if (s.teacher_id) studentMap.set(s.teacher_id, (studentMap.get(s.teacher_id) || 0) + 1)
     })
 
     const classMap = new Map<string, number>()
-    ;(classes || []).forEach((c) => {
+    ;(classes || []).forEach((c: any) => {
       if (c.teacher_id) classMap.set(c.teacher_id, (classMap.get(c.teacher_id) || 0) + 1)
     })
 
@@ -152,7 +152,9 @@ export async function GET(request: Request) {
       }
     })
 
-    return Response.json({ teachers: result })
+    return Response.json({ teachers: result }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('[teachers/overview] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error.message }, { status: 500 })

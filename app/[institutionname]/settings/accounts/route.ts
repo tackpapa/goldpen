@@ -86,7 +86,7 @@ export async function PATCH(request: Request) {
     const service = getServiceClient()
 
     if (validated.password) {
-      await service.auth.admin.updateUser(validated.id, { password: validated.password })
+      await service.auth.admin.updateUserById(validated.id, { password: validated.password })
     }
 
     const { data, error } = await service
@@ -112,8 +112,8 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { orgId } = await getSupabaseWithOrg(request)
-    const body = await request.json()
-    const id = body?.id as string | undefined
+    const body = await request.json() as { id?: string }
+    const id = body?.id
     if (!id) return Response.json({ error: 'id가 필요합니다' }, { status: 400 })
 
     const service = getServiceClient()

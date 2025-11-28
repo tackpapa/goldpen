@@ -124,12 +124,12 @@ export async function GET(request: Request) {
     const todayLessons = todayLessonsResult.count || 0
     const upcomingHomework = upcomingHomeworkResult.count || 0
 
-    const pendingBillingAmount = pendingBillingResult.data?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0
-    const monthlyExpensesAmount = monthlyExpensesResult.data?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0
+    const pendingBillingAmount = pendingBillingResult.data?.reduce((sum: any, item: any) => sum + (item.amount || 0), 0) || 0
+    const monthlyExpensesAmount = monthlyExpensesResult.data?.reduce((sum: any, item: any) => sum + (item.amount || 0), 0) || 0
 
     const recentAttendanceData = recentAttendanceResult.data || []
     const attendanceRate = recentAttendanceData.length > 0
-      ? (recentAttendanceData.filter(a => a.status === 'present').length / recentAttendanceData.length) * 100
+      ? (recentAttendanceData.filter((a: any) => a.status === 'present').length / recentAttendanceData.length) * 100
       : 0
 
     const overview = {
@@ -162,7 +162,9 @@ export async function GET(request: Request) {
       }
     }
 
-    return Response.json({ overview })
+    return Response.json({ overview }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('[Overview GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })

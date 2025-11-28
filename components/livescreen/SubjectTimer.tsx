@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -12,6 +12,7 @@ import type { Theme } from '@/hooks/use-theme'
 
 interface SubjectTimerProps {
   studentId: string
+  orgId?: string
   containerRef?: React.RefObject<HTMLDivElement>
   theme?: Theme
   onSubjectsChange?: (subjects: Subject[]) => void
@@ -36,6 +37,7 @@ const DEFAULT_COLORS = [
 
 export function SubjectTimer({
   studentId,
+  orgId,
   containerRef,
   theme = 'color',
   onSubjectsChange,
@@ -73,9 +75,17 @@ export function SubjectTimer({
 
   const getTodayDate = () => new Date().toISOString().split('T')[0]
 
+  // Track previous subjects length to detect additions vs deletions
+  const prevSubjectsLengthRef = useRef(0)
+  const isFromParentRef = useRef(false)
+
   // Sync with parent data when props change
   useEffect(() => {
-    if (initialSubjects) setSubjects(initialSubjects)
+    if (initialSubjects) {
+      isFromParentRef.current = true
+      prevSubjectsLengthRef.current = initialSubjects.length
+      setSubjects(initialSubjects)
+    }
   }, [initialSubjects])
 
   useEffect(() => {
@@ -98,11 +108,11 @@ export function SubjectTimer({
         ])
 
         if (subjectsRes.ok) {
-          const data = await subjectsRes.json()
+          const data = await subjectsRes.json() as { subjects?: Subject[] }
           setSubjects(data.subjects || [])
         }
         if (statsRes.ok) {
-          const data = await statsRes.json()
+          const data = await statsRes.json() as { stats?: SubjectStatistics[] }
           setStatistics(data.stats || [])
         }
       } catch (error) {
@@ -127,11 +137,21 @@ export function SubjectTimer({
 
   // subjects는 DB에서 관리되므로 localStorage 저장 제거
 
-  // Notify parent when subjects change
+  // Notify parent when subjects are added locally (not when deleted from parent)
   useEffect(() => {
-    if (subjects.length > 0 && onSubjectsChange) {
+    if (isFromParentRef.current) {
+      // This update came from parent, don't notify back
+      isFromParentRef.current = false
+      return
+    }
+
+    // Only notify parent when subjects are ADDED locally (length increased)
+    if (subjects.length > prevSubjectsLengthRef.current && onSubjectsChange) {
       onSubjectsChange(subjects)
     }
+
+    // Update prev length for next comparison
+    prevSubjectsLengthRef.current = subjects.length
   }, [subjects, onSubjectsChange])
 
   // Timer for active session
@@ -211,7 +231,11 @@ export function SubjectTimer({
     if (!newSubjectName.trim()) return
 
     try {
-      const response = await fetch('/api/subjects', {
+      // 개발 모드에서 service params 추가
+      const isDev = process.env.NODE_ENV !== 'production'
+      const serviceParams = isDev && orgId ? `?service=1&orgId=${orgId}` : ''
+
+      const response = await fetch(`/api/subjects${serviceParams}`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -224,7 +248,7 @@ export function SubjectTimer({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { subject: Subject }
         setSubjects([...subjects, data.subject])
       }
     } catch (error) {
@@ -292,7 +316,11 @@ export function SubjectTimer({
 
   const handleDeleteSubject = async (subjectId: string) => {
     try {
-      const response = await fetch(`/api/subjects?id=${subjectId}`, {
+      // 개발 모드에서 service params 추가
+      const isDev = process.env.NODE_ENV !== 'production'
+      const serviceParams = isDev && orgId ? `&service=1&orgId=${orgId}` : ''
+
+      const response = await fetch(`/api/subjects?id=${subjectId}${serviceParams}`, {
         method: 'DELETE',
         credentials: 'include',
       })
@@ -339,7 +367,7 @@ export function SubjectTimer({
       })
 
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { session: { id: string; created_at: string; start_time?: string } }
         const session: StudySession = {
           id: data.session.id,
           created_at: data.session.created_at,

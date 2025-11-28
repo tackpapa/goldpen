@@ -147,7 +147,7 @@ export async function createAuthenticatedClient(request: Request) {
       data: {
         user: {
           id: 'service-role',
-          email: 'service@goldpen.local',
+          email: '시스템@goldpen.local',
           role: 'service_role',
         }
       },
@@ -161,7 +161,7 @@ export async function createAuthenticatedClient(request: Request) {
           refresh_token: process.env.SUPABASE_SERVICE_ROLE_KEY,
           user: {
             id: 'service-role',
-            email: 'service@goldpen.local',
+            email: '시스템@goldpen.local',
             role: 'service_role',
           },
         },

@@ -60,7 +60,15 @@ export async function POST(request: Request) {
       return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
     }
 
-    const body = await request.json()
+    interface StudySessionBody {
+      studentId: string
+      subjectId?: string | null
+      subjectName: string
+      action: 'start' | 'stop'
+      sessionId?: string
+      durationSeconds?: number
+    }
+    const body = await request.json() as StudySessionBody
     const { studentId, subjectId, subjectName, action } = body
 
     if (!studentId || !subjectName) {
@@ -103,7 +111,7 @@ export async function POST(request: Request) {
 
       return Response.json({ session })
     } else if (action === 'stop') {
-      const { sessionId, durationSeconds } = body
+      const { sessionId, durationSeconds } = body as StudySessionBody
 
       if (!sessionId) {
         return Response.json({ error: 'sessionId가 필요합니다' }, { status: 400 })
@@ -127,10 +135,10 @@ export async function POST(request: Request) {
       }
 
       // Update daily_study_stats
-      await updateDailyStats(supabase, userProfile.org_id, studentId, subjectId, subjectName, today, durationSeconds, timeSlot)
+      await updateDailyStats(supabase, userProfile.org_id, studentId, subjectId || null, subjectName, today, durationSeconds || 0, timeSlot)
 
       // Update study_time_records for ranking
-      await updateStudyTimeRecords(supabase, userProfile.org_id, studentId, today, durationSeconds, timeSlot)
+      await updateStudyTimeRecords(supabase, userProfile.org_id, studentId, today, durationSeconds || 0, timeSlot)
 
       return Response.json({ session })
     }

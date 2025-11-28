@@ -15,14 +15,14 @@ export function usePageAccess(pageId: PageId) {
     const checkAccess = async () => {
       try {
         const meRes = await fetch('/api/auth/me', { credentials: 'include' })
-        const meJson: MeResponse = await meRes.json().catch(() => ({} as MeResponse))
+        const meJson: MeResponse = (await meRes.json().catch(() => ({} as MeResponse))) as MeResponse
         // 인증 API 오류나 미인증 상태여도 페이지 접근은 허용
         if (!meRes.ok || !meJson.user) return
 
         const role = meJson.user.role
 
         // super_admin만 별도 관리자 콘솔로 보낸다.
-        if (role === 'super_admin') {
+        if ((role as string) === 'super_admin') {
           if (!cancelled) router.push('/admin')
           return
         }

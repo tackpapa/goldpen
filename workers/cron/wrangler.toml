@@ -1,0 +1,40 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "goldpen-attendance-cron"
+main = "src/index.ts"
+compatibility_date = "2024-11-19"
+compatibility_flags = ["nodejs_compat"]
+
+# Cron Triggers - 매 1분마다 실행
+[triggers]
+crons = ["* * * * *"]
+
+# Hyperdrive binding for Supabase Postgres
+[[hyperdrive]]
+binding = "HYPERDRIVE_DB"
+id = "8c1cfe4c456d460da34153acc8e0eb2c"
+
+# Observability
+[observability]
+enabled = true
+
+# Environment Variables
+[vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
+TIMEZONE = "Asia/Seoul"
+
+# Secrets (set via CLI):
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+# wrangler secret put KAKAO_ALIMTALK_API_KEY
+
+# Production Environment
+[env.production]
+name = "goldpen-attendance-cron-production"
+compatibility_flags = ["nodejs_compat"]
+
+[[env.production.hyperdrive]]
+binding = "HYPERDRIVE_DB"
+id = "8c1cfe4c456d460da34153acc8e0eb2c"
+
+[env.production.vars]
+NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
+TIMEZONE = "Asia/Seoul"

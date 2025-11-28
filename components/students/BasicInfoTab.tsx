@@ -17,6 +17,12 @@ import {
 import { Building2, GraduationCap, BookOpen, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
+interface Branch {
+  id: string
+  name: string
+  status?: string
+}
+
 interface BasicInfoTabProps {
   student: Student
   onUpdate?: (student: Student) => void
@@ -24,6 +30,7 @@ interface BasicInfoTabProps {
   enrollments?: any[]
   loading?: boolean
   onRefresh?: () => void
+  branches?: Branch[]
 }
 
 const SERVICE_TYPES = [
@@ -75,7 +82,8 @@ export function BasicInfoTab({
   services = [],
   enrollments = [],
   loading = false,
-  onRefresh
+  onRefresh,
+  branches = []
 }: BasicInfoTabProps) {
   const { toast } = useToast()
   const [serviceEnrollments, setServiceEnrollments] = useState<ServiceEnrollment[]>([])
@@ -173,7 +181,7 @@ export function BasicInfoTab({
           school: localStudent.school,
           parent_name: localStudent.parent_name,
           parent_phone: localStudent.parent_phone,
-          email: localStudent.email,
+          email: (localStudent as any).email,
           student_code: localStudent.student_code,
           notes: localStudent.notes,
           branch_name: localStudent.branch_name || branchValue,
@@ -181,7 +189,7 @@ export function BasicInfoTab({
         }),
       })
 
-      const result = await response.json()
+      const result = await response.json() as { error?: string; student?: Student }
 
       if (!response.ok) {
         // 중복 코드 에러를 필드에 표시
@@ -293,20 +301,34 @@ export function BasicInfoTab({
             </div>
 
             <div>
-              <Label>지점</Label>
+              <Label htmlFor="branch_name">지점</Label>
               <Select
-                value={localStudent.branch_name || branchValue}
-                onValueChange={(val) => handleFieldChange('branch_name', val)}
+                value={localStudent.branch_name || branchValue || ''}
+                onValueChange={(value) => handleFieldChange('branch_name', value)}
               >
                 <SelectTrigger id="branch_name">
                   <SelectValue placeholder="지점을 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.from(new Set([branchValue, 'demoSchool'])).map((b) => (
-                    <SelectItem key={b} value={b}>
-                      {b}
+                  {branches.length > 0 ? (
+                    <>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.name}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
+                      {/* 현재 학생의 branch_name이 목록에 없으면 추가 */}
+                      {localStudent.branch_name && !branches.some(b => b.name === localStudent.branch_name) && (
+                        <SelectItem value={localStudent.branch_name}>
+                          {localStudent.branch_name}
+                        </SelectItem>
+                      )}
+                    </>
+                  ) : (
+                    <SelectItem value={branchValue || 'demoSchool'}>
+                      {branchValue || 'demoSchool'}
                     </SelectItem>
-                  ))}
+                  )}
                 </SelectContent>
               </Select>
             </div>
@@ -362,13 +384,13 @@ export function BasicInfoTab({
             </div>
 
             <div>
-              <Label htmlFor="email">학생 이메일</Label>
+              <Label htmlFor="parent_email">학부모 이메일</Label>
               <Input
-                id="email"
+                id="parent_email"
                 type="email"
-                value={localStudent.email || ''}
-                onChange={(e) => handleFieldChange('email', e.target.value)}
-                placeholder="student@example.com"
+                value={(localStudent as any).parent_email || ''}
+                onChange={(e) => handleFieldChange('parent_email', e.target.value)}
+                placeholder="parent@example.com"
                 className={placeholderClass}
               />
             </div>

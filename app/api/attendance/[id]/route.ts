@@ -1,6 +1,7 @@
 import { updateAttendanceSchema } from '@/lib/validations/attendance'
 import { ZodError } from 'zod'
 import { getSupabaseWithOrg } from '@/app/api/_utils/org'
+import { logActivityWithContext, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -29,7 +30,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { db, orgId } = await getSupabaseWithOrg(request)
+    const { db, orgId, user, role } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = updateAttendanceSchema.parse(body)
@@ -47,6 +48,20 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       .single()
 
     if (error) return Response.json({ error: '출결 정보 수정 실패' }, { status: 500 })
+
+    // 활동 로그 기록
+    await logActivityWithContext(
+      { orgId, user, role },
+      {
+        type: 'update',
+        entityType: 'attendance',
+        entityId: attendanceData.id,
+        entityName: `${attendanceData.date} 출결`,
+        description: actionDescriptions.attendance.update(`${attendanceData.date}`),
+      },
+      request
+    )
+
     return Response.json({ attendance: attendanceData, message: '출결 정보가 수정되었습니다' })
   } catch (error: any) {
     if (error instanceof ZodError) {
@@ -61,13 +76,37 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
   try {
-    const { db, orgId, role } = await getSupabaseWithOrg(request)
+    const { db, orgId, user, role } = await getSupabaseWithOrg(request)
     if (!['owner', 'manager', 'service_role'].includes(role || '')) {
       return Response.json({ error: '출결 삭제 권한이 없습니다' }, { status: 403 })
     }
 
+    // 삭제 전 출결 정보 조회 (로그용)
+    const { data: attendanceToDelete } = await db
+      .from('attendance')
+      .select('id, date')
+      .eq('id', params.id)
+      .eq('org_id', orgId)
+      .single()
+
     const { error } = await db.from('attendance').delete().eq('id', params.id).eq('org_id', orgId)
     if (error) return Response.json({ error: '출결 삭제 실패' }, { status: 500 })
+
+    // 활동 로그 기록
+    if (attendanceToDelete) {
+      await logActivityWithContext(
+        { orgId, user, role },
+        {
+          type: 'delete',
+          entityType: 'attendance',
+          entityId: params.id,
+          entityName: `${attendanceToDelete.date} 출결`,
+          description: actionDescriptions.attendance.delete(`${attendanceToDelete.date}`),
+        },
+        request
+      )
+    }
+
     return Response.json({ message: '출결 기록이 삭제되었습니다' })
   } catch (error: any) {
     if (error?.message === 'AUTH_REQUIRED') {

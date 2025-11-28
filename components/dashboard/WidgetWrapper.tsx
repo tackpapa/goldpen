@@ -3,7 +3,7 @@
 import { ReactNode } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Trash2, GripVertical } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface WidgetWrapperProps {
@@ -31,11 +31,6 @@ export function WidgetWrapper({
     <Card className={cn('group relative', isDragging && 'opacity-50', className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-3 flex-1">
-          {/* Drag Handle */}
-          <div className="cursor-move opacity-0 group-hover:opacity-100 transition-opacity">
-            <GripVertical className="h-4 w-4 text-muted-foreground" />
-          </div>
-
           {/* Icon */}
           {icon && (
             <div className="flex-shrink-0">

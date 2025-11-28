@@ -118,6 +118,26 @@ export async function GET(request: Request) {
     }
 
     // 클래스/교사 정보를 보강하기 위해 별도 조회
+    interface ClassData {
+      id: string
+      name: string
+      subject: string
+      teacher_id: string | null
+      teacher_name: string | null
+      schedule: unknown[]
+      room: string | null
+    }
+    interface TeacherData {
+      id: string
+      full_name: string | null
+      name: string | null
+    }
+    interface EnrollmentData {
+      class_id: string
+      student_id: string
+      student_name: string
+      status: string | null
+    }
     const [classesRes] = await Promise.all([
       db
         .from('classes')
@@ -125,11 +145,11 @@ export async function GET(request: Request) {
         .eq('org_id', orgId),
     ])
 
-    const classIds = Array.from(new Set(classesRes.data?.map((c) => c.id) || []))
+    const classIds = Array.from(new Set((classesRes.data as ClassData[] | null)?.map((c: ClassData) => c.id) || []))
     const teacherIds = Array.from(
       new Set([
         ...(lessons || []).map((l: any) => l.teacher_id).filter(Boolean),
-        ...(classesRes.data || []).map((c) => c.teacher_id).filter(Boolean),
+        ...((classesRes.data as ClassData[] | null) || []).map((c: ClassData) => c.teacher_id).filter(Boolean),
       ])
     )
 
@@ -138,10 +158,10 @@ export async function GET(request: Request) {
       .select('id, full_name, name')
       .in('id', teacherIds.length ? teacherIds : ['00000000-0000-0000-0000-000000000000'])
 
-    const classMap = new Map<string, any>()
-    classesRes.data?.forEach((c) => classMap.set(c.id, c))
-    const teacherMap = new Map<string, any>()
-    teachersRes.data?.forEach((t) => teacherMap.set(t.id, t))
+    const classMap = new Map<string, ClassData>()
+    ;(classesRes.data as ClassData[] | null)?.forEach((c: ClassData) => classMap.set(c.id, c))
+    const teacherMap = new Map<string, TeacherData>()
+    ;(teachersRes.data as TeacherData[] | null)?.forEach((t: TeacherData) => teacherMap.set(t.id, t))
 
     const enrollmentsRes = await db
       .from('class_enrollments')
@@ -149,7 +169,7 @@ export async function GET(request: Request) {
       .in('class_id', classIds.length ? classIds : ['00000000-0000-0000-0000-000000000000'])
 
     const studentsByClass = new Map<string, { id: string; name: string }[]>()
-    enrollmentsRes.data?.forEach((enroll) => {
+    ;(enrollmentsRes.data as EnrollmentData[] | null)?.forEach((enroll: EnrollmentData) => {
       const list = studentsByClass.get(enroll.class_id) || []
       if (!enroll.status || enroll.status === 'active') {
         list.push({ id: enroll.student_id, name: enroll.student_name })
@@ -196,8 +216,8 @@ export async function GET(request: Request) {
 
     // 스케줄 기반 예상 수업 정보(배정) 생성 - class schedule을 변환
     const scheduledClasses =
-      classesRes.data
-        ?.flatMap((cls) => {
+      (classesRes.data as ClassData[] | null)
+        ?.flatMap((cls: ClassData) => {
           const scheduleArray = Array.isArray(cls.schedule) ? cls.schedule : []
           const students = studentsByClass.get(cls.id) || []
           return scheduleArray.map((s: any, idx: number) => ({
@@ -218,7 +238,7 @@ export async function GET(request: Request) {
     // 스케줄이 비어있으면 classes 자체를 하나의 엔트리로라도 노출
     const fallbackScheduled =
       scheduledClasses.length === 0 && classesRes.data
-        ? classesRes.data.map((cls) => ({
+        ? (classesRes.data as ClassData[]).map((cls: ClassData) => ({
             id: `${cls.id}-0`,
             class_name: cls.name,
             class_id: cls.id,
@@ -243,7 +263,7 @@ export async function GET(request: Request) {
               id: 'seed-lesson',
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString(),
-              org_id: userProfile.org_id,
+              org_id: orgId,
               lesson_date: new Date().toISOString().slice(0, 10),
               lesson_time: scheduleList[0].lesson_time,
               class_id: scheduleList[0].class_id,

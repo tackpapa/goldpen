@@ -95,6 +95,15 @@ export async function GET(request: Request) {
       .eq('org_id', orgId)
       .maybeSingle()
 
+    // owner_name은 항상 users 테이블에서 가져옴 (가입 시 입력, 변경 불가)
+    const { data: ownerUser } = await db
+      .from('users')
+      .select('name')
+      .eq('org_id', orgId)
+      .eq('role', 'owner')
+      .maybeSingle()
+    const ownerName = ownerUser?.name || ''
+
     // Signed logo URL (path -> signed url) for private bucket
     const toSignedLogo = async (logo?: string | null) => {
       if (!logo) return undefined
@@ -131,7 +140,7 @@ export async function GET(request: Request) {
         name: orgSettings?.name || organization.name,
         slug: organization.slug,
         logo_url: logoUrl,
-        owner_name: orgSettings?.owner_name,
+        owner_name: ownerName,
         address: orgSettings?.address,
         phone: orgSettings?.phone,
         email: orgSettings?.email,

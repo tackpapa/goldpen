@@ -1,5 +1,6 @@
 import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { createClient } from '@supabase/supabase-js'
+import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
 
 function getServiceClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -62,7 +63,9 @@ export async function GET(request: Request) {
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    return Response.json({ students, count })
+    return Response.json({ students, count }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('Unexpected error:', error)
     return Response.json({ error: 'Internal server error', details: error.message }, { status: 500 })
@@ -95,7 +98,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { campuses, branch_name, branch, attendance_code, student_code, ...rest } = body || {}
+    const { campuses, branch_name, branch, attendance_code, student_code, ...rest } = (body || {}) as any
 
     const insertPayload = {
       ...rest,
@@ -117,6 +120,20 @@ export async function POST(request: Request) {
       console.error('Error creating student:', error)
       return Response.json({ error: error.message }, { status: 500 })
     }
+
+    // 활동 로그 기록 (await 필요 - Edge Runtime에서 fire-and-forget이 작동하지 않음)
+    await logActivity({
+      orgId: orgId!,
+      userId: user?.id || null,
+      userName: user?.email?.split('@')[0] || '시스템',
+      userRole: null,
+      actionType: 'create',
+      entityType: 'student',
+      entityId: student.id,
+      entityName: student.name,
+      description: actionDescriptions.student.create(student.name || '이름 없음'),
+      request,
+    })
 
     return Response.json({ student }, { status: 201 })
   } catch (error: any) {

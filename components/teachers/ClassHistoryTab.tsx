@@ -66,11 +66,11 @@ export function ClassHistoryTab({ teacher }: ClassHistoryTabProps) {
         `/api/teachers/${teacher.id}/lessons?limit=${ITEMS_PER_PAGE}&offset=${offset}`
       )
       if (!response.ok) {
-        const result = await response.json()
+        const result = (await response.json()) as any
         throw new Error(result.error || '수업 이력 조회 실패')
       }
 
-      const data = await response.json()
+      const data = (await response.json()) as LessonsResponse
 
       if (append) {
         setLessons(prev => [...prev, ...data.lessons])

@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       return Response.json({ error: '지출 목록 조회 실패', details: expensesError.message }, { status: 500 })
     }
 
-    const expenseRecords = (expenses || []).map((exp) => ({
+    const expenseRecords = (expenses || []).map((exp: any) => ({
       id: exp.id,
       created_at: exp.created_at,
       org_id: exp.org_id,
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
     }))
 
     const grouped = new Map<string, { total: number; categories: Map<string, number> }>()
-    expenseRecords.forEach((rec) => {
+    expenseRecords.forEach((rec: any) => {
       const month = rec.expense_date?.slice(0, 7) || ''
       if (!month) return
       if (!grouped.has(month)) grouped.set(month, { total: 0, categories: new Map() })
@@ -83,7 +83,9 @@ export async function GET(request: Request) {
       }
     })
 
-    return Response.json({ expenseRecords, monthlyExpenses, count: expenses?.length || 0 })
+    return Response.json({ expenseRecords, monthlyExpenses, count: expenses?.length || 0 }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+    })
   } catch (error: any) {
     console.error('[Expenses GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })

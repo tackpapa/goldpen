@@ -32,9 +32,9 @@ export function useTeacherModalData(teacherId: string | null): UseTeacherModalDa
     try {
       const response = await fetch(`/api/teachers/${teacherId}/modal`, { credentials: 'include' })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const result = await response.json()
+      const result = (await response.json()) as any
       if (result.error) throw new Error(result.error)
-      setData(result)
+      setData(result as TeacherModalData)
     } catch (err) {
       console.error('Failed to fetch teacher modal data:', err)
       setError(err instanceof Error ? err.message : 'Unknown error')
