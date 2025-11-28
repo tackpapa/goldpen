@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { sendNotification, createLessonReportMessage } from "../lib/notifications";
 
 const app = new Hono<{ Bindings: Env }>();
 const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
@@ -211,7 +212,53 @@ app.post("/", async (c) => {
           homework_submissions,
         ],
       );
-      return rows[0] ? mapLesson(rows[0]) : null;
+
+      const lessonData = rows[0] ? mapLesson(rows[0]) : null;
+
+      // 수업 리포트 알림 발송 (notification_sent가 true인 경우)
+      if (lessonData && notification_sent && student_id) {
+        try {
+          // 학생 정보 조회
+          const studentRes = await client.query(
+            `SELECT s.*, o.name as org_name, c.name as class_name
+             FROM students s
+             JOIN organizations o ON o.id = s.org_id
+             LEFT JOIN classes c ON c.id = $1
+             WHERE s.id = $2`,
+            [class_id, student_id]
+          );
+
+          if (studentRes.rows[0]) {
+            const student = studentRes.rows[0];
+            const message = createLessonReportMessage(
+              student.org_name,
+              student.name,
+              student.class_name || subject || "수업",
+              lesson_date,
+              content,
+              homework_assigned
+            );
+
+            await sendNotification(client, c.env, {
+              orgId: DEMO_ORG,
+              orgName: student.org_name,
+              studentId: student_id,
+              studentName: student.name,
+              type: "lesson_report",
+              classId: class_id,
+              className: student.class_name,
+              recipientPhone: student.parent_phone,
+              message,
+              metadata: { lesson_id: lessonData.id, lesson_date, subject, content },
+            });
+          }
+        } catch (notifError) {
+          console.error("[lessons] notification error:", notifError);
+          // 알림 실패해도 레슨 저장은 성공
+        }
+      }
+
+      return lessonData;
     });
 
     return c.json({ lesson }, lesson ? 201 : 500);

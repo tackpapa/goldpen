@@ -3,7 +3,7 @@
 export const runtime = 'edge'
 
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import dynamic from 'next/dynamic'
@@ -52,6 +52,13 @@ const StudentDetailModal = dynamic(
   () => import('@/components/students/StudentDetailModal').then((m) => m.StudentDetailModal),
   { ssr: false }
 )
+
+// Branch type
+interface Branch {
+  id: string
+  name: string
+  status: 'active' | 'inactive'
+}
 
 // Grade options
 const gradeOptions = [
@@ -108,7 +115,8 @@ export default function StudentsPage() {
   const [attendanceCodeError, setAttendanceCodeError] = useState<string>('')
   const [campusError, setCampusError] = useState<string>('')
   const [branchError, setBranchError] = useState<string>('')
-  const [selectedBranch, setSelectedBranch] = useState<string>(institutionName)
+  const [selectedBranch, setSelectedBranch] = useState<string>('본점')
+  const [branches, setBranches] = useState<Branch[]>([])
   const [selectedCampuses, setSelectedCampuses] = useState<string[]>([])
   const campusOptions = [
     { id: 'academy', label: '학원' },
@@ -123,6 +131,23 @@ export default function StudentsPage() {
 
   // 초기 탭 상태 (결제 버튼 클릭 시 'payment' 탭으로)
   const [initialTab, setInitialTab] = useState<string>('info')
+
+  // 지점 목록 fetch
+  useEffect(() => {
+    const fetchBranches = async () => {
+      if (!institutionName) return
+      try {
+        const res = await fetch(`/${institutionName}/settings/branches`, { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json() as { branches: Branch[] }
+          setBranches(data.branches || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch branches:', error)
+      }
+    }
+    fetchBranches()
+  }, [institutionName])
 
   // useForm 훅은 조건문 전에 호출되어야 함 (React 훅 규칙)
   const {
@@ -588,9 +613,16 @@ export default function StudentsPage() {
                     <SelectValue placeholder="지점을 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={institutionName || '본점'}>
-                      {institutionName || '본점'}
-                    </SelectItem>
+                    {/* 본점: 항상 고정 (필수) */}
+                    <SelectItem value="본점">본점</SelectItem>
+                    {/* 설정에서 추가한 지점들 (본점 제외) */}
+                    {branches
+                      .filter(b => b.status === 'active' && b.name !== '본점')
+                      .map((branch) => (
+                        <SelectItem key={branch.id} value={branch.name}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
                 {branchError && <p className="text-sm text-destructive">{branchError}</p>}

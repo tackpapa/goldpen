@@ -158,32 +158,74 @@ export default function SettingsPage() {
     notes: '',
   })
 
-  // 메시지 템플릿 state
-  const DEFAULT_TEMPLATES: Record<string, string> = {
+  // 메시지 템플릿 state - 학부모용
+  const DEFAULT_TEMPLATES_PARENT: Record<string, string> = {
     // 학원/공부방 전용
-    'academy_late': '[{{기관명}}] {{학생명}} 학생이 등록된 시간({{예정시간}})에 등원하지 않았습니다. 확인 부탁드립니다.',
-    'academy_checkin': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 등원하였습니다.',
-    'academy_checkout': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 하원하였습니다.',
+    'academy_late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})에 아직 도착하지 않아 안내드립니다. 혹시 다른 일정이 있으시거나 오는 중이시라면 괜찮습니다. 확인되시면 편하게 연락 주세요.',
+    'academy_checkin': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 안전하게 등원했습니다. 오늘도 알찬 수업 시간 보낼 수 있도록 최선을 다하겠습니다. 좋은 하루 되세요!',
+    'academy_checkout': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 수업을 마치고 하원했습니다. 오늘도 열심히 참여해 주었습니다. 안전하게 귀가하길 바랍니다.',
     // 독서실 전용
-    'study_late': '[{{기관명}}] {{학생명}} 학생이 등록된 시간({{예정시간}})에 입실하지 않았습니다. 확인 부탁드립니다.',
-    'study_checkin': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 입실하였습니다.',
-    'study_checkout': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 퇴실하였습니다.',
-    'study_out': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 외출하였습니다.',
-    'study_return': '[{{기관명}}] {{학생명}} 학생이 {{시간}}에 복귀하였습니다.',
+    'study_late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})에 아직 입실하지 않아 안내드립니다. 다른 일정이 있으시다면 미리 말씀해 주시면 감사하겠습니다.',
+    'study_checkin': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 입실했습니다. 오늘도 집중해서 공부할 수 있도록 쾌적한 환경을 유지하겠습니다.',
+    'study_checkout': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 퇴실했습니다. 오늘도 열심히 공부하고 갑니다. 안전하게 귀가하길 바랍니다.',
+    'study_out': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 잠시 외출했습니다. 곧 돌아와서 다시 학습할 예정입니다.',
+    'study_return': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 외출에서 복귀했습니다. 다시 열심히 공부하고 있습니다.',
     // 학습 알림
-    'daily_report': '[{{기관명}}] {{학생명}} 학생의 {{날짜}} 학습 현황입니다.\n\n총 학습시간: {{총학습시간}}\n완료한 과목: {{완료과목}}\n\n자세한 내용은 앱에서 확인해주세요.',
+    'daily_report': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 {{날짜}} 학습 현황을 전해드립니다.\n\n오늘 총 {{총학습시간}} 동안 열심히 공부했고, {{완료과목}} 과목을 완료했습니다. 꾸준히 노력하는 모습이 대견합니다. 앞으로도 응원 부탁드립니다!',
     // 수업일지
-    'lesson_report': '[{{기관명}}] {{학생명}} 학생의 수업일지가 도착했습니다.\n\n과목: {{과목}}\n강사: {{강사명}}\n수업내용: {{수업내용}}\n\n자세한 내용은 앱에서 확인해주세요.',
+    'lesson_report': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 수업일지가 도착했습니다.\n\n{{과목}} 수업 ({{강사명}} 선생님)\n오늘 배운 내용: {{수업내용}}\n\n오늘도 열심히 참여해 주었습니다. 궁금하신 점은 편하게 연락 주세요!',
     // 시험 결과
-    'exam_result': '[{{기관명}}] {{학생명}} 학생의 시험 결과입니다.\n\n시험명: {{시험명}}\n점수: {{점수}}점\n\n자세한 내용은 앱에서 확인해주세요.',
+    'exam_result': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 시험 결과를 안내드립니다.\n\n{{시험명}}: {{점수}}점\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다. 궁금하신 점은 편하게 연락 주세요!',
     // 과제 관련
-    'assignment_new': '[{{기관명}}] {{학생명}} 학생에게 새로운 과제가 등록되었습니다.\n\n과제명: {{과제명}}\n마감일: {{마감일}}\n\n자세한 내용은 앱에서 확인해주세요.',
-    'assignment_remind': '[{{기관명}}] {{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제명: {{과제명}}\n마감일: {{마감일}}\n\n제출을 서둘러주세요.',
+    'assignment_new': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생에게 새로운 과제가 등록되었습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n차근차근 준비하면 충분히 잘 해낼 수 있습니다. 화이팅!',
+    'assignment_remind': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n제출 전 한 번 더 검토해 보도록 안내해 주시면 감사하겠습니다.',
   }
-  const [messageTemplates, setMessageTemplates] = useState<Record<string, string>>(DEFAULT_TEMPLATES)
+
+  // 메시지 템플릿 - 학생용
+  const DEFAULT_TEMPLATES_STUDENT: Record<string, string> = {
+    // 학원/공부방 전용
+    'academy_late': '{{기관명}}입니다.\n\n{{학생명}}님, 예정 시간({{예정시간}})이 지났는데 아직 도착하지 않았네요. 오는 중이라면 안전하게 와주세요! 다른 일정이 있으면 미리 연락 부탁해요.',
+    'academy_checkin': '{{기관명}}입니다.\n\n{{학생명}}님, {{시간}}에 등원 완료! 오늘도 알찬 수업 함께해요. 화이팅!',
+    'academy_checkout': '{{기관명}}입니다.\n\n{{학생명}}님, {{시간}}에 하원했습니다. 오늘도 수고했어요! 안전하게 집에 가세요.',
+    // 독서실 전용
+    'study_late': '{{기관명}}입니다.\n\n{{학생명}}님, 예정 시간({{예정시간}})이 지났는데 아직 입실하지 않았어요. 오는 중이라면 안전하게 와주세요!',
+    'study_checkin': '{{기관명}}입니다.\n\n{{학생명}}님, {{시간}}에 입실 완료! 오늘도 집중해서 열공해봐요. 화이팅!',
+    'study_checkout': '{{기관명}}입니다.\n\n{{학생명}}님, {{시간}}에 퇴실했습니다. 오늘도 열심히 했어요! 안전하게 귀가하세요.',
+    'study_out': '{{기관명}}입니다.\n\n{{학생명}}님, {{시간}}에 외출 체크되었어요. 잠깐 쉬고 와서 다시 집중해봐요!',
+    'study_return': '{{기관명}}입니다.\n\n{{학생명}}님, {{시간}}에 복귀 완료! 다시 집중 모드 시작해볼까요? 화이팅!',
+    // 학습 알림
+    'daily_report': '{{기관명}}입니다.\n\n{{학생명}}님, {{날짜}} 학습 현황이에요.\n\n오늘 총 {{총학습시간}} 동안 공부하고, {{완료과목}} 과목을 완료했어요. 꾸준히 잘하고 있어요! 내일도 화이팅!',
+    // 수업일지
+    'lesson_report': '{{기관명}}입니다.\n\n{{학생명}}님, 오늘 수업일지가 도착했어요.\n\n{{과목}} 수업 ({{강사명}} 선생님)\n오늘 배운 내용: {{수업내용}}\n\n오늘도 열심히 참여해 줘서 고마워요! 다음 수업도 기대할게요!',
+    // 시험 결과
+    'exam_result': '{{기관명}}입니다.\n\n{{학생명}}님, 시험 결과가 나왔어요.\n\n{{시험명}}: {{점수}}점\n\n열심히 준비한 거 알아요. 결과에 상관없이 계속 성장하고 있어요! 다음에도 화이팅!',
+    // 과제 관련
+    'assignment_new': '{{기관명}}입니다.\n\n{{학생명}}님, 새로운 과제가 등록되었어요!\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n차근차근 하면 충분히 할 수 있어요. 화이팅!',
+    'assignment_remind': '{{기관명}}입니다.\n\n{{학생명}}님, 과제 마감일이 다가왔어요!\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n마무리 잘 하고 있죠? 끝까지 화이팅! 제출 전에 한 번 더 검토해 보면 더 좋아요.',
+  }
+
+  const [messageTemplatesParent, setMessageTemplatesParent] = useState<Record<string, string>>(DEFAULT_TEMPLATES_PARENT)
+  const [messageTemplatesStudent, setMessageTemplatesStudent] = useState<Record<string, string>>(DEFAULT_TEMPLATES_STUDENT)
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
   const [editingTemplateKey, setEditingTemplateKey] = useState<string | null>(null)
+  const [editingTemplateTarget, setEditingTemplateTarget] = useState<'parent' | 'student'>('parent')
   const [editingTemplateValue, setEditingTemplateValue] = useState('')
+  // 각 알림별 수신자 설정 (parent: 학부모, student: 학생, both: 둘 다)
+  const [notificationTargets, setNotificationTargets] = useState<Record<string, 'parent' | 'student' | 'both'>>({
+    'academy_late': 'parent',
+    'academy_checkin': 'parent',
+    'academy_checkout': 'parent',
+    'study_late': 'parent',
+    'study_checkin': 'parent',
+    'study_checkout': 'parent',
+    'study_out': 'parent',
+    'study_return': 'parent',
+    'daily_report': 'parent',
+    'lesson_report': 'parent',
+    'exam_result': 'parent',
+    'assignment_new': 'parent',
+    'assignment_remind': 'parent',
+  })
 
   const TEMPLATE_LABELS: Record<string, string> = {
     'academy_late': '지각 안내 (학원/공부방)',
@@ -201,22 +243,46 @@ export default function SettingsPage() {
     'assignment_remind': '과제 마감 알림',
   }
 
-  const handleOpenTemplateModal = (key: string) => {
+  const handleOpenTemplateModal = (key: string, target: 'parent' | 'student') => {
     setEditingTemplateKey(key)
-    setEditingTemplateValue(messageTemplates[key] || DEFAULT_TEMPLATES[key] || '')
+    setEditingTemplateTarget(target)
+    if (target === 'parent') {
+      setEditingTemplateValue(messageTemplatesParent[key] || DEFAULT_TEMPLATES_PARENT[key] || '')
+    } else {
+      setEditingTemplateValue(messageTemplatesStudent[key] || DEFAULT_TEMPLATES_STUDENT[key] || '')
+    }
     setIsTemplateModalOpen(true)
   }
 
   const handleSaveTemplate = async () => {
     if (!editingTemplateKey) return
-    const nextTemplates = { ...messageTemplates, [editingTemplateKey]: editingTemplateValue }
-    setMessageTemplates(nextTemplates)
-    // settings에 저장
-    const nextSettings = { ...organization.settings, messageTemplates: nextTemplates }
+
+    if (editingTemplateTarget === 'parent') {
+      const nextTemplates = { ...messageTemplatesParent, [editingTemplateKey]: editingTemplateValue }
+      setMessageTemplatesParent(nextTemplates)
+      const nextSettings = { ...organization.settings, messageTemplatesParent: nextTemplates }
+      setOrganization({ ...organization, settings: nextSettings })
+      await persistOrganization({ settings: nextSettings })
+    } else {
+      const nextTemplates = { ...messageTemplatesStudent, [editingTemplateKey]: editingTemplateValue }
+      setMessageTemplatesStudent(nextTemplates)
+      const nextSettings = { ...organization.settings, messageTemplatesStudent: nextTemplates }
+      setOrganization({ ...organization, settings: nextSettings })
+      await persistOrganization({ settings: nextSettings })
+    }
+
+    setIsTemplateModalOpen(false)
+    toast({ title: '저장 완료', description: `${editingTemplateTarget === 'parent' ? '학부모' : '학생'}용 메시지 템플릿이 저장되었습니다.` })
+  }
+
+  // 수신자 타겟 변경 핸들러
+  const handleTargetChange = async (key: string, target: 'parent' | 'student' | 'both') => {
+    const newTargets = { ...notificationTargets, [key]: target }
+    setNotificationTargets(newTargets)
+    // DB에 저장
+    const nextSettings = { ...organization.settings, notificationTargets: newTargets }
     setOrganization({ ...organization, settings: nextSettings })
     await persistOrganization({ settings: nextSettings })
-    setIsTemplateModalOpen(false)
-    toast({ title: '저장 완료', description: '메시지 템플릿이 저장되었습니다.' })
   }
 
   // Account management state
@@ -302,9 +368,19 @@ export default function SettingsPage() {
             ...(orgRes.organization.settings || {}),
           },
         })
-        const orgSettings = orgRes.organization.settings || {}
-        setEnabledMenus(orgSettings.enabledMenus || navigationItems.map((i) => i.id))
-        setMenuOrder(orgSettings.menuOrder || navigationItems.map((i) => i.id))
+        const orgSettings = (orgRes.organization.settings || {}) as Record<string, unknown>
+        setEnabledMenus((orgSettings.enabledMenus as string[]) || navigationItems.map((i) => i.id))
+        setMenuOrder((orgSettings.menuOrder as string[]) || navigationItems.map((i) => i.id))
+        // 메시지 템플릿 로드 (DB에 저장된 값이 있으면 사용, 없으면 기본값 유지)
+        if (orgSettings.messageTemplatesParent) {
+          setMessageTemplatesParent({ ...DEFAULT_TEMPLATES_PARENT, ...(orgSettings.messageTemplatesParent as Record<string, string>) })
+        }
+        if (orgSettings.messageTemplatesStudent) {
+          setMessageTemplatesStudent({ ...DEFAULT_TEMPLATES_STUDENT, ...(orgSettings.messageTemplatesStudent as Record<string, string>) })
+        }
+        if (orgSettings.notificationTargets) {
+          setNotificationTargets(prev => ({ ...prev, ...(orgSettings.notificationTargets as Record<string, "parent" | "student" | "both">) }))
+        }
       }
       setBranches(branchesRes.branches || [])
       setRooms(roomsRes.rooms || [])
@@ -2185,48 +2261,138 @@ export default function SettingsPage() {
                   출결 알림 <Badge variant="secondary" className="ml-2">학원·공부방 전용</Badge>
                 </h3>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>지각 안내</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 등록한 스케줄에 맞게 등원하지 않았을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('academy_late')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>지각 안내</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 등록한 스케줄에 맞게 등원하지 않았을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={notificationTargets['academy_late'] === 'parent' || notificationTargets['academy_late'] === 'both' ? 'default' : 'outline'}
+                          className="h-7 text-xs"
+                          onClick={() => handleTargetChange('academy_late', notificationTargets['academy_late'] === 'both' ? 'student' : notificationTargets['academy_late'] === 'parent' ? 'both' : 'parent')}
+                        >
+                          학부모
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={notificationTargets['academy_late'] === 'student' || notificationTargets['academy_late'] === 'both' ? 'default' : 'outline'}
+                          className="h-7 text-xs"
+                          onClick={() => handleTargetChange('academy_late', notificationTargets['academy_late'] === 'both' ? 'parent' : notificationTargets['academy_late'] === 'student' ? 'both' : 'student')}
+                        >
+                          학생
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('academy_late', 'parent')}>
+                        학부모 템플릿
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('academy_late', 'student')}>
+                        학생 템플릿
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>등원 알림</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 등원했을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('academy_checkin')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>등원 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 등원했을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={notificationTargets['academy_checkin'] === 'parent' || notificationTargets['academy_checkin'] === 'both' ? 'default' : 'outline'}
+                          className="h-7 text-xs"
+                          onClick={() => handleTargetChange('academy_checkin', notificationTargets['academy_checkin'] === 'both' ? 'student' : notificationTargets['academy_checkin'] === 'parent' ? 'both' : 'parent')}
+                        >
+                          학부모
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={notificationTargets['academy_checkin'] === 'student' || notificationTargets['academy_checkin'] === 'both' ? 'default' : 'outline'}
+                          className="h-7 text-xs"
+                          onClick={() => handleTargetChange('academy_checkin', notificationTargets['academy_checkin'] === 'both' ? 'parent' : notificationTargets['academy_checkin'] === 'student' ? 'both' : 'student')}
+                        >
+                          학생
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('academy_checkin', 'parent')}>
+                        학부모 템플릿
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('academy_checkin', 'student')}>
+                        학생 템플릿
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>하원 알림</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 하원했을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('academy_checkout')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>하원 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 하원했을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={notificationTargets['academy_checkout'] === 'parent' || notificationTargets['academy_checkout'] === 'both' ? 'default' : 'outline'}
+                          className="h-7 text-xs"
+                          onClick={() => handleTargetChange('academy_checkout', notificationTargets['academy_checkout'] === 'both' ? 'student' : notificationTargets['academy_checkout'] === 'parent' ? 'both' : 'parent')}
+                        >
+                          학부모
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={notificationTargets['academy_checkout'] === 'student' || notificationTargets['academy_checkout'] === 'both' ? 'default' : 'outline'}
+                          className="h-7 text-xs"
+                          onClick={() => handleTargetChange('academy_checkout', notificationTargets['academy_checkout'] === 'both' ? 'parent' : notificationTargets['academy_checkout'] === 'student' ? 'both' : 'student')}
+                        >
+                          학생
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('academy_checkout', 'parent')}>
+                        학부모 템플릿
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('academy_checkout', 'student')}>
+                        학생 템플릿
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2237,78 +2403,128 @@ export default function SettingsPage() {
                   출결 알림 <Badge variant="secondary" className="ml-2">독서실 전용</Badge>
                 </h3>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>지각 안내</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 등록한 스케줄에 맞게 입실하지 않았을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_late')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>지각 안내</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 등록한 스케줄에 맞게 입실하지 않았을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['study_late'] === 'parent' || notificationTargets['study_late'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_late', notificationTargets['study_late'] === 'both' ? 'student' : notificationTargets['study_late'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['study_late'] === 'student' || notificationTargets['study_late'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_late', notificationTargets['study_late'] === 'both' ? 'parent' : notificationTargets['study_late'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_late', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_late', 'student')}>학생 템플릿</Button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>입실 알림</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 독서실에 입실했을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_checkin')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>입실 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 독서실에 입실했을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['study_checkin'] === 'parent' || notificationTargets['study_checkin'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_checkin', notificationTargets['study_checkin'] === 'both' ? 'student' : notificationTargets['study_checkin'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['study_checkin'] === 'student' || notificationTargets['study_checkin'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_checkin', notificationTargets['study_checkin'] === 'both' ? 'parent' : notificationTargets['study_checkin'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_checkin', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_checkin', 'student')}>학생 템플릿</Button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>퇴실 알림</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 독서실에서 퇴실했을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_checkout')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>퇴실 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 독서실에서 퇴실했을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['study_checkout'] === 'parent' || notificationTargets['study_checkout'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_checkout', notificationTargets['study_checkout'] === 'both' ? 'student' : notificationTargets['study_checkout'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['study_checkout'] === 'student' || notificationTargets['study_checkout'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_checkout', notificationTargets['study_checkout'] === 'both' ? 'parent' : notificationTargets['study_checkout'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_checkout', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_checkout', 'student')}>학생 템플릿</Button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>외출 알림</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 외출했을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_out')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>외출 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 외출했을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['study_out'] === 'parent' || notificationTargets['study_out'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_out', notificationTargets['study_out'] === 'both' ? 'student' : notificationTargets['study_out'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['study_out'] === 'student' || notificationTargets['study_out'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_out', notificationTargets['study_out'] === 'both' ? 'parent' : notificationTargets['study_out'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_out', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_out', 'student')}>학생 템플릿</Button>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label>복귀 알림</Label>
-                    <p className="text-sm text-muted-foreground">
-                      학생이 외출 후 복귀했을 때
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('study_return')}>
-                      템플릿 수정
-                    </Button>
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>복귀 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        학생이 외출 후 복귀했을 때
+                      </p>
+                    </div>
                     <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['study_return'] === 'parent' || notificationTargets['study_return'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_return', notificationTargets['study_return'] === 'both' ? 'student' : notificationTargets['study_return'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['study_return'] === 'student' || notificationTargets['study_return'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_return', notificationTargets['study_return'] === 'both' ? 'parent' : notificationTargets['study_return'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_return', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_return', 'student')}>학생 템플릿</Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2324,20 +2540,27 @@ export default function SettingsPage() {
                     <div className="space-y-0.5 flex-1">
                       <Label>당일 학습 진행 결과 (일괄 전송)</Label>
                       <p className="text-sm text-muted-foreground">
-                        매일 설정된 시간에 오늘의 플래너 데이터를 학부모에게 일괄 전송
+                        매일 설정된 시간에 오늘의 플래너 데이터를 일괄 전송
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">
                         💡 학생이 하루에 여러 번 입실/퇴실해도 플래너는 하루 단위로 유지되며, 설정 시간에 한 번만 전송됩니다
                       </p>
                     </div>
+                    <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('daily_report')}>
-                        템플릿 수정
-                      </Button>
-                      <Switch defaultChecked />
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['daily_report'] === 'parent' || notificationTargets['daily_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('daily_report', notificationTargets['daily_report'] === 'both' ? 'student' : notificationTargets['daily_report'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['daily_report'] === 'student' || notificationTargets['daily_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('daily_report', notificationTargets['daily_report'] === 'both' ? 'parent' : notificationTargets['daily_report'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('daily_report', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('daily_report', 'student')}>학생 템플릿</Button>
                     </div>
                   </div>
-
                   <div className="flex items-center gap-4 pt-2 border-t">
                     <Label htmlFor="daily-report-time" className="text-sm whitespace-nowrap">
                       전송 시간
@@ -2374,18 +2597,26 @@ export default function SettingsPage() {
                     <div className="space-y-0.5">
                       <Label>수업일지 전송 (관리자 승인 후)</Label>
                       <p className="text-sm text-muted-foreground">
-                        강사가 수업일지 작성 → 관리자 승인 → 학부모에게 전송
+                        강사가 수업일지 작성 → 관리자 승인 → 전송
                       </p>
                     </div>
+                    <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('lesson_report')}>
-                        템플릿 수정
-                      </Button>
-                      <Switch defaultChecked />
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['lesson_report'] === 'parent' || notificationTargets['lesson_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('lesson_report', notificationTargets['lesson_report'] === 'both' ? 'student' : notificationTargets['lesson_report'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['lesson_report'] === 'student' || notificationTargets['lesson_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('lesson_report', notificationTargets['lesson_report'] === 'both' ? 'parent' : notificationTargets['lesson_report'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('lesson_report', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('lesson_report', 'student')}>학생 템플릿</Button>
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
-                    💡 강사가 작성한 수업일지는 관리자가 승인 버튼을 눌러야 학부모에게 발송됩니다
+                    💡 강사가 작성한 수업일지는 관리자가 승인 버튼을 눌러야 발송됩니다
                   </div>
                 </div>
               </div>
@@ -2401,18 +2632,26 @@ export default function SettingsPage() {
                     <div className="space-y-0.5">
                       <Label>시험 결과 전송 (관리자 승인 후)</Label>
                       <p className="text-sm text-muted-foreground">
-                        시험 결과 입력 → 관리자 승인 → 학부모에게 전송
+                        시험 결과 입력 → 관리자 승인 → 전송
                       </p>
                     </div>
+                    <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('exam_result')}>
-                        템플릿 수정
-                      </Button>
-                      <Switch defaultChecked />
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['exam_result'] === 'parent' || notificationTargets['exam_result'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('exam_result', notificationTargets['exam_result'] === 'both' ? 'student' : notificationTargets['exam_result'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['exam_result'] === 'student' || notificationTargets['exam_result'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('exam_result', notificationTargets['exam_result'] === 'both' ? 'parent' : notificationTargets['exam_result'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('exam_result', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('exam_result', 'student')}>학생 템플릿</Button>
                     </div>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
-                    💡 시험 결과는 관리자가 승인 버튼을 눌러야 학부모에게 발송됩니다
+                    💡 시험 결과는 관리자가 승인 버튼을 눌러야 발송됩니다
                   </div>
                 </div>
               </div>
@@ -2426,20 +2665,50 @@ export default function SettingsPage() {
                 <div className="space-y-3 rounded-lg border p-4">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>과제 전송 (관리자 승인 후)</Label>
+                      <Label>새 과제 알림</Label>
                       <p className="text-sm text-muted-foreground">
-                        과제 등록 → 관리자 승인 → 학부모에게 전송
+                        과제 등록 → 관리자 승인 → 전송
                       </p>
                     </div>
+                    <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={() => handleOpenTemplateModal('assignment_new')}>
-                        템플릿 수정
-                      </Button>
-                      <Switch defaultChecked />
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['assignment_new'] === 'parent' || notificationTargets['assignment_new'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_new', notificationTargets['assignment_new'] === 'both' ? 'student' : notificationTargets['assignment_new'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['assignment_new'] === 'student' || notificationTargets['assignment_new'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_new', notificationTargets['assignment_new'] === 'both' ? 'parent' : notificationTargets['assignment_new'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_new', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_new', 'student')}>학생 템플릿</Button>
                     </div>
                   </div>
-                  <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
-                    💡 과제 정보는 관리자가 승인 버튼을 눌러야 학부모에게 발송됩니다
+                </div>
+
+                <div className="space-y-3 rounded-lg border p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label>과제 마감 알림</Label>
+                      <p className="text-sm text-muted-foreground">
+                        마감일 전 자동 발송
+                      </p>
+                    </div>
+                    <Switch defaultChecked />
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">수신자:</span>
+                      <div className="flex gap-1">
+                        <Button type="button" size="sm" variant={notificationTargets['assignment_remind'] === 'parent' || notificationTargets['assignment_remind'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_remind', notificationTargets['assignment_remind'] === 'both' ? 'student' : notificationTargets['assignment_remind'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
+                        <Button type="button" size="sm" variant={notificationTargets['assignment_remind'] === 'student' || notificationTargets['assignment_remind'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_remind', notificationTargets['assignment_remind'] === 'both' ? 'parent' : notificationTargets['assignment_remind'] === 'student' ? 'both' : 'student')}>학생</Button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_remind', 'parent')}>학부모 템플릿</Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_remind', 'student')}>학생 템플릿</Button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2854,9 +3123,11 @@ export default function SettingsPage() {
       <Dialog open={isTemplateModalOpen} onOpenChange={setIsTemplateModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>메시지 템플릿 수정</DialogTitle>
+            <DialogTitle>
+              {editingTemplateTarget === 'parent' ? '학부모' : '학생'} 템플릿 수정
+            </DialogTitle>
             <DialogDescription>
-              {editingTemplateKey && TEMPLATE_LABELS[editingTemplateKey]}
+              {editingTemplateKey && TEMPLATE_LABELS[editingTemplateKey]} - {editingTemplateTarget === 'parent' ? '학부모에게 전송되는 메시지' : '학생에게 전송되는 메시지'}
             </DialogDescription>
           </DialogHeader>
 
@@ -2895,7 +3166,11 @@ export default function SettingsPage() {
               variant="outline"
               onClick={() => {
                 if (editingTemplateKey) {
-                  setEditingTemplateValue(DEFAULT_TEMPLATES[editingTemplateKey] || '')
+                  if (editingTemplateTarget === 'parent') {
+                    setEditingTemplateValue(DEFAULT_TEMPLATES_PARENT[editingTemplateKey] || '')
+                  } else {
+                    setEditingTemplateValue(DEFAULT_TEMPLATES_STUDENT[editingTemplateKey] || '')
+                  }
                 }
               }}
             >

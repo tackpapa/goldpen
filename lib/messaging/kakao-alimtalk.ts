@@ -115,7 +115,26 @@ export interface AlimtalkConfig {
 // ============================================================
 
 /**
- * 알림톡 템플릿
+ * 카카오 알림톡 템플릿
+ *
+ * ⚠️ 중요: 카카오 알림톡 vs 설정 페이지 템플릿
+ *
+ * 1. 카카오 알림톡 템플릿 (이 파일 - ALIMTALK_TEMPLATES):
+ *    - 카카오 비즈메시지 검수 승인 필요
+ *    - #{변수명} 형식 사용 (카카오 표준)
+ *    - 템플릿 코드 필수 (예: GOLDPEN_LATE_001)
+ *    - 변경 시 재검수 필요 (1~3일 소요)
+ *
+ * 2. 설정 페이지 템플릿 (organization.settings.messageTemplatesParent):
+ *    - {{변수명}} 형식 사용 (GoldPen 표준)
+ *    - 관리자가 자유롭게 수정 가능
+ *    - UI 미리보기 및 일반 SMS/푸시 알림용
+ *    - 카카오 알림톡으로 발송 시에는 아래 승인 템플릿 사용
+ *
+ * 💡 사용 패턴:
+ * - 카카오 알림톡 발송: ALIMTALK_TEMPLATES 사용 (승인 필수)
+ * - UI 미리보기: 설정 페이지 템플릿 사용
+ * - SMS 발송: 설정 페이지 템플릿 사용
  *
  * 주의: 실제 사용 전 카카오 검수 승인 필요!
  * 아래는 예시 템플릿입니다.
@@ -261,7 +280,7 @@ export function normalizePhone(phone: string): string {
 }
 
 /**
- * 템플릿에 변수 치환
+ * 카카오 템플릿에 변수 치환 (#{변수명} 형식)
  */
 export function fillTemplate(template: string, variables: Record<string, string>): string {
   let result = template
@@ -269,6 +288,36 @@ export function fillTemplate(template: string, variables: Record<string, string>
     result = result.replace(new RegExp(`#\\{${key}\\}`, 'g'), value)
   }
   return result
+}
+
+/**
+ * 설정 페이지 템플릿에 변수 치환 ({{변수명}} 형식)
+ * SMS, 푸시 알림 등 비-카카오 채널에서 사용
+ */
+export function fillSettingsTemplate(template: string, variables: Record<string, string>): string {
+  let result = template
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value || '')
+  }
+  return result
+}
+
+/**
+ * AlimtalkType을 설정 페이지 템플릿 키로 매핑
+ */
+export function mapAlimtalkTypeToSettingsKey(type: AlimtalkType): string {
+  const mapping: Record<AlimtalkType, string> = {
+    'ATTENDANCE_LATE': 'academy_late',        // 또는 study_late (기관 타입에 따라)
+    'ATTENDANCE_ABSENT': 'academy_absent',
+    'ATTENDANCE_CHECKIN': 'academy_checkin',  // 또는 study_checkin
+    'ATTENDANCE_CHECKOUT': 'academy_checkout', // 또는 study_checkout
+    'LESSON_REMINDER': 'lesson_report',
+    'HOMEWORK_REMINDER': 'assignment_remind',
+    'EXAM_RESULT': 'exam_result',
+    'PAYMENT_REMINDER': 'payment_remind',
+    'GENERAL': 'general',
+  }
+  return mapping[type] || 'general'
 }
 
 // ============================================================

@@ -17,6 +17,7 @@ import classes from "./routes/classes";
 import consultations_id from "./routes/consultations.[id]";
 import consultations from "./routes/consultations";
 import exams_id from "./routes/exams.[id]";
+import exams_scores from "./routes/exams.[id].scores";
 import exams from "./routes/exams";
 import expenses_id from "./routes/expenses.[id]";
 import expenses from "./routes/expenses";
@@ -43,6 +44,8 @@ import teachers_overview from "./routes/teachers.overview";
 import teachers_assign_students from "./routes/teachers.assign-students.[id]";
 import teachers_modal from "./routes/teachers.modal.[id]";
 import test_env from "./routes/test_env";
+import ai_generate from "./routes/ai.generate";
+import attendance_logs from "./routes/attendance-logs";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -57,7 +60,7 @@ app.get("/", (c) => {
     version: "1.0.0",
     status: "healthy",
     timestamp: new Date().toISOString(),
-    routes: 37,
+    routes: 40,
   });
 });
 
@@ -78,6 +81,7 @@ app.route("/api/classes/:id", classes_id);
 app.route("/api/classes", classes);
 app.route("/api/consultations/:id", consultations_id);
 app.route("/api/consultations", consultations);
+app.route("/api/exams/:id/scores", exams_scores);
 app.route("/api/exams/:id", exams_id);
 app.route("/api/exams", exams);
 app.route("/api/expenses/:id", expenses_id);
@@ -105,6 +109,8 @@ app.route("/api/teachers/:id/modal", teachers_modal);
 app.route("/api/teachers/:id", teachers_id);
 app.route("/api/teachers", teachers);
 app.route("/api/test-env", test_env);
+app.route("/api/ai/generate", ai_generate);
+app.route("/api/attendance-logs", attendance_logs);
 
 // 404 handler
 app.notFound((c) => {

@@ -10,9 +10,14 @@ export function getPool(env: Env) {
     throw new Error('[DB] HYPERDRIVE_DB binding is missing')
   }
 
+  // Hyperdrive binding returns an object with connectionString property
+  const connectionString = typeof env.HYPERDRIVE_DB === 'string'
+    ? env.HYPERDRIVE_DB
+    : (env.HYPERDRIVE_DB as { connectionString: string }).connectionString
+
   if (!globalAny.__goldpen_pg_pool) {
     globalAny.__goldpen_pg_pool = new Pool({
-      connectionString: env.HYPERDRIVE_DB,
+      connectionString,
       // Hyperdrive already pools; keep pool small
       max: 5,
       idleTimeoutMillis: 30_000,

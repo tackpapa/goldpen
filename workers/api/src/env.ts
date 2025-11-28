@@ -16,10 +16,16 @@ export interface Env {
   // External APIs
   NEXT_PUBLIC_OPENWEATHER_API_KEY?: string
 
+  // Kakao AlimTalk (Solapi)
+  KAKAO_ALIMTALK_API_KEY?: string
+  KAKAO_ALIMTALK_SECRET_KEY?: string
+  KAKAO_ALIMTALK_SENDER_KEY?: string
+
   // Cloudflare Hyperdrive (Postgres over Hyperdrive)
   HYPERDRIVE_DB?: string
 
-  // Cloudflare Bindings (for future use)
+  // Cloudflare Bindings
+  AI?: Ai // Workers AI binding
   // KV?: KVNamespace
   // DB?: D1Database
   // BUCKET?: R2Bucket

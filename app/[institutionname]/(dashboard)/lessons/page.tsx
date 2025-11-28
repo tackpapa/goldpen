@@ -32,7 +32,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Edit, BookOpen, TrendingUp, Sparkles, Calendar, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Edit, BookOpen, TrendingUp, Sparkles, Calendar, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import type { LessonNote } from '@/lib/types/database'
 import { Checkbox } from '@/components/ui/checkbox'
 import { format } from 'date-fns'
@@ -417,22 +417,119 @@ export default function LessonsPage() {
     setIsDialogOpen(false)
   }
 
-  const handleGenerateFeedback = () => {
-    // TODO: Cloudflare AI 연동 예정 (현재 비활성화 상태)
-    console.warn('[AI Feedback] Cloudflare AI 적용 예정 — 현재 비활성화')
-    toast({
-      title: '준비 중',
-      description: 'Cloudflare AI 연동 후 사용 가능합니다.',
-    })
+  const handleGenerateFeedback = async () => {
+    if (!formData.content) {
+      toast({
+        title: '학습 내용 필요',
+        description: '피드백 생성을 위해 학습 내용을 먼저 입력해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsGeneratingFeedback(true)
+    try {
+      // Workers API URL (production)
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+      const response = await fetch(`${apiUrl}/api/ai/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'feedback',
+          lesson: {
+            class_name: formData.class_name,
+            date: formData.lesson_date,
+            content: formData.content,
+            topic: formData.subject,
+            homework: formData.homework_assigned,
+            notes: formData.student_attitudes,
+          },
+        }),
+      })
+
+      interface AIResponse {
+        success?: boolean
+        text?: string
+        error?: string
+      }
+      const result = await response.json() as AIResponse
+
+      if (response.ok && result.success && result.text) {
+        setFormData((prev) => ({ ...prev, parent_feedback: result.text }))
+        toast({
+          title: 'AI 피드백 생성 완료',
+          description: '생성된 피드백을 확인하고 필요시 수정해주세요.',
+        })
+      } else {
+        throw new Error(result.error || 'AI 응답 오류')
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '알 수 없는 오류'
+      toast({
+        title: 'AI 피드백 생성 실패',
+        description: message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsGeneratingFeedback(false)
+    }
   }
 
-  const handleGenerateFinalMessage = () => {
-    // TODO: Cloudflare AI 연동 예정 (현재 비활성화 상태)
-    console.warn('[AI Final Message] Cloudflare AI 적용 예정 — 현재 비활성화')
-    toast({
-      title: '준비 중',
-      description: 'Cloudflare AI 연동 후 사용 가능합니다.',
-    })
+  const handleGenerateFinalMessage = async () => {
+    if (!formData.content) {
+      toast({
+        title: '학습 내용 필요',
+        description: '안내 메시지 생성을 위해 학습 내용을 먼저 입력해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsGeneratingFinalMessage(true)
+    try {
+      // Workers API URL (production)
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+      const response = await fetch(`${apiUrl}/api/ai/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'final_message',
+          lesson: {
+            class_name: formData.class_name,
+            date: formData.lesson_date,
+            content: formData.content,
+            topic: formData.subject,
+            homework: formData.homework_assigned,
+          },
+        }),
+      })
+
+      interface AIResponse {
+        success?: boolean
+        text?: string
+        error?: string
+      }
+      const result = await response.json() as AIResponse
+
+      if (response.ok && result.success && result.text) {
+        setFormData((prev) => ({ ...prev, final_message: result.text }))
+        toast({
+          title: 'AI 안내 메시지 생성 완료',
+          description: '생성된 메시지를 확인하고 필요시 수정해주세요.',
+        })
+      } else {
+        throw new Error(result.error || 'AI 응답 오류')
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '알 수 없는 오류'
+      toast({
+        title: 'AI 메시지 생성 실패',
+        description: message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsGeneratingFinalMessage(false)
+    }
   }
 
   const handleDeleteLesson = async () => {
@@ -1359,7 +1456,11 @@ export default function LessonsPage() {
                     onClick={handleGenerateFeedback}
                     disabled={isGeneratingFeedback}
                   >
-                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isGeneratingFeedback ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
                     {isGeneratingFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
                   </Button>
                 )}
@@ -1416,7 +1517,11 @@ export default function LessonsPage() {
                     onClick={handleGenerateFinalMessage}
                     disabled={isGeneratingFinalMessage}
                   >
-                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isGeneratingFinalMessage ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
                     {isGeneratingFinalMessage ? 'AI 생성 중...' : 'AI 알림톡 생성'}
                   </Button>
                 </div>

@@ -45,12 +45,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { Exam, ExamScore } from '@/lib/types/database'
+import type { Exam, ExamScore, Organization } from '@/lib/types/database'
 import { format } from 'date-fns'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 
+// 기본 시험 결과 템플릿 (설정에서 가져오지 못할 경우 fallback)
+const DEFAULT_EXAM_RESULT_TEMPLATE = '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 시험 결과를 안내드립니다.\n\n{{시험명}}: {{점수}}점\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다. 궁금하신 점은 편하게 연락 주세요!'
+
+// 템플릿 변수 치환 함수
+function fillMessageTemplate(template: string, variables: Record<string, string>): string {
+  let result = template
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value)
+  }
+  return result
+}
 
 export default function ExamsPage() {
   usePageAccess('exams')
@@ -111,6 +122,10 @@ export default function ExamsPage() {
   const [autoMappedScores, setAutoMappedScores] = useState<Array<{ studentId: string; studentName: string; score: string; feedback: string; matched: boolean }>>([])
   const [unmatchedRows, setUnmatchedRows] = useState<Array<{ name: string; score: string; feedback: string }>>([])
   const [scoreEntryTab, setScoreEntryTab] = useState<'manual' | 'bulk'>('manual')
+
+  // Organization 설정 (템플릿용)
+  const [organization, setOrganization] = useState<Organization | null>(null)
+  const [examResultTemplate, setExamResultTemplate] = useState<string>(DEFAULT_EXAM_RESULT_TEMPLATE)
   const [bulkScoresText, setBulkScoresText] = useState('')
   const [manualScores, setManualScores] = useState<Record<string, number>>({})
   const [manualFeedbacks, setManualFeedbacks] = useState<Record<string, string>>({})
@@ -126,6 +141,27 @@ export default function ExamsPage() {
   useEffect(() => {
     const role = localStorage.getItem('userRole') || 'teacher'
     setUserRole(role)
+  }, [])
+
+  // 설정에서 템플릿 로드
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch('/api/settings', { credentials: 'include' })
+        const data = await response.json() as { organization?: Organization }
+        if (response.ok && data.organization) {
+          setOrganization(data.organization)
+          // 학부모용 시험 결과 템플릿 가져오기
+          const templates = data.organization.settings?.messageTemplatesParent as Record<string, string> | undefined
+          if (templates?.exam_result) {
+            setExamResultTemplate(templates.exam_result)
+          }
+        }
+      } catch {
+        console.error('Failed to fetch settings for templates')
+      }
+    }
+    fetchSettings()
   }, [])
 
   const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' | 'success' }> = {
@@ -1265,22 +1301,15 @@ export default function ExamsPage() {
 
                 {/* 알림톡 템플릿 미리보기 */}
                 <div className="rounded-lg border bg-yellow-50 p-4">
-                  <p className="text-sm font-medium text-yellow-900 mb-2">📱 알림톡 미리보기</p>
+                  <p className="text-sm font-medium text-yellow-900 mb-2">📱 알림톡 미리보기 (설정에서 템플릿 수정 가능)</p>
                   <div className="bg-white rounded-lg p-3 text-sm border border-yellow-200 whitespace-pre-line">
-                    <p className="font-medium mb-2">[골드펜 학원] 시험 성적 안내</p>
                     <p className="text-muted-foreground">
-{`안녕하세요, 학부모님.
-
-📝 시험명: ${selectedExam?.title || ''}
-📚 과목: ${selectedExam?.subject || ''}
-📅 시험일: ${selectedExam?.exam_date ? format(new Date(selectedExam.exam_date), 'yyyy년 M월 d일') : ''}
-
-👤 학생: (학생이름)
-✏️ 점수: (점수)점
-
-자녀의 학습 현황에 대해 궁금하신 점이 있으시면 언제든 문의해 주세요.
-
-감사합니다.`}
+{fillMessageTemplate(examResultTemplate, {
+  '기관명': organization?.name || '학원',
+  '학생명': '(학생이름)',
+  '시험명': selectedExam?.title || '',
+  '점수': '(점수)',
+})}
                     </p>
                   </div>
                 </div>

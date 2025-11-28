@@ -310,23 +310,22 @@ export function BasicInfoTab({
                   <SelectValue placeholder="지점을 선택하세요" />
                 </SelectTrigger>
                 <SelectContent>
-                  {branches.length > 0 ? (
-                    <>
-                      {branches.map((branch) => (
-                        <SelectItem key={branch.id} value={branch.name}>
-                          {branch.name}
-                        </SelectItem>
-                      ))}
-                      {/* 현재 학생의 branch_name이 목록에 없으면 추가 */}
-                      {localStudent.branch_name && !branches.some(b => b.name === localStudent.branch_name) && (
-                        <SelectItem value={localStudent.branch_name}>
-                          {localStudent.branch_name}
-                        </SelectItem>
-                      )}
-                    </>
-                  ) : (
-                    <SelectItem value={branchValue || 'demoSchool'}>
-                      {branchValue || 'demoSchool'}
+                  {/* 본점: 항상 고정 (필수) */}
+                  <SelectItem value="본점">본점</SelectItem>
+                  {/* 설정에서 추가한 지점들 (본점 제외) */}
+                  {branches
+                    .filter(b => b.status === 'active' && b.name !== '본점')
+                    .map((branch) => (
+                      <SelectItem key={branch.id} value={branch.name}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  {/* 현재 학생의 branch_name이 목록에 없으면 추가 (본점 제외) */}
+                  {localStudent.branch_name &&
+                   localStudent.branch_name !== '본점' &&
+                   !branches.some(b => b.name === localStudent.branch_name) && (
+                    <SelectItem value={localStudent.branch_name}>
+                      {localStudent.branch_name}
                     </SelectItem>
                   )}
                 </SelectContent>

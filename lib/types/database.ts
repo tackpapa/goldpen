@@ -326,6 +326,8 @@ export interface Organization {
     enabledMenus?: string[]
     menuOrder?: string[]
     messageTemplates?: Record<string, string>
+    messageTemplatesParent?: Record<string, string> // 학부모용 메시지 템플릿
+    messageTemplatesStudent?: Record<string, string> // 학생용 메시지 템플릿
   }
   created_at: string
   updated_at: string

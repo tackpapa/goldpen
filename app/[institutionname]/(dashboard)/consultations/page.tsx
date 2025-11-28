@@ -4,7 +4,8 @@ export const runtime = 'edge'
 
 
 // Consultations page with waitlist feature
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useParams } from 'next/navigation'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { useConsultations } from '@/lib/swr'
@@ -33,7 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { Calendar, Eye, MoreHorizontal, Phone, Mail, Plus, ListPlus, X, Upload, Image as ImageIcon, Trash2 } from 'lucide-react'
+import { Calendar, Eye, MoreHorizontal, Phone, Mail, Plus, X, Upload, Image as ImageIcon, Trash2 } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +49,13 @@ interface Waitlist {
   id: string
   name: string
   consultationIds: string[]
+}
+
+// Branch type
+interface Branch {
+  id: string
+  name: string
+  status: 'active' | 'inactive'
 }
 
 // Grade options (학생 등록 모달과 동일)
@@ -72,6 +80,8 @@ const gradeOptions = [
 
 export default function ConsultationsPage() {
   usePageAccess('consultations')
+  const params = useParams()
+  const institutionName = params.institutionname as string
 
   const { toast } = useToast()
 
@@ -114,6 +124,42 @@ export default function ConsultationsPage() {
   // Waitlist states
   const [waitlists, setWaitlists] = useState<Waitlist[]>([])
   const [isNewWaitlistDialogOpen, setIsNewWaitlistDialogOpen] = useState(false)
+
+  // Branch states
+  const [branches, setBranches] = useState<Branch[]>([])
+
+  // 페이지 로드 시 waitlists 가져오기
+  useEffect(() => {
+    const fetchWaitlists = async () => {
+      try {
+        const res = await fetch('/api/waitlists', { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json() as { waitlists: Waitlist[] }
+          setWaitlists(data.waitlists || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch waitlists:', error)
+      }
+    }
+    fetchWaitlists()
+  }, [])
+
+  // 페이지 로드 시 branches 가져오기
+  useEffect(() => {
+    const fetchBranches = async () => {
+      if (!institutionName) return
+      try {
+        const res = await fetch(`/${institutionName}/settings/branches`, { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json() as { branches: Branch[] }
+          setBranches(data.branches || [])
+        }
+      } catch (error) {
+        console.error('Failed to fetch branches:', error)
+      }
+    }
+    fetchBranches()
+  }, [institutionName])
   const [isAddToWaitlistDialogOpen, setIsAddToWaitlistDialogOpen] = useState(false)
   const [selectedConsultationForWaitlist, setSelectedConsultationForWaitlist] = useState<Consultation | null>(null)
   const [selectedWaitlistId, setSelectedWaitlistId] = useState<string>('')
@@ -122,6 +168,49 @@ export default function ConsultationsPage() {
   // Enrollment confirmation modal states
   const [isEnrollmentDialogOpen, setIsEnrollmentDialogOpen] = useState(false)
   const [consultationToEnroll, setConsultationToEnroll] = useState<Consultation | null>(null)
+  const [enrollmentForm, setEnrollmentForm] = useState({
+    name: '',
+    student_code: '',
+    branch_name: '본점',
+    affiliation: '' as '' | 'academy' | 'study_room' | 'reading_room',
+    grade: '',
+    school: '',
+    phone: '',
+    email: '',
+    address: '',
+    parent_name: '',
+    parent_phone: '',
+    parent_email: '',
+  })
+
+  // 출결코드 자동 생성
+  const generateStudentCode = () => {
+    const code = Math.floor(1000 + Math.random() * 9000).toString()
+    setEnrollmentForm({ ...enrollmentForm, student_code: code })
+  }
+
+  // consultationToEnroll 변경 시 폼 초기화
+  useEffect(() => {
+    if (consultationToEnroll) {
+      // 지점이 있으면 첫 번째 지점 선택, 없으면 "본점" 기본값
+      const activeBranches = branches.filter(b => b.status === 'active')
+      const defaultBranch = activeBranches.length > 0 ? activeBranches[0].name : '본점'
+      setEnrollmentForm({
+        name: consultationToEnroll.student_name || '',
+        student_code: '',
+        branch_name: defaultBranch,
+        affiliation: '' as '' | 'academy' | 'study_room' | 'reading_room',
+        grade: consultationToEnroll.student_grade || '',
+        school: '',
+        phone: '',
+        email: '',
+        address: '',
+        parent_name: consultationToEnroll.parent_name || '',
+        parent_phone: consultationToEnroll.parent_phone || '',
+        parent_email: consultationToEnroll.parent_email || '',
+      })
+    }
+  }, [consultationToEnroll, branches])
 
   // 로딩 중일 때 스켈레톤 표시
   if (isLoading) {
@@ -253,27 +342,14 @@ export default function ConsultationsPage() {
       cell: ({ row }) => {
         const consultation = row.original
         return (
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSelectedConsultationForWaitlist(consultation)
-                setIsAddToWaitlistDialogOpen(true)
-              }}
-            >
-              <ListPlus className="mr-2 h-4 w-4" />
-              대기리스트 추가
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => handleDeleteConsultation(consultation)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              삭제
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
+            onClick={() => handleDeleteConsultation(consultation)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         )
       },
     },
@@ -375,6 +451,32 @@ export default function ConsultationsPage() {
   const handleConfirmEnrollment = async () => {
     if (!consultationToEnroll) return
 
+    // 필수 필드 검증
+    if (!enrollmentForm.name.trim()) {
+      toast({ title: '입력 오류', description: '학생 이름은 필수입니다.', variant: 'destructive' })
+      return
+    }
+    if (!enrollmentForm.affiliation) {
+      toast({ title: '입력 오류', description: '소속을 선택해주세요.', variant: 'destructive' })
+      return
+    }
+    if (!enrollmentForm.grade) {
+      toast({ title: '입력 오류', description: '학년을 선택해주세요.', variant: 'destructive' })
+      return
+    }
+    if (!enrollmentForm.school.trim()) {
+      toast({ title: '입력 오류', description: '학교명은 필수입니다.', variant: 'destructive' })
+      return
+    }
+    if (!enrollmentForm.parent_name.trim()) {
+      toast({ title: '입력 오류', description: '학부모 이름은 필수입니다.', variant: 'destructive' })
+      return
+    }
+    if (!enrollmentForm.parent_phone.trim()) {
+      toast({ title: '입력 오류', description: '학부모 연락처는 필수입니다.', variant: 'destructive' })
+      return
+    }
+
     // Optimistic: 즉시 UI 업데이트
     const previousConsultations = consultations
     const previousWaitlists = waitlists
@@ -392,30 +494,64 @@ export default function ConsultationsPage() {
         consultationIds: w.consultationIds.filter(cId => cId !== consultationToEnroll.id)
       }))
     )
-    toast({
-      title: '✅ 학생 등록 완료',
-      description: `${consultationToEnroll.student_name} 학생이 입교 처리되었습니다.`,
-    })
     setIsEnrollmentDialogOpen(false)
     setConsultationToEnroll(null)
 
     try {
-      const response = await fetch(`/api/consultations/${consultationToEnroll.id}`, {
-        method: 'PATCH',
+      // 1. 학생 등록 API 호출
+      const studentResponse = await fetch('/api/students', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ status: 'enrolled' }),
+        body: JSON.stringify({
+          name: enrollmentForm.name.trim(),
+          student_code: enrollmentForm.student_code || null,
+          branch_name: enrollmentForm.branch_name || null,
+          affiliation: enrollmentForm.affiliation,
+          grade: enrollmentForm.grade,
+          school: enrollmentForm.school.trim(),
+          phone: enrollmentForm.phone || null,
+          email: enrollmentForm.email || null,
+          address: enrollmentForm.address || null,
+          parent_name: enrollmentForm.parent_name.trim(),
+          parent_phone: enrollmentForm.parent_phone.trim(),
+          parent_email: enrollmentForm.parent_email || null,
+          status: 'active',
+          enrolled_date: new Date().toISOString().split('T')[0],
+        }),
       })
 
-      if (!response.ok) {
+      if (!studentResponse.ok) {
+        const studentError = await studentResponse.json() as { error?: string }
         // 롤백
         setConsultations(previousConsultations)
         setWaitlists(previousWaitlists)
-        const error = await response.json() as { error?: string }
         toast({
-          title: '등록 실패',
-          description: error.error || '학생 등록에 실패했습니다.',
+          title: '학생 등록 실패',
+          description: studentError.error || '학생 등록에 실패했습니다.',
           variant: 'destructive',
+        })
+        return
+      }
+
+      // 2. 상담 상태 변경
+      const consultationResponse = await fetch(`/api/consultations/${consultationToEnroll.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: 'enrolled', enrolled_date: new Date().toISOString() }),
+      })
+
+      if (!consultationResponse.ok) {
+        toast({
+          title: '주의',
+          description: '학생은 등록되었으나 상담 상태 변경에 실패했습니다.',
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: '✅ 학생 등록 완료',
+          description: `${enrollmentForm.name} 학생이 입교 처리되었습니다.`,
         })
       }
     } catch (error) {
@@ -1412,47 +1548,208 @@ export default function ConsultationsPage() {
 
       {/* Enrollment Confirmation Dialog */}
       <Dialog open={isEnrollmentDialogOpen} onOpenChange={setIsEnrollmentDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-xl">✅ 학생 등록 확인</DialogTitle>
+            <DialogTitle className="text-xl">학생 등록</DialogTitle>
             <DialogDescription>
-              입교 처리를 진행하시겠습니까?
+              학생의 기본 정보와 학부모 정보를 입력해주세요
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="bg-muted/50 rounded-lg p-4 space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">학생 이름</span>
-                <span className="font-semibold">{consultationToEnroll?.student_name}</span>
+            {/* Row 1: 학생 이름 + 출결코드 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>
+                  학생 이름 <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={enrollmentForm.name}
+                  onChange={(e) => setEnrollmentForm({ ...enrollmentForm, name: e.target.value })}
+                  placeholder="학생 이름 입력"
+                />
               </div>
-              {consultationToEnroll?.student_grade && (
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">학년</span>
-                  <span className="font-medium">{consultationToEnroll.student_grade}</span>
+              <div className="space-y-2">
+                <Label>출결코드 (4자리)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={enrollmentForm.student_code}
+                    onChange={(e) => setEnrollmentForm({ ...enrollmentForm, student_code: e.target.value })}
+                    placeholder="비워두면 자동 생성"
+                    maxLength={4}
+                  />
+                  <Button type="button" variant="outline" size="icon" onClick={generateStudentCode}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </Button>
                 </div>
-              )}
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">학부모</span>
-                <span className="font-medium">{consultationToEnroll?.parent_name}</span>
+                <p className="text-xs text-muted-foreground">학생이 출결 체크 시 사용하는 고유 번호입니다</p>
               </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">연락처</span>
-                <span className="font-medium">{consultationToEnroll?.parent_phone}</span>
+            </div>
+
+            {/* Row 2: 지점 + 소속 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>
+                  지점 <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={enrollmentForm.branch_name}
+                  onValueChange={(value) => setEnrollmentForm({ ...enrollmentForm, branch_name: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="지점 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {/* 본점: 항상 고정 (필수) */}
+                    <SelectItem value="본점">본점</SelectItem>
+                    {/* 설정에서 추가한 지점들 */}
+                    {branches.filter(b => b.status === 'active').map((branch) => (
+                      <SelectItem key={branch.id} value={branch.name}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="border-t pt-3 mt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">입교 날짜</span>
-                  <span className="font-semibold text-primary">
-                    {new Date().toLocaleDateString('ko-KR')}
-                  </span>
+              <div className="space-y-2">
+                <Label>
+                  소속(필수) <span className="text-red-500">*</span>
+                </Label>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={enrollmentForm.affiliation === 'academy' ? 'default' : 'outline'}
+                    onClick={() => setEnrollmentForm({ ...enrollmentForm, affiliation: 'academy' })}
+                    className="flex-1"
+                  >
+                    학원
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={enrollmentForm.affiliation === 'study_room' ? 'default' : 'outline'}
+                    onClick={() => setEnrollmentForm({ ...enrollmentForm, affiliation: 'study_room' })}
+                    className="flex-1"
+                  >
+                    공부방
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={enrollmentForm.affiliation === 'reading_room' ? 'default' : 'outline'}
+                    onClick={() => setEnrollmentForm({ ...enrollmentForm, affiliation: 'reading_room' })}
+                    className="flex-1"
+                  >
+                    독서실
+                  </Button>
                 </div>
               </div>
             </div>
 
+            {/* Row 3: 학년 + 학교 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>
+                  학년 <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={enrollmentForm.grade}
+                  onValueChange={(value) => setEnrollmentForm({ ...enrollmentForm, grade: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="학년을 선택하세요" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {gradeOptions.map((grade) => (
+                      <SelectItem key={grade.value} value={grade.value}>
+                        {grade.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  학교 <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={enrollmentForm.school}
+                  onChange={(e) => setEnrollmentForm({ ...enrollmentForm, school: e.target.value })}
+                  placeholder="예: 서울중학교"
+                />
+              </div>
+            </div>
+
+            {/* Row 4: 학생 연락처 + 학생 이메일 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>학생 연락처</Label>
+                <Input
+                  value={enrollmentForm.phone}
+                  onChange={(e) => setEnrollmentForm({ ...enrollmentForm, phone: e.target.value })}
+                  placeholder="010-1234-5678"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>학생 이메일</Label>
+                <Input
+                  type="email"
+                  value={enrollmentForm.email}
+                  onChange={(e) => setEnrollmentForm({ ...enrollmentForm, email: e.target.value })}
+                  placeholder="student@example.com"
+                />
+              </div>
+            </div>
+
+            {/* Row 5: 주소 */}
+            <div className="space-y-2">
+              <Label>주소</Label>
+              <Input
+                value={enrollmentForm.address}
+                onChange={(e) => setEnrollmentForm({ ...enrollmentForm, address: e.target.value })}
+                placeholder="주소 입력"
+              />
+            </div>
+
+            {/* Row 6: 학부모 이름 + 학부모 연락처 */}
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>
+                  학부모 이름 <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={enrollmentForm.parent_name}
+                  onChange={(e) => setEnrollmentForm({ ...enrollmentForm, parent_name: e.target.value })}
+                  placeholder="학부모 이름"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>
+                  학부모 연락처 <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  value={enrollmentForm.parent_phone}
+                  onChange={(e) => setEnrollmentForm({ ...enrollmentForm, parent_phone: e.target.value })}
+                  placeholder="010-1234-5678"
+                />
+              </div>
+            </div>
+
+            {/* Row 7: 학부모 이메일 */}
+            <div className="space-y-2">
+              <Label>학부모 이메일</Label>
+              <Input
+                type="email"
+                value={enrollmentForm.parent_email}
+                onChange={(e) => setEnrollmentForm({ ...enrollmentForm, parent_email: e.target.value })}
+                placeholder="parent@example.com"
+              />
+            </div>
+
+            {/* 안내 */}
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-sm text-blue-800">
-                <strong>안내:</strong> 입교 처리 후 해당 상담은 입교 탭으로 이동되며, 일반 상담 목록에서 제거됩니다.
+                <strong>안내:</strong> 입교 확정 시 학생 목록에 자동 등록되며, 상담은 입교 탭으로 이동됩니다.
               </p>
             </div>
           </div>

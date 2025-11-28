@@ -75,6 +75,10 @@ export async function POST(request: Request) {
 
     if (error) {
       console.error('[Waitlists POST] Error:', error)
+      // 중복 이름 에러 처리
+      if ((error as any).code === '23505') {
+        return Response.json({ error: '이미 같은 이름의 대기리스트가 있습니다' }, { status: 409 })
+      }
       return Response.json({ error: '대기리스트 생성 실패' }, { status: 500 })
     }
 
