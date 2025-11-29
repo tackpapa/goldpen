@@ -155,11 +155,12 @@ export default function LandingPage() {
       {/* Header */}
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">G</span>
-            </div>
-            <span className="font-bold text-xl">GoldPen</span>
+          <Link href="/" className="flex items-center">
+            <img
+              src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+              alt="GoldPen"
+              className="h-10"
+            />
           </Link>
           <nav className="hidden md:flex items-center gap-6">
             <a href="#solutions" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
@@ -199,11 +200,9 @@ export default function LandingPage() {
               AI 기반 학습 리포트 자동 생성
             </div>
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
-              학원 운영,
+              진짜 쉬운 거 써보세요
               <br />
-              <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-                이제 스마트하게
-              </span>
+              <span className="text-blue-600">학원, 스까 운영엔 골드펜</span>
             </h1>
             <p className="mt-6 text-lg text-muted-foreground md:text-xl max-w-2xl mx-auto">
               학원, 독서실, 공부방 운영에 필요한 모든 것.
@@ -363,9 +362,9 @@ export default function LandingPage() {
           </div>
 
           {/* 50% 50% Split Mock UI */}
-          <div className="grid lg:grid-cols-2 gap-6 lg:gap-0">
+          <div className="grid lg:grid-cols-2 gap-6 lg:gap-8">
             {/* Left: Live Attendance Check-in */}
-            <div className="relative rounded-2xl lg:rounded-r-none overflow-hidden shadow-2xl">
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
               <img
                 src="/screenshots/liveattendance.png"
                 alt="실시간 출결 체크 화면"
@@ -378,7 +377,7 @@ export default function LandingPage() {
             </div>
 
             {/* Right: Seats Management */}
-            <div className="relative rounded-2xl lg:rounded-l-none overflow-hidden shadow-2xl">
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
               <img
                 src="/screenshots/seats.png"
                 alt="독서실 좌석 관리 화면"
@@ -468,11 +467,12 @@ export default function LandingPage() {
         <div className="container">
           <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
             <div>
-              <Link href="/" className="flex items-center gap-2 mb-4">
-                <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                  <span className="text-primary-foreground font-bold text-lg">G</span>
-                </div>
-                <span className="font-bold text-xl">GoldPen</span>
+              <Link href="/" className="flex items-center mb-4">
+                <img
+                  src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+                  alt="GoldPen"
+                  className="h-10"
+                />
               </Link>
               <p className="text-sm text-muted-foreground">
                 학원/러닝센터/스터디카페
