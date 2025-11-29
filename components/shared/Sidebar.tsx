@@ -127,7 +127,7 @@ export function Sidebar() {
   const [navigation, setNavigation] = useState<NavigationItem[]>([])
   const [sidebarWidth, setSidebarWidth] = useState(256) // 기본 값 64 * 4 = 256px (w-64)
   const [isResizing, setIsResizing] = useState(false)
-  const [organizationName, setOrganizationName] = useState('GoldPen')
+  const [organizationName, setOrganizationName] = useState('') // 기본값 빈 문자열 (하드코딩 제거)
   const [organizationLogo, setOrganizationLogo] = useState('')
   const [institutionName, setInstitutionName] = useState('') // hydration mismatch 방지
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -275,18 +275,24 @@ export function Sidebar() {
           {organizationLogo ? (
             <img
               src={organizationLogo}
-              alt={organizationName}
+              alt={organizationName || '기관'}
               className="h-10 w-10 object-contain rounded-lg"
             />
           ) : (
-            <div className="h-10 w-10 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-lg">
-                {organizationName.charAt(0)}
-              </span>
+            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+              {organizationName ? (
+                <span className="text-foreground font-bold text-lg">
+                  {organizationName.charAt(0)}
+                </span>
+              ) : (
+                <span className="text-muted-foreground font-bold text-lg">-</span>
+              )}
             </div>
           )}
           <div className="flex flex-col">
-            <span className="font-semibold text-lg leading-tight">{organizationName}</span>
+            <span className="font-semibold text-lg leading-tight">
+              {organizationName || <span className="text-muted-foreground">기관명 없음</span>}
+            </span>
           </div>
         </Link>
       </div>

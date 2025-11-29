@@ -352,7 +352,8 @@ export default function SettingsPage() {
 
   const loadAll = async () => {
     try {
-      setInstitutionName('goldpen')
+      // slug는 URL에서 추출한 값 사용 (하드코딩 제거)
+      setInstitutionName(slug)
       const [orgRes, roomsRes, branchesRes] = await Promise.all([
         fetchJson<{ organization?: Organization }>(withSlug(basePath)),
         fetchJson<{ rooms?: Room[] }>('/api/rooms').catch(() => ({ rooms: [] })),
@@ -2739,10 +2740,10 @@ export default function SettingsPage() {
                 <WalletIcon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-green-600">₩850,000</div>
+                <div className="text-2xl font-bold text-muted-foreground">₩0</div>
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-xs text-muted-foreground">
-                    충전일: 2025-01-01
+                    충전 내역 없음
                   </p>
                   <Button
                     variant="link"

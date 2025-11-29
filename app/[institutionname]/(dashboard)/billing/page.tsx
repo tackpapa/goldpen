@@ -258,6 +258,36 @@ export default function BillingPage() {
         : '기타',
   }))
 
+  // 동적으로 카테고리 추출 (실제 데이터에서 유니크 카테고리 목록 생성)
+  const uniqueCategories = Array.from(new Set(revenueTransactions.map(tx => tx.category))).filter(Boolean)
+
+  // 카테고리 아이콘과 색상 맵 (동적 확장 가능)
+  const categoryIcons: Record<string, string> = {
+    '수강료': '📚',
+    '자릿세': '🪑',
+    '룸이용료': '🚪',
+    '교재판매': '📖',
+  }
+
+  const categoryColors: Record<string, string> = {
+    '수강료': 'bg-blue-100 text-blue-700',
+    '자릿세': 'bg-purple-100 text-purple-700',
+    '룸이용료': 'bg-green-100 text-green-700',
+    '교재판매': 'bg-orange-100 text-orange-700',
+  }
+
+  const chartColors: Record<string, string> = {
+    '수강료': '#2563eb',
+    '자릿세': '#8b5cf6',
+    '룸이용료': '#10b981',
+    '교재판매': '#f59e0b',
+  }
+
+  // 기본 아이콘/색상 (새 카테고리용)
+  const defaultIcon = '💰'
+  const defaultColor = 'bg-gray-100 text-gray-700'
+  const defaultChartColors = ['#6366f1', '#ec4899', '#14b8a6', '#f97316', '#84cc16']
+
   // Transform teacher salaries to match the expected format
   const teacherSalaryData = teacherSalaries.map(ts => ({
     name: ts.name,
@@ -314,16 +344,13 @@ export default function BillingPage() {
   // For teacher salary - use mock data for now (no teacher_salaries table yet)
   const totalTeacherSalary = teacherSalaryData.reduce((sum, t) => sum + t.salary, 0)
 
-  // 항목별 수익 추이 데이터 (수강료/자릿세/룸이용료/교재판매)
+  // 항목별 수익 추이 데이터 (동적 카테고리)
   const categoryTrendData = monthlySummary.map((item) => {
     const ym = item.month
     const monthLabel = ym.split('-')[1] + '월'
-    const sums: Record<string, number> = {
-      '수강료': 0,
-      '자릿세': 0,
-      '룸이용료': 0,
-      '교재판매': 0,
-    }
+    const sums: Record<string, number> = {}
+    // 초기화: 모든 유니크 카테고리에 0 설정
+    uniqueCategories.forEach(cat => { sums[cat] = 0 })
     revenueTransactions
       .filter((t) => t.date.startsWith(ym))
       .forEach((t) => {
@@ -506,39 +533,40 @@ export default function BillingPage() {
         </Card>
       </div>
 
-      {/* Category Summary (no filters) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {['수강료', '자릿세', '룸이용료', '교재판매'].map((category) => {
-          const categoryTotal = revenueTransactions
-            .filter(t => t.date.startsWith(monthKey) && t.category === category)
-            .reduce((sum, t) => sum + t.amount, 0)
-          const categoryCount = revenueTransactions
-            .filter(t => t.date.startsWith(monthKey) && t.category === category)
-            .length
+      {/* Category Summary (동적 카테고리) */}
+      {uniqueCategories.length > 0 ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {uniqueCategories.map((category) => {
+            const categoryTotal = revenueTransactions
+              .filter(t => t.date.startsWith(monthKey) && t.category === category)
+              .reduce((sum, t) => sum + t.amount, 0)
+            const categoryCount = revenueTransactions
+              .filter(t => t.date.startsWith(monthKey) && t.category === category)
+              .length
 
-          const categoryIcons: Record<string, string> = {
-            '수강료': '📚',
-            '자릿세': '🪑',
-            '룸이용료': '🚪',
-            '교재판매': '📖',
-          }
-
-          return (
-            <Card key={category}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">{categoryIcons[category]}</span>
-                  <CardTitle className="text-sm">{category}</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="text-xl font-bold">₩{categoryTotal.toLocaleString()}</div>
-                <p className="text-xs text-muted-foreground mt-1">{categoryCount}건</p>
-              </CardContent>
-            </Card>
-          )
-        })}
-      </div>
+            return (
+              <Card key={category}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{categoryIcons[category] || defaultIcon}</span>
+                    <CardTitle className="text-sm">{category}</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-xl font-bold">₩{categoryTotal.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground mt-1">{categoryCount}건</p>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="flex items-center justify-center py-8">
+            <p className="text-muted-foreground">아직 수익 데이터가 없습니다.</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts Section */}
       <Tabs defaultValue="income" className="space-y-4">
@@ -573,9 +601,9 @@ export default function BillingPage() {
                   </Select>
                 </div>
 
-                {/* Category filter */}
+                {/* Category filter (동적) */}
                 <div className="flex gap-2 flex-wrap">
-                  {['전체', '수강료', '자릿세', '룸이용료', '교재판매'].map((category) => (
+                  {['전체', ...uniqueCategories].map((category) => (
                     <Badge
                       key={category}
                       variant={selectedCategory === category ? 'default' : 'outline'}
@@ -604,14 +632,7 @@ export default function BillingPage() {
                         .filter(t => t.date.startsWith(monthKey))
                         .filter(t => selectedCategory === '전체' || t.category === selectedCategory)
                         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                        .map((transaction) => {
-                          const categoryColors: Record<string, string> = {
-                            '수강료': 'bg-blue-100 text-blue-700',
-                            '자릿세': 'bg-purple-100 text-purple-700',
-                            '룸이용료': 'bg-green-100 text-green-700',
-                            '교재판매': 'bg-orange-100 text-orange-700',
-                          }
-                          return (
+                        .map((transaction) => (
                             <tr key={transaction.id} className="border-b last:border-0 hover:bg-muted/50">
                               <td className="p-3 text-muted-foreground">
                                 {format(new Date(transaction.date), 'MM/dd')}
@@ -619,7 +640,7 @@ export default function BillingPage() {
                               <td className="p-3">
                                 <Badge
                                   variant="secondary"
-                                  className={cn('font-medium', categoryColors[transaction.category])}
+                                  className={cn('font-medium', categoryColors[transaction.category] || defaultColor)}
                                 >
                                   {transaction.category}
                                 </Badge>
@@ -630,8 +651,7 @@ export default function BillingPage() {
                                 ₩{transaction.amount.toLocaleString()}
                               </td>
                             </tr>
-                          )
-                        })}
+                          ))}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 bg-muted/30">
@@ -722,7 +742,11 @@ export default function BillingPage() {
           <Card>
             <CardHeader>
               <CardTitle>항목별 수익 추이</CardTitle>
-              <CardDescription>수강료, 자릿세, 룸이용료, 교재판매 월별 비교</CardDescription>
+              <CardDescription>
+                {uniqueCategories.length > 0
+                  ? `${uniqueCategories.join(', ')} 월별 비교`
+                  : '수익 카테고리별 월별 비교'}
+              </CardDescription>
             </CardHeader>
             <CardContent>
                 <ResponsiveContainer width="100%" height={320}>
@@ -732,10 +756,16 @@ export default function BillingPage() {
                   <YAxis tickFormatter={(v) => `₩${(v / 1000).toFixed(0)}K`} />
                   <Tooltip formatter={(v: number) => `₩${v.toLocaleString()}`} />
                   <Legend />
-                  <Line type="monotone" dataKey="수강료" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="자릿세" stroke="#8b5cf6" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="룸이용료" stroke="#10b981" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="교재판매" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                  {uniqueCategories.map((category, index) => (
+                    <Line
+                      key={category}
+                      type="monotone"
+                      dataKey={category}
+                      stroke={chartColors[category] || defaultChartColors[index % defaultChartColors.length]}
+                      strokeWidth={2}
+                      dot={{ r: 3 }}
+                    />
+                  ))}
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>

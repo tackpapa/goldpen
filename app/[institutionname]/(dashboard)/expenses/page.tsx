@@ -533,11 +533,13 @@ const { toast } = useToast()
                   </Select>
 
                   <div className="flex gap-2 flex-wrap">
-                    {expenseCategories.length === 0 && (
-                      <Badge variant={selectedCategoryFilter === '전체' ? 'default' : 'outline'} onClick={() => setSelectedCategoryFilter('전체')} className="cursor-pointer">
-                        전체
-                      </Badge>
-                    )}
+                    <Badge
+                      variant={selectedCategoryFilter === '전체' ? 'default' : 'outline'}
+                      className="cursor-pointer"
+                      onClick={() => setSelectedCategoryFilter('전체')}
+                    >
+                      전체
+                    </Badge>
                     {expenseCategories.map((cat, idx) => (
                       <Badge
                         key={cat.id}
@@ -549,13 +551,6 @@ const { toast } = useToast()
                         {cat.name}
                       </Badge>
                     ))}
-                    <Badge
-                      variant={selectedCategoryFilter === '전체' ? 'default' : 'outline'}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedCategoryFilter('전체')}
-                    >
-                      전체
-                    </Badge>
                   </div>
                 </div>
 

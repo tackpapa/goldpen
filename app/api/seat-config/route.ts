@@ -48,7 +48,13 @@ export async function GET(request: Request) {
         orgId = demoOrgId
       } else {
         if (authError || !user) {
-          return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+          // 인증 실패 시 기본값 반환 (새로 가입한 사용자도 페이지 로드 가능)
+          return Response.json({
+            totalSeats: 20,
+            seatTypes: [],
+            orgId: null,
+            note: '인증이 필요합니다. 로그인 후 좌석 설정을 저장할 수 있습니다.',
+          })
         }
         const { data: userProfile, error: profileError } = await supabase
           .from('users')
@@ -57,12 +63,18 @@ export async function GET(request: Request) {
           .single()
 
         if (profileError || !userProfile) {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+          // 프로필을 찾지 못해도 기본값 반환
+          return Response.json({
+            totalSeats: 20,
+            seatTypes: [],
+            orgId: null,
+            note: '사용자 프로필을 찾을 수 없습니다.',
+          })
         }
         orgId = userProfile.org_id
       }
     }
-    if (!orgId) return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
+    if (!orgId) return Response.json({ totalSeats: 20, seatTypes: [], orgId: null })
 
     // Get seat config
     const { data: seatConfig, error: configError } = await supabase
