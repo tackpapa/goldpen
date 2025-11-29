@@ -661,9 +661,9 @@ export function FeatureShowcase() {
         </div>
 
         {/* Feature detail */}
-        <div className="grid gap-12 lg:grid-cols-2 items-center">
-          <div>
-            <div className={cn('inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium mb-6', colors.light, colors.text)}>
+        <div className="grid gap-12 lg:grid-cols-2 items-stretch">
+          <div className="flex flex-col">
+            <div className={cn('inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium mb-6 w-fit', colors.light, colors.text)}>
               <activeFeature.icon className="h-4 w-4" />
               {activeFeature.badge}
             </div>
@@ -690,7 +690,7 @@ export function FeatureShowcase() {
           </div>
 
           <div className="relative">
-            <div className={cn('aspect-square rounded-2xl bg-gradient-to-br p-8 flex items-center justify-center', colors.gradient)}>
+            <div className={cn('h-full rounded-2xl bg-gradient-to-br p-8 flex items-center justify-center', colors.gradient)}>
               <div className="w-full max-w-sm">
                 {activeFeature.mockUI}
               </div>
