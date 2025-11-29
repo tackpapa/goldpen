@@ -26,25 +26,43 @@ export async function GET(request: Request) {
   try {
     const isDev = process.env.NODE_ENV !== 'production'
     const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const { searchParams } = new URL(request.url)
     const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
 
-    // 무인 태블릿/라이브스크린에서도 좌석 설정을 읽을 수 있도록 서비스 롤 키 허용
-    let supabase: any = process.env.SUPABASE_SERVICE_ROLE_KEY
-      ? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } })
-      : await createAuthenticatedClient(request)
+    // orgSlug 파라미터 지원 (프로덕션 대시보드용)
+    const orgSlug = searchParams.get('orgSlug')
 
     // 인증 사용자 org 혹은 service role 시 org를 쿼리 파라미터로 받기
     let orgId: string | null = null
     const orgParam = searchParams.get('orgId')
 
-    if (orgParam) {
+    // 먼저 인증된 클라이언트 생성 시도
+    let supabase: any = await createAuthenticatedClient(request)
+
+    // orgSlug가 제공된 경우 (프로덕션 대시보드) - organizations 테이블에서 org_id 조회
+    if (orgSlug && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('slug', orgSlug)
+        .single()
+
+      if (orgError || !org) {
+        console.error('[SeatConfig GET] Organization not found for slug:', orgSlug)
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = org.id
+    } else if (orgParam) {
       orgId = orgParam
     } else {
       const { data: { user }, error: authError } = await supabase.auth.getUser()
 
       // 개발 모드에서는 인증이 없을 때 서비스 롤 + demo org로 폴백
-      if ((!user || authError) && allowService && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      if ((!user || authError) && allowService && supabaseServiceKey) {
+        supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
         orgId = demoOrgId
       } else {
         if (authError || !user) {

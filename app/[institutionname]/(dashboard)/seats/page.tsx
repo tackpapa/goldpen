@@ -765,12 +765,15 @@ export default function SeatsPage() {
   useEffect(() => {
     const fetchSeatConfigAndAssignments = async () => {
       try {
-        // Fetch config and assignments in parallel (개발 시 service=1 + demo org 폴백)
+        // Fetch config and assignments in parallel
+        // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
         const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-        const serviceQs = process.env.NODE_ENV !== 'production' ? `?service=1&orgId=${demoOrgId}` : ''
+        const queryParams = process.env.NODE_ENV !== 'production'
+          ? `?service=1&orgId=${demoOrgId}`
+          : `?orgSlug=${institutionName}`
         const [configRes, assignmentsRes] = await Promise.all([
-          fetch(`/api/seat-config${serviceQs}`, { credentials: 'include' }),
-          fetch(`/api/seat-assignments${serviceQs}`, { credentials: 'include' }),
+          fetch(`/api/seat-config${queryParams}`, { credentials: 'include' }),
+          fetch(`/api/seat-assignments${queryParams}`, { credentials: 'include' }),
         ])
 
         interface SeatConfigResponse {
