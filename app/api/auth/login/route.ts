@@ -41,8 +41,30 @@ export async function POST(request: Request) {
 
     if (authError) {
       console.error('[Auth Login] Supabase auth error:', authError)
+
+      // 이메일 미인증 에러 처리
+      const lowerMessage = authError.message.toLowerCase()
+      if (lowerMessage.includes('email not confirmed') || lowerMessage.includes('not confirmed')) {
+        return Response.json(
+          {
+            error: '이메일 인증이 완료되지 않았습니다. 가입 시 입력한 이메일에서 인증 링크를 확인해주세요.',
+            errorCode: 'EMAIL_NOT_CONFIRMED'
+          },
+          { status: 401 }
+        )
+      }
+
+      // 잘못된 자격 증명
+      if (lowerMessage.includes('invalid login credentials') || lowerMessage.includes('invalid credentials')) {
+        return Response.json(
+          { error: '이메일 또는 비밀번호가 올바르지 않습니다.' },
+          { status: 401 }
+        )
+      }
+
+      // 기타 에러
       return Response.json(
-        { error: '이메일 또는 비밀번호가 올바르지 않습니다' },
+        { error: '로그인에 실패했습니다. 잠시 후 다시 시도해주세요.' },
         { status: 401 }
       )
     }
