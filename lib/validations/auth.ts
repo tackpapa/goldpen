@@ -20,6 +20,16 @@ export const registerSchema = z.object({
     .string()
     .min(1, '기관명을 입력해주세요')
     .max(100, '기관명은 최대 100자까지 입력 가능합니다'),
+  org_slug: z
+    .string()
+    .min(2, '기관 아이디는 최소 2자 이상이어야 합니다')
+    .max(50, '기관 아이디는 최대 50자까지 입력 가능합니다')
+    .regex(/^[a-z0-9-]+$/, '영문 소문자, 숫자, 하이픈(-)만 사용 가능합니다'),
+  phone: z
+    .string()
+    .min(10, '올바른 전화번호를 입력해주세요')
+    .max(15, '전화번호는 최대 15자까지 입력 가능합니다')
+    .regex(/^[0-9]+$/, '숫자만 입력해주세요'),
 })
 
 export type RegisterInput = z.infer<typeof registerSchema>

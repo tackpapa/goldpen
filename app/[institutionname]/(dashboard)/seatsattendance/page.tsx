@@ -3,7 +3,7 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -126,6 +126,9 @@ export default function AttendancePage() {
   const [allStudentSchedules, setAllStudentSchedules] = useState<
     Record<string, { day_of_week: string; start_time: string | null }[]>
   >({})
+
+  // Track if seat assignments are loaded (prevents race condition)
+  const seatAssignmentsLoadedRef = useRef(false)
 
   const shiftDate = useCallback((delta: number) => {
     const next = addDays(new Date(selectedDate), delta)
@@ -359,9 +362,13 @@ export default function AttendancePage() {
         setSeatMap(map)
         setSeatNameMap(nameMap)
         setRawAssignments((data as { assignments?: any[] }).assignments || [])
+        // Mark seat assignments as loaded (prevents race condition with schedules)
+        seatAssignmentsLoadedRef.current = true
+        console.log('[SeatsAttendance] ✅ Seat assignments loaded, schedules fetch enabled')
       } catch (e) {
         // 실패해도 전체 목록 표시 (필터 없이)
         setAssignedStudentIds([])
+        seatAssignmentsLoadedRef.current = true // Still mark as loaded to unblock
       }
     }
     loadSeatAssignments()
@@ -369,6 +376,8 @@ export default function AttendancePage() {
 
   // 전체 학생 등하원 일정 로드 (지각/결석 계산용)
   useEffect(() => {
+    // Skip if seat assignments haven't loaded yet (prevents race condition)
+    if (!seatAssignmentsLoadedRef.current) return
     if (assignedStudentIds.length === 0) return
     const fetchAllSchedules = async () => {
       const devQs = process.env.NODE_ENV !== 'production'

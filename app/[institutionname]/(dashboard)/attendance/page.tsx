@@ -80,6 +80,8 @@ export default function AttendancePage() {
   const [hasMore, setHasMore] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [historySentinel, setHistorySentinel] = useState<HTMLDivElement | null>(null)
+  // Track if initial data load is complete (prevents redundant state updates)
+  const initialLoadCompleteRef = useRef(false)
   const HISTORY_PAGE_SIZE = 20
   const TODAY_PAGE_SIZE = 15
   const [todayPage, setTodayPage] = useState(1)
@@ -234,8 +236,10 @@ export default function AttendancePage() {
     [HISTORY_PAGE_SIZE, computeWeeklyFromHistory, computeClassRatesFromHistory, statusPriority]
   )
 
-  // attendanceHistory 변경 시 반별 출결률 갱신
+  // attendanceHistory 변경 시 반별 출결률 갱신 (초기 로드 완료 후에만 실행)
   useEffect(() => {
+    // Skip during initial load (fetchAttendancePage already sets classAttendanceRate)
+    if (!initialLoadCompleteRef.current) return
     setClassAttendanceRate(computeClassRatesFromHistory())
   }, [attendanceHistory, computeClassRatesFromHistory])
 
@@ -246,12 +250,16 @@ export default function AttendancePage() {
         await fetchAttendancePage(0, selectedDate)
         setPage(0)
         setTodayPage(1)
+        // Mark initial load as complete (prevents redundant classAttendanceRate recalculation)
+        initialLoadCompleteRef.current = true
+        console.log('[Attendance] ✅ Initial load complete')
       } catch (err) {
         toast({
           title: '출결 데이터 로드 실패',
           description: err instanceof Error ? err.message : undefined,
           variant: 'destructive',
         })
+        initialLoadCompleteRef.current = true // Still mark as complete to unblock
       } finally {
         setIsLoading(false)
       }

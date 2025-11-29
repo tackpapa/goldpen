@@ -1,527 +1,659 @@
-# GOLDPEN_SYS_MAP v2.1
+# GOLDPEN_SYS_MAP v3.0
 # Token-optimized system reference (machine-readable)
-# Updated: 2025-11-22 (selective update)
+# Generated: 2025-11-29 (full analysis)
 
 ## ⚠️ RULES (CRITICAL)
-rule1:EDGE_RUNTIME_MANDATORY - export const runtime='edge' 필수
-rule2:SUPABASE_RLS - 모든 쿼리에 org_id 필수 (멀티테넌트)
+rule1:EDGE_RUNTIME - export const runtime='edge' 필수
+rule2:RLS_MANDATORY - 모든 쿼리에 org_id 필수 (멀티테넌트)
 rule3:TYPE_SAFETY - Zod 검증 + TypeScript strict
-rule4:NO_HARDCODE - 환경변수 하드코딩 절대 금지
-rule5:NO_PUSH - 자동 푸시 금지, 명시적 요청만
-rule6:BUILD_BEFORE_COMMIT - 커밋 전 pnpm build 성공 확인
-rule7:CLOUDFLARE_ONLY - Vercel 빌드 금지, Cloudflare Pages 전용
+rule4:NO_HARDCODE - 환경변수/키 하드코딩 절대 금지
+rule5:NO_AUTO_PUSH - 자동 푸시 금지, 명시적 요청만
+rule6:BUILD_CHECK - 커밋 전 pnpm build 성공 확인
+rule7:CLOUDFLARE_ONLY - Vercel 금지, Cloudflare Pages/Workers 전용
+rule8:DEPLOY_BOTH - 프론트(Pages)+백엔드(Workers) 둘 다 배포
 
 ## ARCH
-framework:next15+react18+ts5.6
-runtime:edge (cloudflare-workers)
+framework:next14.2+react18.3+ts5.6
+runtime:edge (cloudflare)
 deploy:cloudflare-pages (@cloudflare/next-on-pages)
 db:supabase (postgresql+auth+storage+realtime)
-cache:hyperdrive (cloudflare-hyperdrive-db)
+cache:hyperdrive (8c1cfe4c456d460da34153acc8e0eb2c)
 node:>=20
-pkg:pnpm
+pkg:pnpm@9.12
 
 ## TECH_STACK
-ui:tailwind4+shadcn/ui+radix-ui
-state:zustand4.5+tanstack-query5.56
-forms:react-hook-form7+zod3.25
+ui:tailwind3.4+shadcn/ui+radix-ui
+state:zustand4.5+tanstack-query5.56+swr2.3
+forms:react-hook-form7.66+zod3.25
 tables:tanstack-table8.21
-dnd:dnd-kit6.3
-dates:date-fns4.1
-icons:lucide-react
+dnd:dnd-kit6.3+sortable10
+charts:recharts2.12
+dates:date-fns4.1+react-day-picker9.11
+icons:lucide-react0.445
+cmd:cmdk1.1
 bff:hono4.6 (workers/api)
+cron:cloudflare-scheduled (workers/cron)
 
-## APPS
-app:goldpen
-├ tech:next15+react18+edge-runtime
-├ port:8000
-├ path:/
-├ entry:app/layout.tsx
-└ func:multi-tenant-saas (academy+study-room+study-center)
+## PROJECT_STRUCTURE
+goldpen/
+├ app/                      # Next.js App Router (35 pages)
+│ ├ (auth)/                # 인증 (login, signup)
+│ ├ (portal)/my/           # 포털 (dashboard)
+│ ├ admin/(protected)/     # Admin (7 pages)
+│ ├ [institutionname]/     # 기관별 (16 pages)
+│ ├ api/                   # API Routes (72 routes)
+│ ├ consultation/          # 상담 신청
+│ └ lesson-note/           # 수업노트 공유
+├ components/              # React (67 files)
+│ ├ ui/                   # shadcn/ui (32 files)
+│ ├ students/             # 학생 모달/탭 (11 files)
+│ ├ teachers/             # 강사 모달/탭 (6 files)
+│ ├ livescreen/           # 라이브스크린 (9 files)
+│ ├ dashboard/            # 대시보드 위젯 (4 files)
+│ ├ admin/                # Admin (2 files)
+│ ├ seats/                # 좌석 (1 file)
+│ └ shared/               # 공통 (4 files)
+├ lib/                     # 유틸/설정 (27 files)
+│ ├ supabase/             # DB 클라이언트 (4 files)
+│ ├ types/                # 타입 정의 (4 files)
+│ ├ validations/          # Zod 스키마 (5 files)
+│ ├ utils/                # 유틸 (6 files)
+│ ├ config/               # 설정 (2 files)
+│ ├ swr/                  # SWR hooks (3 files)
+│ ├ messaging/            # 카카오 알림톡 (1 file)
+│ └ data/                 # Mock 데이터 (1 file)
+├ hooks/                   # Custom Hooks (9 files)
+├ contexts/                # React Context (1 file)
+├ workers/                 # Cloudflare Workers
+│ ├ api/                  # Hono API (50 files)
+│ ├ cron/                 # 스케줄 알림 (1 file)
+│ ├ queue/                # 큐 (비활성)
+│ ├ shared/               # 공유 (비활성)
+│ └ tail-logger/          # 로그 (비활성)
+├ supabase/                # DB
+│ └ migrations/           # SQL (71 files)
+└ docs/                    # 문서
+  └ kakao.md              # 카카오 가이드
 
-## ROUTES_DASHBOARD
-base:/[institutionname]/(dashboard)
-├ /overview - 대시보드 홈
-├ /students - 학생 관리 (CRUD+modal+files)
-├ /classes - 반 관리
-├ /teachers - 강사 관리 (급여+스케줄+학생 배정)
-├ /consultations - 상담 관리
-├ /attendance - 출결 관리
-├ /homework - 숙제 관리
-├ /exams - 시험/성적
-├ /lessons - 수업 기록
-├ /rooms - 강의실 관리
-├ /seats - 좌석 관리 (실시간)
-├ /schedule - 시간표
-├ /expenses - 비용 관리
-├ /billing - 정산/매출
-└ /settings - 기관 설정 (11개 탭)
+## PAGES (35)
+root:
+├ / - 홈 (리다이렉트)
+├ /login - 로그인
+├ /signup - 회원가입
+├ /consultation/new - 상담 신청 폼
+└ /lesson-note/[token] - 수업노트 공유
 
-## ROUTES_ADMIN
-base:/admin/(protected)
-├ /dashboard - Admin 대시보드
-├ /organizations - 기관 관리 (CRUD)
-├ /users - 사용자 관리
-├ /audit-logs - 감사 로그
-└ /settings - 시스템 설정 (4개 카테고리)
-
-## ROUTES_LIVESCREEN
-base:/[institutionname]/livescreen
-├ /[seatNumber] - 학생 라이브 스크린
-│ ├ timer:subject-timer (과목별 학습 타이머)
-│ ├ planner:daily-planner (일일 학습 계획)
-│ └ stats:study-statistics (학습 통계)
-└ /liveattendance - 실시간 출결 현황
-
-## API_ROUTES (BFF Pattern)
-pattern:page→api-route→supabase (edge-runtime)
-
-core:
-├ /api/students - CRUD+files+modal
-├ /api/teachers - CRUD+assign-students+modal+overview
-├ /api/classes - CRUD
-├ /api/consultations - CRUD
-├ /api/attendance - CRUD
-├ /api/homework - CRUD
-├ /api/exams - CRUD
-├ /api/lessons - CRUD
-├ /api/rooms - CRUD
-├ /api/schedules - CRUD
-├ /api/expenses - CRUD
-├ /api/billing - CRUD
-├ /api/overview - 대시보드 통계
-└ /api/settings - 설정 CRUD
+portal:
+└ /my/dashboard - 포털 대시보드
 
 admin:
-├ /api/admin/organizations - 기관 CRUD
-├ /api/admin/users - 사용자 관리
-├ /api/admin/audit-logs - 감사 로그
-└ /api/admin/stats/overview - Admin 통계
+├ /admin - Admin 홈
+├ /admin/dashboard - Admin 대시보드
+├ /admin/organizations - 기관 관리
+├ /admin/organizations/[id] - 기관 상세
+├ /admin/users - 사용자 관리
+├ /admin/audit-logs - 감사 로그
+├ /admin/kakao - 카카오 관리
+├ /admin/plans - 요금제 관리
+└ /admin/settings - 시스템 설정
+
+dashboard:
+├ /[org]/overview - 대시보드 홈
+├ /[org]/students - 학생 관리
+├ /[org]/teachers - 강사 관리
+├ /[org]/classes - 반 관리
+├ /[org]/consultations - 상담 관리
+├ /[org]/attendance - 출결 관리
+├ /[org]/homework - 숙제 관리
+├ /[org]/exams - 시험/성적
+├ /[org]/lessons - 수업 기록
+├ /[org]/rooms - 강의실 관리
+├ /[org]/seats - 좌석 관리
+├ /[org]/seatsattendance - 좌석 출결
+├ /[org]/schedule - 시간표
+├ /[org]/all-schedules - 전체 일정 (deprecated)
+├ /[org]/expenses - 비용 관리
+├ /[org]/billing - 정산/매출
+├ /[org]/activity-logs - 활동 로그
+└ /[org]/settings - 기관 설정 (11탭)
 
 livescreen:
-├ /api/study-sessions - 학습 세션 CRUD
-├ /api/study-time-rankings - 학습 시간 순위
-├ /api/seat-assignments - 좌석 배정 (realtime)
-├ /api/seat-config - 좌석 설정
-├ /api/daily-planners - 일일 계획
-├ /api/daily-study-stats - 일일 통계
-└ /api/subjects - 과목 관리
+├ /[org]/livescreen/[seatNumber] - 학생 스크린
+└ /[org]/liveattendance - 실시간 출결
 
+## API_ROUTES (72)
 auth:
-└ /api/auth/login - 로그인 (supabase-auth)
+├ /api/auth/login - POST 로그인
+├ /api/auth/logout - POST 로그아웃
+├ /api/auth/register - POST 회원가입
+└ /api/auth/me - GET 현재 사용자
 
-## DB_CORE (Supabase PostgreSQL)
-schema:supabase/migrations/*.sql (58 migrations)
+students:
+├ /api/students - GET/POST 목록/생성
+├ /api/students/[id] - GET/PUT/DELETE 상세/수정/삭제
+├ /api/students/[id]/modal - GET 모달 데이터 (7탭)
+├ /api/students/[id]/files - GET/POST/DELETE 파일
+└ /api/students/[id]/commute-schedules - GET/POST/PUT 통학일정
 
-core_tables:
-├ organizations (멀티테넌트 루트, slug+logo+status)
-├ users (role:super_admin|admin|teacher|student|parent)
-├ students (attendance_code+grade+school+teacher_id+files[])
-├ teachers (salary+schedule+assigned_students)
-├ classes (teacher_id+subject+level)
-├ enrollments (student↔class, many-to-many)
-├ attendance (daily records)
-├ lessons (수업 기록, teacher+class)
-├ homework (assignments)
-├ homework_submissions (student submissions)
-├ exams (시험)
-├ exam_scores (시험 점수, student↔exam)
-├ consultations (상담 기록)
-├ rooms (강의실)
-├ schedules (시간표)
-├ expenses (비용)
-└ billing (정산)
+teachers:
+├ /api/teachers - GET/POST 목록/생성
+├ /api/teachers/[id] - GET/PUT/DELETE 상세
+├ /api/teachers/[id]/modal - GET 모달 데이터 (4탭)
+├ /api/teachers/[id]/salary - GET/PUT 급여
+├ /api/teachers/[id]/lessons - GET 수업 목록
+├ /api/teachers/[id]/assign-students - POST 학생 배정
+└ /api/teachers/overview - GET 전체 개요
 
-student_modal_tables:
-├ service_enrollments (academy|study_room|study_center)
-├ attendance_schedules (요일별 출결 스케줄)
-├ class_credits (수업 크레딧, hours)
-├ credit_transactions (크레딧 충전/사용 내역)
-├ payments (결제 내역)
-└ attendance_records (세부 출결 기록)
+classes:
+├ /api/classes - GET/POST 목록/생성
+├ /api/classes/[id] - GET/PUT/DELETE 상세
+└ /api/classes/[id]/assign-students - POST 학생 배정
 
-livescreen_tables:
-├ study_sessions (학습 세션, student+subject+duration)
-├ daily_planners (일일 계획, goals+tasks[])
-├ daily_study_stats (일일 통계, total_time+subject_breakdown)
-├ seat_config (좌석 설정, layout+capacity)
-└ seat_assignments (좌석 배정, realtime)
+consultations:
+├ /api/consultations - GET/POST 목록/생성
+└ /api/consultations/[id] - GET/PUT/DELETE 상세
 
-admin_tables:
-├ audit_logs (action+user+before/after)
-├ system_settings (org_id|null, key+value(jsonb)+category)
-├ menu_settings (menu활성화 설정)
-├ kakaotalk_usage (카톡 발송 내역+비용)
-└ service_usage (서비스 사용 비용)
+waitlists:
+├ /api/waitlists - GET/POST 대기자 목록
+├ /api/waitlists/[id] - GET/PUT/DELETE 상세
+└ /api/waitlists/[id]/consultations - POST 상담 전환
 
-indexes:
-├ idx_students_org_id
-├ idx_teachers_org_id
-├ idx_attendance_student_date
-├ idx_seat_assignments_student_date
-└ ... (성능 최적화용)
+attendance:
+├ /api/attendance - GET/POST 출결
+├ /api/attendance/[id] - PUT/DELETE 수정
+├ /api/attendance/logs - GET 출결 로그
+└ /api/attendance/reconcile - POST 정산
+
+homework:
+├ /api/homework - GET/POST 숙제
+└ /api/homework/[id] - GET/PUT/DELETE 상세
+
+exams:
+├ /api/exams - GET/POST 시험
+├ /api/exams/[id] - GET/PUT/DELETE 상세
+└ /api/exams/[id]/scores - GET/POST/PUT 점수
+
+lessons:
+├ /api/lessons - GET/POST 수업
+└ /api/lessons/[id] - GET/PUT/DELETE 상세
+
+rooms:
+├ /api/rooms - GET/POST 강의실
+└ /api/rooms/[id] - GET/PUT/DELETE 상세
+
+schedules:
+├ /api/schedules - GET/POST 시간표
+└ /api/schedules/[id] - PUT/DELETE 수정
+
+seats:
+├ /api/seats - GET/POST 좌석
+├ /api/seats/[id] - PUT/DELETE 수정
+├ /api/seat-config - GET/PUT 좌석 설정
+└ /api/seat-assignments - GET/POST/PUT 좌석 배정
+
+livescreen:
+├ /api/study-sessions - GET/POST 학습 세션
+├ /api/study-time-rankings - GET 순위
+├ /api/daily-planners - GET/POST 일일 계획
+├ /api/daily-study-stats - GET 통계
+├ /api/planner-feedback - GET/POST AI 피드백
+└ /api/subjects - GET/POST/PUT 과목
+
+billing:
+├ /api/billing - GET/POST 정산
+├ /api/billing/[id] - PUT/DELETE 수정
+├ /api/expenses - GET/POST 지출
+├ /api/expenses/[id] - PUT/DELETE 수정
+├ /api/payments - GET/POST 결제
+└ /api/payments/[id] - PUT/DELETE 수정
+
+settings:
+├ /api/settings - GET/PUT 설정
+├ /api/settings/logo - POST 로고 업로드
+└ /api/class-enrollments - GET/POST 수강 등록
+
+misc:
+├ /api/overview - GET 대시보드 통계
+├ /api/widgets - GET 위젯 데이터
+├ /api/activity-logs - GET 활동 로그
+├ /api/organizations/[slug] - GET 기관 정보
+├ /api/test-env - GET 환경 테스트
+└ /api/debug/env - GET 환경 디버그
+
+admin:
+├ /api/admin/organizations - GET/POST 기관
+├ /api/admin/organizations/[id] - GET/PUT/DELETE 상세
+├ /api/admin/users - GET/POST 사용자
+├ /api/admin/audit-logs - GET 감사 로그
+├ /api/admin/kakao - GET/POST 카카오
+├ /api/admin/plans - GET/POST 요금제
+├ /api/admin/plans/[id] - PUT/DELETE 수정
+└ /api/admin/stats/overview - GET Admin 통계
+
+## DB_SCHEMA (71 migrations)
+core:
+├ organizations - 기관 (slug, logo, settings)
+├ users - 사용자 (role: super_admin|admin|teacher|student|parent)
+├ students - 학생 (attendance_code, grade, school, files[], credit)
+├ teachers - 강사 (salary, schedule, assigned_students, payment_day, lesson_note_token)
+├ classes - 반 (teacher_id, subject, capacity)
+├ enrollments - 수강 (student↔class)
+├ attendance - 출결 (date, status)
+├ lessons - 수업 기록 (content, comprehension_level)
+├ homework - 숙제 (due_date, status)
+├ homework_submissions - 숙제 제출
+├ exams - 시험 (exam_date, total_score)
+├ exam_scores - 시험 점수
+├ consultations - 상담 (status, channel, waitlist_id)
+├ waitlists - 대기자
+├ rooms - 강의실
+├ schedules - 시간표
+├ expenses - 지출
+├ billing - 정산
+└ plans - 요금제
+
+student_related:
+├ service_enrollments - 서비스 소속 (academy|study_room|study_center)
+├ attendance_schedules - 출결 스케줄
+├ commute_schedules - 통학 일정
+├ class_credits - 수업 크레딧
+├ credit_transactions - 크레딧 내역
+├ payments - 결제 내역
+└ attendance_records - 상세 출결
+
+livescreen:
+├ study_sessions - 학습 세션
+├ subjects - 과목
+├ daily_planners - 일일 계획
+├ daily_study_stats - 일일 통계
+├ seat_config - 좌석 설정
+├ seat_assignments - 좌석 배정
+├ outing_records - 외출 기록
+├ sleep_records - 수면 기록
+├ call_records - 호출 기록
+├ manager_calls - 매니저 호출
+└ planner_feedback - AI 피드백
+
+admin:
+├ audit_logs - 감사 로그
+├ system_settings - 시스템 설정 (org_id|null)
+├ menu_settings - 메뉴 설정
+├ kakaotalk_usage - 카카오 사용량
+├ service_usage - 서비스 사용량
+├ activity_logs - 활동 로그
+└ notification_logs - 알림 로그
 
 rls:ALL_TABLES_ENABLED
 ├ policy:org_isolation (org_id 기반)
 ├ policy:role_based (user.role 기반)
 └ policy:row_owner (user_id 기반)
 
-## DATA_TYPES
-Student:
-├ id:uuid
-├ org_id:uuid
-├ name:text
-├ attendance_code:text (4자리, unique)
-├ grade:text (중1~고3|재수)
-├ school:text
-├ teacher_id:uuid|null
-├ subjects:text[]
-├ status:active|inactive|graduated
-├ files:jsonb (StudentFile[])
+## COMPONENTS (67)
+ui/ (32 files, shadcn/ui):
+├ button, input, card, table, badge, avatar
+├ tabs, dropdown-menu, label, textarea
+├ checkbox, radio-group, switch, alert
+├ separator, scroll-area, form, popover
+├ calendar, command, progress, sheet
+├ dialog, select, toast, toaster
+├ skeleton, alert-dialog, data-table
 └ ...
 
-Teacher:
-├ id:uuid
-├ org_id:uuid
-├ name:text
-├ subjects:text[]
-├ hourly_rate:numeric
-├ total_salary:numeric
-├ schedule:jsonb
-├ assigned_students:jsonb (student_ids[])
-└ ...
+students/ (11 files):
+├ StudentDetailModal - 7탭 모달
+│ ├ BasicInfoTab - 기본정보
+│ ├ StudyRoomTab - 독서실
+│ ├ AttendanceScheduleTab - 출결 스케줄
+│ ├ ClassCreditsTab - 수업 크레딧
+│ ├ PaymentTab - 결제
+│ ├ PaymentHistoryTab - 결제 내역
+│ ├ AttendanceHistoryTab - 출결 내역
+│ └ HistoryTab - 히스토리
+├ StudentFilesTab - 파일
+└ PaymentModal - 결제 모달
 
-SystemSettings:
-├ id:uuid
-├ org_id:uuid|null (null=global)
-├ key:text
-├ value:jsonb
-├ category:general|email|security|features
-└ ...
+teachers/ (6 files):
+├ TeacherDetailModal - 4탭 모달
+│ ├ BasicInfoTab - 기본정보
+│ ├ SalaryTab - 급여
+│ ├ ScheduleTab - 스케줄
+│ └ AssignedStudentsTab - 배정 학생
+└ ClassHistoryTab - 수업 이력
 
-## STATE
-mgr:zustand+tanstack-query
-stores:
-├ auth-context:contexts/auth-context.tsx
-│ └ {user,org,session,loading}
-└ (페이지별 local state, no global store)
+livescreen/ (9 files):
+├ SubjectTimer - 과목별 타이머
+├ StudyTimer - 학습 타이머
+├ DailyPlannerPage - 일일 계획
+├ DailyPlannerModal - 계획 모달
+├ StudyStatistics - 학습 통계
+├ StudyTimeRanking - 순위
+├ OutingModal - 외출 모달
+├ OutingScreen - 외출 화면
+└ SleepTimer - 수면 타이머
 
-hooks:
-├ use-student-modal-data:학생 모달 데이터 (7 tabs)
-├ use-teacher-modal-data:강사 모달 데이터 (4 tabs)
-├ use-seat-assignments-realtime:좌석 실시간 (realtime sync)
-├ use-all-seats-realtime:전체 좌석 실시간
-├ use-livescreen-state:라이브 스크린 상태
-├ use-seat-realtime-status:좌석 상태 실시간
-├ use-page-access:페이지 접근 권한
-└ use-toast:토스트 알림 (shadcn/ui)
+dashboard/ (4 files):
+├ WidgetRenderer - 위젯 렌더링
+├ DraggableWidget - 드래그
+├ WidgetWrapper - 래퍼
+└ WidgetManager - 관리
 
-## REALTIME (Supabase Realtime)
-enabled:seat_assignments,sleep_records
+shared/ (4 files):
+├ Header - 헤더
+├ Sidebar - 사이드바
+├ MobileSidebar - 모바일 사이드바
+└ Breadcrumb - 브레드크럼
+
+## HOOKS (9)
+├ use-toast - 토스트 알림
+├ use-theme - 테마
+├ use-page-access - 페이지 접근 권한
+├ use-student-modal-data - 학생 모달 데이터
+├ use-teacher-modal-data - 강사 모달 데이터
+├ use-seat-assignments-realtime - 좌석 실시간
+├ use-all-seats-realtime - 전체 좌석
+├ use-seat-realtime-status - 좌석 상태
+└ use-livescreen-state - 라이브스크린 상태
+
+## LIB (27)
+supabase/:
+├ client.ts - 브라우저 클라이언트
+├ server.ts - 서버 클라이언트
+├ client-edge.ts - Edge Runtime 클라이언트
+└ debug-env.ts - 환경 디버그
+
+types/:
+├ database.ts - DB 타입 (798줄, 50+ 인터페이스)
+├ widget.ts - 위젯 타입
+├ widget-data.ts - 위젯 데이터 타입
+└ permissions.ts - 권한 타입
+
+validations/:
+├ auth.ts - 인증 스키마
+├ attendance.ts - 출결 스키마
+├ class.ts - 반 스키마
+├ consultation.ts - 상담 스키마
+└ student.ts - 학생 스키마
+
+utils/:
+├ utils.ts - 공통 유틸 (cn)
+├ permissions.ts - 권한 유틸
+├ generate-attendance-code.ts - 출결 코드
+├ activity-logger.ts - 활동 로그
+├ expense-categories.ts - 지출 카테고리
+├ revenue-categories.ts - 수입 카테고리
+└ route.ts - 라우트 유틸
+
+config/:
+├ widgets.ts - 위젯 설정
+└ navigation.ts - 네비게이션 설정
+
+swr/:
+├ fetcher.ts - SWR fetcher
+├ hooks.ts - SWR hooks
+└ index.ts - export
+
+messaging/:
+└ kakao-alimtalk.ts - 카카오 알림톡 연동
+
+## WORKERS
+api/ (workers/api):
+├ src/index.ts - Hono 메인 (라우터 등록)
+├ src/env.ts - 환경변수 타입
+├ src/lib/
+│ ├ db.ts - Hyperdrive DB 연결
+│ ├ supabase.ts - Supabase 클라이언트
+│ └ notifications.ts - 알림 발송
+├ src/middleware/
+│ ├ auth.ts - 인증
+│ ├ cors.ts - CORS
+│ └ logger.ts - 로깅
+├ src/routes/ (45 files)
+│ ├ auth.*.ts - 인증 라우트
+│ ├ students.*.ts - 학생 라우트
+│ ├ teachers.*.ts - 강사 라우트
+│ ├ classes.*.ts - 반 라우트
+│ ├ attendance*.ts - 출결 라우트
+│ ├ exams*.ts - 시험 라우트
+│ ├ ai.generate.ts - AI 생성
+│ └ ...
+└ wrangler.toml
+  ├ hyperdrive:HYPERDRIVE_DB
+  ├ ai:AI (Qwen3 30B)
+  ├ port:8787
+  └ route:api.goldpen.kr/*
+
+cron/ (workers/cron):
+├ src/index.ts - 스케줄 알림 (매 1분)
+│ ├ 출결 알림 (지각/결석)
+│ ├ 학습 리포트 (21:00)
+│ └ 과제 알림 (09:00)
+└ wrangler.toml
+  ├ cron:* * * * * (매 1분)
+  └ hyperdrive:HYPERDRIVE_DB
+
+## STATE_MANAGEMENT
+global:
+├ contexts/auth-context.tsx
+│ └ {user, org, session, loading, signOut}
+└ zustand (필요시)
+
+server:
+├ tanstack-query (캐싱)
+└ swr (데이터 페칭)
+
+realtime:
+└ supabase.channel().on('postgres_changes')
+
+## REALTIME
+enabled:seat_assignments, sleep_records, call_records
 pattern:
 1. useEffect → supabase.channel()
 2. postgres_changes listener
 3. auto-refresh on INSERT/UPDATE/DELETE
 
-example:use-seat-assignments-realtime.ts
+example:
 ├ channel:seat-assignments-{org_id}-{date}
-├ event:postgres_changes (table:seat_assignments)
-└ sync:local-state with db changes
+├ event:INSERT|UPDATE|DELETE
+└ sync:local-state
 
-## COMPONENTS
-ui:components/ui/* (shadcn/ui)
-├ button,card,dialog,table,tabs,select,...
-└ pattern:radix-ui+tailwind+cva
-
-dashboard:components/dashboard/*
-admin:components/admin/*
-├ AdminHeader,AdminSidebar
-└ ...
-
-students:components/students/*
-├ StudentDetailModal (7 tabs)
-│ ├ BasicInfoTab
-│ ├ StudyRoomTab
-│ ├ AttendanceScheduleTab
-│ ├ ClassCreditsTab
-│ ├ PaymentTab
-│ ├ PaymentHistoryTab
-│ └ AttendanceHistoryTab
-└ StudentFilesTab
-
-teachers:components/teachers/*
-├ TeacherDetailModal (4 tabs)
-│ ├ BasicInfoTab
-│ ├ SalaryTab
-│ ├ ScheduleTab
-│ └ AssignedStudentsTab
-└ ...
-
-livescreen:components/livescreen/*
-├ SubjectTimer (과목별 타이머)
-├ DailyPlannerPage (일일 계획)
-└ StudyStatistics (학습 통계)
-
-shared:components/shared/*
-├ Header (기관별 네비게이션)
-└ Sidebar (메뉴)
-
-## FLOW
-1.login_flow
-├ /login → api/auth/login
-├ supabase.auth.signInWithPassword()
-├ redirect → /[org-slug]/overview
-└ RLS activated (org_id from user.org_id)
-
-2.student_crud_flow
-├ /students → GET /api/students
-├ modal-open → GET /api/students/[id]/modal (7 tabs)
-├ edit → PUT /api/students/[id]
-└ refresh → tanstack-query invalidate
-
-3.realtime_seat_flow
-├ /liveattendance → GET /api/seat-assignments
-├ supabase.channel().on('postgres_changes')
-├ INSERT/UPDATE/DELETE → auto-refresh UI
-└ no polling, event-driven
-
-4.teacher_salary_flow
-├ /teachers → GET /api/teachers
-├ modal → GET /api/teachers/[id]/modal
-├ edit-salary → PUT /api/teachers/[id]
-└ auto-calc:total_salary from hourly_rate+hours
-
-5.admin_audit_flow
-├ /admin/audit-logs → GET /api/admin/audit-logs
-├ filter:user,action,table,date
-└ pagination (100 per page)
-
-## BUILD
-dev:pnpm dev (port:8000)
-build:pnpm build (next build)
+## BUILD_COMMANDS
+dev:pnpm dev --turbo -p 8000
+build:pnpm build
 pages-build:pnpm pages:build
 ├ tool:@cloudflare/next-on-pages
-├ auto-run:next build (internally)
 ├ output:.vercel/output/static
-└ skip-vercel-build:true
+└ skip-vercel:true
 
-deploy:wrangler pages deploy
-├ platform:cloudflare-pages
-├ project:goldpen
-├ runtime:edge-only (nodejs_compat disabled)
-└ env:NEXT_PUBLIC_*+secrets (Cloudflare Dashboard)
+deploy:pnpm deploy
+├ run:pages:build + wrangler pages deploy
+└ project:goldpen
 
-test:
-├ unit:vitest
-├ e2e:removed (playwright deleted, no tests/)
-└ coverage:vitest --coverage
+api-dev:pnpm api:dev (port:8787)
+api-deploy:pnpm api:deploy
+deploy-all:pnpm deploy:all
+└ run:api:deploy + deploy
+
+test:pnpm test (vitest)
+type-check:pnpm type-check (tsc --noEmit)
+lint:pnpm lint (next lint)
 
 ## DEPLOY
-cloudflare-pages:
+frontend (Cloudflare Pages):
 ├ build:@cloudflare/next-on-pages
-├ runtime:edge-only (nodejs_compat)
-├ hyperdrive:HYPERDRIVE_DB (8c1cfe4c456d460da34153acc8e0eb2c)
-└ domain:goldpen.kr
+├ output:.vercel/output/static
+├ project:goldpen
+├ domain:goldpen.kr
+└ cmd:wrangler pages deploy .vercel/output/static --project-name=goldpen
 
-cloudflare-workers:
-├ api:workers/api (hono)
+api (Cloudflare Workers):
+├ worker:goldpen-api
+├ framework:hono
 ├ port:8787
-└ route:api.goldpen.kr/*
+├ domain:api.goldpen.kr
+└ cmd:cd workers/api && wrangler deploy
+
+cron (Cloudflare Workers):
+├ worker:goldpen-attendance-cron
+├ trigger:cron (* * * * *)
+└ cmd:cd workers/cron && wrangler deploy
 
 supabase:
-├ project:ipqhhqduppzvsqwwzjkp
-├ region:ap-northeast-2 (seoul)
-├ url:https://ipqhhqduppzvsqwwzjkp.supabase.co
-└ pooler:aws-1-ap-northeast-1:6543 (hyperdrive)
+├ project:vdxxzygqjjjptzlvgrtw
+├ url:https://vdxxzygqjjjptzlvgrtw.supabase.co
+├ region:ap-northeast-1
+└ pooler:port 6543
 
-## FILES
-critical:
-├ lib/supabase/client.ts (browser)
-├ lib/supabase/server.ts (server-components)
-├ lib/supabase/client-edge.ts (edge-runtime)
-├ lib/types/database.ts (typescript-types)
-├ contexts/auth-context.tsx (auth-provider)
-├ wrangler.toml (cloudflare-config)
-└ next.config.js (cloudflare-compat)
+hyperdrive:
+├ id:8c1cfe4c456d460da34153acc8e0eb2c
+└ binding:HYPERDRIVE_DB
 
-config:
-├ .env.local (local-dev, NOT committed)
-├ .env.migration (migration-scripts)
-├ supabase/config.toml (supabase-cli)
-├ package.json (dependencies)
-├ tsconfig.json (typescript)
-└ tailwind.config.ts (styling)
+## ENV_VARS
+public (안전):
+├ NEXT_PUBLIC_SUPABASE_URL
+├ NEXT_PUBLIC_SUPABASE_ANON_KEY
+└ NEXT_PUBLIC_APP_URL
 
-## KEYS (env-vars, NO values)
-NEXT_PUBLIC_SUPABASE_URL
-NEXT_PUBLIC_SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY (secret, server-only)
-DATABASE_URL (direct-url, migration-only)
-OPENAI_API_KEY (future, ai-reports)
-HYPERDRIVE_DB (cloudflare-binding)
+secrets (민감):
+├ SUPABASE_SERVICE_ROLE_KEY
+├ DATABASE_URL
+├ OPENAI_API_KEY
+├ KAKAO_ALIMTALK_API_KEY
+├ KAKAO_ALIMTALK_SECRET_KEY
+└ KAKAO_ALIMTALK_SENDER_KEY
 
-## LIMITS
-max_upload:10MB (settings)
-session_timeout:60min (settings)
-password_min:8 (settings)
-realtime_channels:limited by supabase plan
-rls_performance:indexed by org_id
+bindings:
+├ HYPERDRIVE_DB
+└ AI (Workers AI)
+
+## CRITICAL_FILES
+├ lib/supabase/client.ts - 브라우저 DB
+├ lib/supabase/server.ts - 서버 DB
+├ lib/supabase/client-edge.ts - Edge DB
+├ lib/types/database.ts - 타입 정의 (핵심)
+├ contexts/auth-context.tsx - 인증 컨텍스트
+├ middleware.ts - 라우트 보호
+├ wrangler.toml - Pages 설정
+├ workers/api/wrangler.toml - API 설정
+├ workers/cron/wrangler.toml - Cron 설정
+└ next.config.js - Next.js 설정
 
 ## SECURITY
-rls:ENABLED on ALL tables
-auth:supabase-auth (jwt-based)
-cors:api routes check origin
-xss:zod-validation on all inputs
-sql-injection:parameterized-queries only
-secrets:env-vars only, NO hardcoding
-file-upload:supabase-storage with RLS
+├ rls:ENABLED (all tables)
+├ auth:supabase-auth (jwt)
+├ cors:workers check origin
+├ xss:zod-validation
+├ sql:parameterized queries
+├ secrets:env only
+├ file:supabase-storage+rls
+└ org:org_id isolation
+
+## FLOW
+1.auth:
+├ /login → api/auth/login
+├ supabase.auth.signInWithPassword
+├ set session cookie
+├ redirect → /[org]/overview
+└ RLS activated
+
+2.student_modal:
+├ click student row
+├ GET /api/students/[id]/modal
+├ load 7 tabs data
+├ edit → PUT /api/students/[id]
+└ invalidate cache
+
+3.realtime_seats:
+├ /liveattendance page
+├ GET /api/seat-assignments
+├ supabase.channel subscribe
+├ postgres_changes listener
+└ auto-refresh UI
+
+4.cron_notification:
+├ workers/cron trigger (매 1분)
+├ check attendance_schedules
+├ compare current_time
+├ send kakao notification
+└ log to notification_logs
+
+## DOCS
+core:
+├ PROJECT.md - 이 파일 (시스템 맵)
+├ CLAUDE.md (23KB) - 개발 규칙
+├ README.md (3KB) - 프로젝트 개요
+├ TASKS.md (8KB) - 작업 로그
+├ cffaults.md (16KB) - CF 오류 해결
+├ datafaults.md (17KB) - 데이터 오류
+├ KNOWHOW.md (49KB) - 개발 노하우
+└ TODO_ORG_GUARD.md (6KB) - org_id 보호
+
+docs/:
+└ kakao.md - 카카오 알림톡 가이드
+
+usage:
+├ 세션시작:[TASKS.md→CLAUDE.md→PROJECT.md]
+├ 기능개발:[CLAUDE.md→PROJECT.md→code]
+├ 배포:[PROJECT.md→deploy commands]
+├ DB작업:[lib/types/database.ts→migrations]
+└ 이슈:[cffaults.md→datafaults.md→KNOWHOW.md]
 
 ## VERSION
-next:14.2.33
-react:18.3.1
-typescript:5.6.3
+next:14.2.0
+react:18.3.0
+typescript:5.6.0
 supabase-js:2.45.0
 supabase-ssr:0.5.0
 zod:3.25.76
 tanstack-query:5.56.0
+tanstack-table:8.21.3
 hono:4.6.0
 tailwind:3.4.0
 radix-ui:latest
 lucide-react:0.445.0
-cloudflare-next-on-pages:1.13.16
+next-on-pages:1.13.16
 date-fns:4.1.0
+react-day-picker:9.11.1
 recharts:2.12.0
+swr:2.3.6
+cmdk:1.1.1
+dnd-kit/core:6.3.1
+dnd-kit/sortable:10.0.0
+zustand:4.5.0
+wrangler:4.47.0
+vitest:2.1.0
 
-## MCP
-none (no mcp servers installed)
+## STATISTICS
+pages:35
+api_routes:72
+components:67
+lib_files:27
+hooks:9
+workers_files:51
+migrations:71
+total_ts_files:~300
 
-## DOCS
-core:
-├ PROJECT.md (13KB) - 이 파일 (시스템 맵)
-│ └ 보기:세션 시작 시 자동 학습
-├ CLAUDE.md (25KB) - 프로젝트 개발 규칙
-│ └ 보기:코드 작성 전 필수
-├ README.md (5KB) - 프로젝트 개요
-│ └ 보기:프로젝트 소개 시
-└ TASKS.md (8KB) - 작업 로그
-  └ 보기:세션 시작/종료 시
-
-migration:
-├ MIGRATION_FINAL_GUIDE.md (45KB) - 최종 마이그레이션 가이드
-├ SETTINGS_MIGRATION_COMPLETE.md (38KB) - 설정 마이그레이션
-├ COMPLETE_MOCK_DATA_ANALYSIS.md (120KB) - Mock 데이터 분석
-└ COMPREHENSIVE_SEED_DATA_GUIDE.md (32KB) - Seed 데이터 가이드
-
-deployment:
-├ CLOUDFLARE_HYPERDRIVE_SETUP.md (8KB) - Hyperdrive 설정
-├ CLOUDFLARE_PAGES_BUILD_FIXES.md (12KB) - 빌드 이슈 해결
-├ DEPLOYMENT.md (15KB) - 배포 가이드
-└ DEPLOYMENT_OPTION2.md (22KB) - Workers 배포
-
-architecture:
-├ ARCHITECTURE.md (18KB) - 시스템 아키텍처
-├ BACKEND.md (12KB) - 백엔드 구조
-└ SUPABASE.md (85KB) - Supabase 상세 문서
-
-issues:
-├ KNOWN_ISSUES.md (10KB) - 알려진 이슈
-├ CRITICAL_SECURITY_ACTION.md (15KB) - 보안 조치
-└ SECURITY_INCIDENT.md (12KB) - 보안 인시던트
-
-other:
-├ agents.md (3KB) - Agent 목록
-├ KNOWHOW.md (8KB) - 개발 노하우
-└ PRD.md (존재 여부 미확인)
-
-usage_pattern:
-├ 세션시작:[TASKS.md → CLAUDE.md → PROJECT.md]
-├ 기능개발:[CLAUDE.md → ARCHITECTURE.md → code]
-├ 배포준비:[DEPLOYMENT.md → CLOUDFLARE_*.md]
-├ DB마이그레이션:[MIGRATION_*.md → supabase/migrations/*.sql]
-└ 이슈해결:[KNOWN_ISSUES.md → 해당 기술 문서]
-
-## MIGRATION_STATUS (2025-11-22)
-total:58_migrations (cleaned: deleted 7 duplicate seed files)
-active:
-├ 20251122_create_system_settings.sql ✅
-├ 20251122_create_teachers_table.sql ✅
-├ 20251122_classes_capacity_room.sql ✅
-├ 20251122_aggregate_teachers_overview.sql ✅
-├ 20251122_exams_homework.sql ✅
-├ 20251122_finance_and_seats.sql ✅
-├ 20251122_perf_indexes.sql ✅
-├ 20251122_create_lessons_table.sql ✅
-├ 20251122_students_add_class_id.sql ✅
-├ 20251122_students_add_school.sql ✅
-├ 20251122_seats_meta.sql ✅
-└ 20251122_teachers_add_token.sql ✅
-
-completed_features:
-- ✅ 14 dashboard pages (mock → supabase)
-- ✅ Admin pages (organizations, users, audit-logs, settings)
-- ✅ Teacher management (salary, schedule, assignments)
-- ✅ Livescreen (seat-assignments, study-sessions, planners)
-- ✅ Student modal (7 tabs, Supabase Storage files upload)
-- ✅ Settings (system_settings table, 4 categories, 11 org tabs)
-- ✅ Hyperdrive setup (low-latency db connection)
-- ✅ Cloudflare Pages build (edge-runtime enforced)
-- ✅ File upload (Supabase Storage + RLS)
-
-pending:
-- [ ] all-schedules (legacy, 별도 페이지 3개 버전 - deprecated)
-- [ ] AI reports (GPT integration)
-- [ ] Kakao/SMS notifications
-- [ ] Calendar sync (Google Calendar)
-
-## DEPLOY_PATHS
-local:
-├ dev:pnpm dev → http://localhost:8000
-├ db:supabase studio → https://supabase.com/dashboard
-└ logs:console.log (browser devtools)
-
-production:
-├ app:https://goldpen.kr
-├ api:https://api.goldpen.kr (workers)
-├ db:https://ipqhhqduppzvsqwwzjkp.supabase.co
-├ deploy:wrangler pages deploy
-└ logs:wrangler tail (cloudflare logs)
-
-migration:
-├ local:psql $DATABASE_URL -f migration.sql
-├ remote:supabase sql editor (dashboard)
-└ script:node scripts/*.mjs
-
-## PERFORMANCE
-realtime:supabase-realtime (websocket)
-cache:hyperdrive (connection-pooling)
-cdn:cloudflare-pages (global-edge)
-db-pool:pgbouncer (port:6543)
-indexes:org_id,student_id,date (critical-paths)
-
-## FEATURES_ROADMAP
-v1.0:
-- ✅ Multi-tenant SaaS
-- ✅ Student/Teacher/Class management
-- ✅ Attendance/Homework/Exams
-- ✅ Realtime seat assignments
-- ✅ Admin dashboard
-- ✅ Audit logs
+## ROADMAP
+v1.0 (current):
+├ ✅ Multi-tenant SaaS
+├ ✅ Student/Teacher/Class CRUD
+├ ✅ Attendance/Homework/Exams
+├ ✅ Realtime seats
+├ ✅ Admin dashboard
+├ ✅ Audit logs
+├ ✅ Activity logs
+└ ✅ Cron notifications
 
 v1.1 (planned):
-- [ ] AI-powered study reports (GPT-4)
-- [ ] Kakao/SMS notifications
-- [ ] Google Calendar sync
-- [ ] Mobile app (React Native)
-- [ ] Parent portal
-- [ ] Payment gateway integration
+├ [ ] AI reports (GPT-4)
+├ [ ] Kakao 알림톡 실제 발송
+├ [ ] Google Calendar sync
+├ [ ] Mobile app
+├ [ ] Parent portal
+└ [ ] Payment gateway
 
 ---
-# END OF GOLDPEN_SYS_MAP v2.1
-# Auto-loaded on Claude Code session start
-# Last updated: 2025-11-22 (selective update)
-# Changes this update:
-#   - Added 2 new hooks (use-teacher-modal-data, use-seat-realtime-status)
-#   - Updated build config (removed playwright, clarified next-on-pages)
-#   - Updated version numbers (Next 14.2.33, date-fns 4.1.0, recharts)
-#   - Updated migration status (12 new migrations, file upload feature)
-#   - Cleaned up pending tasks (deprecated all-schedules)
-# Next update: selective (git diff based)
+# END OF GOLDPEN_SYS_MAP v3.0
+# Generated: 2025-11-29 (full project analysis)
+# Analysis method: Direct exploration of all files
+# Files analyzed: ~300 TypeScript/SQL files
+# Next update: /gen-context command

@@ -710,14 +710,22 @@ export default function SeatsPage() {
   // Org ID for realtime subscription
   const [orgId, setOrgId] = useState<string | null>(null)
 
+  // Track if initial data load is complete (prevents race condition with realtime)
+  const initialLoadCompleteRef = useRef(false)
+
   // Realtime seat assignments subscription
   const { assignments: realtimeAssignments, loading: realtimeLoading } = useSeatAssignmentsRealtime(orgId)
 
   // orgId is now set from seat-config API response (see below)
 
   // Sync realtime assignments with seats state
+  // IMPORTANT: Only run after initial load is complete to prevent race condition
   useEffect(() => {
-    if (realtimeLoading || !realtimeAssignments) return
+    // Skip if initial load not complete or realtime still loading
+    if (!initialLoadCompleteRef.current || realtimeLoading || !realtimeAssignments) return
+
+    // Skip if realtime assignments map is empty (likely still initializing)
+    if (realtimeAssignments.size === 0) return
 
     setSeats((prevSeats) => {
       // Get all seat numbers that have assignments
@@ -845,8 +853,15 @@ export default function SeatsPage() {
         }
 
         setSeats(initialSeats)
+
+        // Mark initial load as complete AFTER setSeats
+        // This prevents realtime sync from overwriting with empty data
+        initialLoadCompleteRef.current = true
+        console.log('[Seats] ✅ Initial load complete, realtime sync enabled')
       } catch {
         console.error('Failed to fetch seat config/assignments')
+        // Still mark as complete to prevent blocking
+        initialLoadCompleteRef.current = true
       }
     }
     fetchSeatConfigAndAssignments()
