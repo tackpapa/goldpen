@@ -110,11 +110,13 @@ export default function LiveScreenPage({ params }: PageProps) {
   useEffect(() => {
     const fetchStudentInfo = async () => {
       try {
-        // 개발 모드에서 seats 페이지와 동일하게 demo orgId 사용
+        // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
         const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-        const serviceQs = process.env.NODE_ENV !== 'production' ? `?service=1&orgId=${demoOrgId}` : ''
+        const queryParams = process.env.NODE_ENV !== 'production'
+          ? `?service=1&orgId=${demoOrgId}`
+          : `?orgSlug=${institutionname}`
 
-        const response = await fetch(`/api/seat-assignments${serviceQs}`, { credentials: 'include' })
+        const response = await fetch(`/api/seat-assignments${queryParams}`, { credentials: 'include' })
         if (response.ok) {
           const data = await response.json() as { orgId?: string; assignments?: any[] }
           console.log('[LiveScreen] 📦 Seat assignments response:', { orgId: data.orgId, assignmentsCount: data.assignments?.length })
@@ -143,7 +145,7 @@ export default function LiveScreenPage({ params }: PageProps) {
       }
     }
     fetchStudentInfo()
-  }, [seatNumber])
+  }, [seatNumber, institutionname])
 
   // Fetch all data when studentId is available
   useEffect(() => {
@@ -153,13 +155,13 @@ export default function LiveScreenPage({ params }: PageProps) {
 
     const fetchAllData = async () => {
       try {
-        // 개발 모드에서 service 쿼리 파라미터 추가
-        const serviceParams = process.env.NODE_ENV !== 'production' ? `&service=1&orgId=${orgId}` : ''
+        // orgId 포함 (프로덕션 포함 모든 환경에서 필요)
+        const orgIdParam = `&orgId=${orgId}`
 
         const [subjectsRes, statsRes, plannerRes] = await Promise.all([
-          fetch(`/api/subjects?studentId=${studentId}${serviceParams}`, { credentials: 'include' }),
-          fetch(`/api/daily-study-stats?studentId=${studentId}&date=${getTodayDate()}${serviceParams}`, { credentials: 'include' }),
-          fetch(`/api/daily-planners?studentId=${studentId}${serviceParams}`, { credentials: 'include' }),
+          fetch(`/api/subjects?studentId=${studentId}${orgIdParam}`, { credentials: 'include' }),
+          fetch(`/api/daily-study-stats?studentId=${studentId}&date=${getTodayDate()}${orgIdParam}`, { credentials: 'include' }),
+          fetch(`/api/daily-planners?studentId=${studentId}${orgIdParam}`, { credentials: 'include' }),
         ])
 
         if (subjectsRes.ok) {
@@ -225,9 +227,8 @@ export default function LiveScreenPage({ params }: PageProps) {
 
     const fetchRankings = async () => {
       try {
-        // 개발 모드에서 service 쿼리 파라미터 추가
-        const serviceParams = process.env.NODE_ENV !== 'production' ? `?service=1&orgId=${orgId}` : ''
-        const response = await fetch(`/api/study-time-rankings${serviceParams}`, { credentials: 'include' })
+        // orgId 포함 (프로덕션 포함 모든 환경에서 필요)
+        const response = await fetch(`/api/study-time-rankings?orgId=${orgId}`, { credentials: 'include' })
         if (response.ok) {
           const data = await response.json() as { rankings?: { daily: StudyTimeRanking[]; weekly: StudyTimeRanking[]; monthly: StudyTimeRanking[] } }
           setRankings(data.rankings || { daily: [], weekly: [], monthly: [] })

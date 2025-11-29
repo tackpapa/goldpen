@@ -167,13 +167,30 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
 
+    // orgSlug 파라미터 지원 (프로덕션 livescreen용)
+    const orgSlug = searchParams.get('orgSlug')
+
     let supabase: any = await createAuthenticatedClient(request)
     let { data: { user }, error: authError } = await supabase.auth.getUser()
 
     let orgId: string | null = null
     const orgParam = searchParams.get('org_id') || searchParams.get('orgId')
 
-    if ((!user || authError) && allowService && supabaseServiceKey) {
+    // orgSlug가 제공된 경우 (프로덕션 livescreen) - organizations 테이블에서 org_id 조회
+    if (orgSlug && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('slug', orgSlug)
+        .single()
+
+      if (orgError || !org) {
+        console.error('[SeatAssignments GET] Organization not found for slug:', orgSlug)
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = org.id
+    } else if ((!user || authError) && allowService && supabaseServiceKey) {
       supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
       orgId = orgParam || demoOrgId
     } else {
