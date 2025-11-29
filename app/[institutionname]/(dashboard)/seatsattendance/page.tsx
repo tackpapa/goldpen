@@ -170,11 +170,11 @@ export default function AttendancePage() {
     setScheduleLoading(true)
     setScheduleError(null)
     try {
-      // dev 환경에서는 service=1 + demo org로 강제 조회 (RLS 우회)
-      const devQs = process.env.NODE_ENV !== 'production'
-        ? `?service=1&org_id=dddd0000-0000-0000-0000-000000000000`
-        : ''
-      const res = await fetch(`/api/students/${studentId}/commute-schedules${devQs}`, { credentials: 'include' })
+      // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
+      const queryParams = process.env.NODE_ENV !== 'production'
+        ? `?service=1&org_id=${demoOrgId}`
+        : `?orgSlug=${institutionName}`
+      const res = await fetch(`/api/students/${studentId}/commute-schedules${queryParams}`, { credentials: 'include' })
       const data = await res.json() as { schedules?: any[]; error?: string }
       if (!res.ok) {
         setScheduleError(data?.error || '일정 불러오기 실패')
@@ -308,7 +308,11 @@ export default function AttendancePage() {
   useEffect(() => {
     const loadSeatAssignments = async () => {
       try {
-        const res = await fetch('/api/seat-assignments', { credentials: 'include' })
+        // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
+        const queryParams = process.env.NODE_ENV !== 'production'
+          ? `?service=1&orgId=${demoOrgId}`
+          : `?orgSlug=${institutionName}`
+        const res = await fetch(`/api/seat-assignments${queryParams}`, { credentials: 'include' })
         if (!res.ok) return
         const data = await res.json() as { assignments?: any[] }
         const ids: string[] = []
@@ -380,15 +384,16 @@ export default function AttendancePage() {
     if (!seatAssignmentsLoadedRef.current) return
     if (assignedStudentIds.length === 0) return
     const fetchAllSchedules = async () => {
-      const devQs = process.env.NODE_ENV !== 'production'
-        ? `?service=1&org_id=dddd0000-0000-0000-0000-000000000000`
-        : ''
+      // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
+      const queryParams = process.env.NODE_ENV !== 'production'
+        ? `?service=1&org_id=${demoOrgId}`
+        : `?orgSlug=${institutionName}`
       const schedulesMap: Record<string, { day_of_week: string; start_time: string | null }[]> = {}
 
       await Promise.all(
         assignedStudentIds.map(async (studentId) => {
           try {
-            const res = await fetch(`/api/students/${studentId}/commute-schedules${devQs}`, { credentials: 'include' })
+            const res = await fetch(`/api/students/${studentId}/commute-schedules${queryParams}`, { credentials: 'include' })
             if (!res.ok) return
             const data = await res.json() as { schedules?: any[] }
             const schedules = data.schedules || []
