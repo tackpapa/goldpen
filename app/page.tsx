@@ -289,7 +289,9 @@ export default function LandingPage() {
       <section className="py-24">
         <div className="container">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold sm:text-4xl">왜 GoldPen인가요?</h2>
+            <h2 className="text-3xl font-bold sm:text-4xl flex items-center justify-center gap-2">
+              왜 <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png" alt="GoldPen" className="h-8 sm:h-10 inline-block" />인가요?
+            </h2>
             <p className="mt-4 text-lg text-muted-foreground">
               단순한 관리 도구를 넘어, 운영 효율을 혁신합니다
             </p>
@@ -512,8 +514,8 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-12 pt-8 border-t flex flex-col sm:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-muted-foreground">
-              © 2024 GoldPen. All rights reserved.
+            <p className="text-sm text-muted-foreground flex items-center gap-2">
+              © 2024 <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png" alt="GoldPen" className="h-5 inline-block" />. All rights reserved.
             </p>
             <div className="flex items-center gap-4">
               <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">

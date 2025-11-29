@@ -140,7 +140,7 @@ export default function SignupPage() {
         </div>
         <CardTitle className="text-2xl text-center">회원가입</CardTitle>
         <CardDescription className="text-center">
-          GoldPen 계정을 만드세요
+          계정을 만드세요
         </CardDescription>
       </CardHeader>
       <CardContent>

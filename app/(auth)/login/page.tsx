@@ -78,13 +78,15 @@ export default function LoginPage() {
     <Card>
       <CardHeader className="space-y-1">
         <div className="flex items-center justify-center mb-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <span className="text-2xl font-bold text-primary-foreground">C</span>
-          </div>
+          <img
+            src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+            alt="GoldPen"
+            className="h-12"
+          />
         </div>
         <CardTitle className="text-2xl text-center">로그인</CardTitle>
         <CardDescription className="text-center">
-          GoldPen에 로그인하세요
+          계정에 로그인하세요
         </CardDescription>
       </CardHeader>
       <CardContent>
