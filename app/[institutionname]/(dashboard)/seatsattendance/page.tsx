@@ -170,10 +170,8 @@ export default function AttendancePage() {
     setScheduleLoading(true)
     setScheduleError(null)
     try {
-      // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
-      const queryParams = process.env.NODE_ENV !== 'production'
-        ? `?service=1&org_id=${demoOrgId}`
-        : `?orgSlug=${institutionName}`
+      // orgSlug를 사용 (Cloudflare에서 process.env.NODE_ENV 런타임 사용 불가)
+      const queryParams = `?orgSlug=${institutionName}`
       const res = await fetch(`/api/students/${studentId}/commute-schedules${queryParams}`, { credentials: 'include' })
       const data = await res.json() as { schedules?: any[]; error?: string }
       if (!res.ok) {
@@ -308,10 +306,8 @@ export default function AttendancePage() {
   useEffect(() => {
     const loadSeatAssignments = async () => {
       try {
-        // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
-        const queryParams = process.env.NODE_ENV !== 'production'
-          ? `?service=1&orgId=${demoOrgId}`
-          : `?orgSlug=${institutionName}`
+        // orgSlug를 사용 (Cloudflare에서 process.env.NODE_ENV 런타임 사용 불가)
+        const queryParams = `?orgSlug=${institutionName}`
         const res = await fetch(`/api/seat-assignments${queryParams}`, { credentials: 'include' })
         if (!res.ok) return
         const data = await res.json() as { assignments?: any[] }
@@ -384,10 +380,8 @@ export default function AttendancePage() {
     if (!seatAssignmentsLoadedRef.current) return
     if (assignedStudentIds.length === 0) return
     const fetchAllSchedules = async () => {
-      // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
-      const queryParams = process.env.NODE_ENV !== 'production'
-        ? `?service=1&org_id=${demoOrgId}`
-        : `?orgSlug=${institutionName}`
+      // orgSlug를 사용 (Cloudflare에서 process.env.NODE_ENV 런타임 사용 불가)
+      const queryParams = `?orgSlug=${institutionName}`
       const schedulesMap: Record<string, { day_of_week: string; start_time: string | null }[]> = {}
 
       await Promise.all(

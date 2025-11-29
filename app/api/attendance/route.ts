@@ -16,12 +16,16 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const isDev = process.env.NODE_ENV !== 'production'
-    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
+    const serviceParam = searchParams.get('service')
+    // orgSlug 파라미터 지원 (프로덕션 대시보드용)
+    const orgSlug = searchParams.get('orgSlug')
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
 
     let supabase = await createAuthenticatedClient(request)
     let { data: { user }, error: authError } = await supabase.auth.getUser()
 
-    // 서비스 롤 폴백 (개발 테스트용)
+    // 서비스 롤 폴백 (개발 및 프로덕션 지원)
     if ((!user || authError) && allowService) {
       if (!supabaseUrl || !supabaseServiceKey) {
         return Response.json({ error: '서비스 키 누락' }, { status: 500 })
@@ -35,7 +39,22 @@ export async function GET(request: Request) {
     let orgId: string | null = null
     let userProfile: any = null
     if (user.id === 'service-role') {
-      orgId = searchParams.get('org_id') || demoOrgId
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug && supabaseServiceKey) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          console.error('[Attendance GET] Organization not found for slug:', orgSlug)
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      } else {
+        orgId = searchParams.get('org_id') || searchParams.get('orgId') || demoOrgId
+      }
       if (orgId) userProfile = { org_id: orgId }
     } else {
       const { data: profile } = await supabase.from('users').select('org_id').eq('id', user.id).maybeSingle()

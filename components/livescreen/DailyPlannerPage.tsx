@@ -29,6 +29,7 @@ interface PlannerFeedback {
 interface DailyPlannerPageProps {
   studentId: string
   orgId?: string
+  orgSlug?: string
   seatNumber: number
   subjects?: Subject[]  // 과목 타이머에서 전달받은 과목들
   existingPlanner?: DailyPlanner
@@ -46,6 +47,7 @@ interface DailyPlannerPageProps {
 export function DailyPlannerPage({
   studentId,
   orgId,
+  orgSlug,
   seatNumber,
   subjects = [],
   existingPlanner,
@@ -138,13 +140,15 @@ export function DailyPlannerPage({
       setOutingRecords((outingData || []) as OutingRecord[])
       setStatsLoaded(true)
 
-      // Load teacher feedback - orgId가 없으면 개발 환경에서 demo orgId 사용
-      const effectiveOrgId = orgId || (process.env.NODE_ENV !== 'production'
-        ? (process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000')
-        : null)
+      // Load teacher feedback - orgSlug 또는 orgId 사용
+      const feedbackQueryParams = orgSlug
+        ? `?orgSlug=${orgSlug}&studentId=${studentId}`
+        : orgId
+        ? `?service=1&orgId=${orgId}&studentId=${studentId}`
+        : null
 
-      if (effectiveOrgId) {
-        const feedbackUrl = `/api/planner-feedback?service=1&orgId=${effectiveOrgId}&studentId=${studentId}`
+      if (feedbackQueryParams) {
+        const feedbackUrl = `/api/planner-feedback${feedbackQueryParams}`
         console.log('🔄 [DailyPlannerPage] Refreshing feedback (isVisible changed)')
         try {
           const feedbackRes = await fetch(feedbackUrl)
@@ -278,6 +282,7 @@ export function DailyPlannerPage({
   const savePlannerToDB = async (updatedPlans: StudyPlan[], updatedNotes: string, editedPlanId?: string | null) => {
     setIsSaving(true)
     try {
+      // orgSlug가 있으면 사용, 없으면 orgId 사용
       const response = await fetch('/api/daily-planners', {
         method: 'POST',
         credentials: 'include',
@@ -287,6 +292,7 @@ export function DailyPlannerPage({
           seatNumber,
           studyPlans: updatedPlans,
           notes: updatedNotes,
+          ...(orgSlug ? { orgSlug } : orgId ? { orgId, service: '1' } : {}),
         }),
       })
 
@@ -410,12 +416,15 @@ export function DailyPlannerPage({
 
     // subject_id가 있으면 subjects 테이블에서도 삭제 (soft delete)
     if (subjectId) {
-      const effectiveOrgId = orgId || (process.env.NODE_ENV !== 'production'
-        ? (process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000')
-        : null)
+      // orgSlug가 있으면 사용, 없으면 orgId 사용
+      const deleteParams = orgSlug
+        ? `?id=${subjectId}&orgSlug=${orgSlug}`
+        : orgId
+        ? `?id=${subjectId}&service=1&orgId=${orgId}`
+        : `?id=${subjectId}`
 
       try {
-        await fetch(`/api/subjects?id=${subjectId}&service=1&orgId=${effectiveOrgId}`, {
+        await fetch(`/api/subjects${deleteParams}`, {
           method: 'DELETE',
         })
         // 부모 컴포넌트에 삭제된 과목 알림
@@ -641,10 +650,10 @@ export function DailyPlannerPage({
                             }`}
                           >
                             {plan.subject}
+                            {savedPlanId === plan.id && (
+                              <span className="text-xs text-green-600 font-normal ml-2">자동 저장되었습니다</span>
+                            )}
                           </h4>
-                          {savedPlanId === plan.id && (
-                            <span className="text-xs text-green-600 ml-2">자동저장됨</span>
-                          )}
                         </div>
                         <Input
                           placeholder="내용을 입력하면 자동 저장됩니다.."
@@ -686,13 +695,18 @@ export function DailyPlannerPage({
           {/* Notes */}
           <Card>
             <CardContent className="p-6">
-              <h3 className="font-semibold mb-3">메모</h3>
+              <h3 className="font-semibold mb-3">
+                메모
+                {savedPlanId === 'notes' && (
+                  <span className="text-xs text-green-600 font-normal ml-2">자동 저장되었습니다</span>
+                )}
+              </h3>
               <Textarea
                 placeholder="오늘의 목표, 특이사항, 메모 등을 자유롭게 작성하세요..."
                 value={notes}
                 onChange={(e) => {
                   setNotes(e.target.value)
-                  scheduleAutoSave()
+                  scheduleAutoSave('notes')
                 }}
                 rows={5}
                 className="resize-none"

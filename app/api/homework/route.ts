@@ -61,6 +61,7 @@ type StudentHomeworkStatus = {
   teacher_names: string[]
   last_homework: string | null
   last_homework_text: string | null
+  last_homework_date: string | null
   submitted: boolean | null
   submission_rate: number
 }
@@ -72,6 +73,8 @@ type ClassHomeworkStats = {
   submitted_count: number
   submission_rate: number
   last_homework: string | null
+  last_homework_text: string | null
+  last_homework_date: string | null
 }
 
 type TeacherEntry = { id: string; name: string }
@@ -139,6 +142,7 @@ function buildStudentStatus(
       teacher_names: student.teacher_names,
       last_homework: latestHw?.title ?? null,
       last_homework_text: latestHw?.description ?? null,
+      last_homework_date: latestHw?.created_at ?? latestHw?.due_date ?? null,
       submitted: latestHw
         ? latestSubmission
           ? latestSubmission.status !== 'not_submitted'
@@ -211,6 +215,8 @@ function buildClassStats(
           ? Math.round((clampedSubmitted / totalStudents) * 100)
           : 0,
       last_homework: latestHw?.title ?? null,
+      last_homework_text: latestHw?.description ?? null,
+      last_homework_date: latestHw?.created_at ?? latestHw?.due_date ?? null,
     }
   })
 }

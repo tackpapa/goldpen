@@ -67,8 +67,8 @@ export async function GET(request: Request) {
       user: authData.session.user,
     }
 
-    // Base64 인코딩 (Supabase SSR 형식)
-    const sessionPayload = btoa(JSON.stringify(sessionData))
+    // Base64 인코딩 (Supabase SSR 형식 - "base64-" 접두사 필요)
+    const sessionPayload = 'base64-' + btoa(JSON.stringify(sessionData))
 
     const THIRTY_DAYS = 60 * 60 * 24 * 30
     const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : ''

@@ -40,6 +40,13 @@ interface PlannerFeedback {
   updated_at: string
 }
 
+interface Subject {
+  id: string
+  name: string
+  color?: string
+  order?: number
+}
+
 interface SleepStats {
   count: number
   total_minutes: number
@@ -87,10 +94,11 @@ export function StudentPlannerModal({
       const supabase = createClient()
       const today = getTodayDate()
 
-      // 플래너, 피드백, 잠자기/외출 기록을 병렬로 조회
-      const [plannerRes, feedbackRes, sleepRes, outingRes] = await Promise.all([
+      // 플래너, 피드백, 잠자기/외출 기록, subjects를 병렬로 조회
+      const [plannerRes, feedbackRes, subjectsRes, sleepRes, outingRes] = await Promise.all([
         fetch(`/api/daily-planners?studentId=${studentId}&date=${today}&service=1&orgId=${orgId}`),
         fetch(`/api/planner-feedback?studentId=${studentId}&service=1&orgId=${orgId}`),
+        fetch(`/api/subjects?studentId=${studentId}&service=1&orgId=${orgId}`),
         supabase
           .from('sleep_records')
           .select('*')
@@ -104,10 +112,53 @@ export function StudentPlannerModal({
       ])
 
       console.log('[StudentPlannerModal] Planner API response status:', plannerRes.status)
+
+      // subjects 데이터 가져오기
+      let subjects: Subject[] = []
+      if (subjectsRes.ok) {
+        const subjectsData = await subjectsRes.json() as { subjects?: Subject[] }
+        subjects = subjectsData.subjects || []
+        console.log('[StudentPlannerModal] Subjects data:', subjects)
+      }
+
       if (plannerRes.ok) {
         const plannerData = await plannerRes.json() as { planner?: DailyPlanner }
         console.log('[StudentPlannerModal] Planner data:', plannerData)
-        setPlanner(plannerData.planner || null)
+
+        // planner.study_plans와 subjects를 merge (livescreen과 동일한 로직)
+        const dbPlans = plannerData.planner?.study_plans || []
+        const existingSubjectIds = new Set(dbPlans.map(p => p.subject_id).filter(Boolean))
+        const existingPlanIds = new Set(dbPlans.map(p => p.id))
+
+        const newPlansFromSubjects: StudyPlan[] = subjects
+          .filter(s => !existingSubjectIds.has(s.id) && !existingPlanIds.has(`plan-${s.id}`))
+          .map((subject) => ({
+            id: `plan-${subject.id}`,
+            subject: subject.name,
+            subject_id: subject.id,
+            subject_color: subject.color,
+            description: '',
+            completed: false,
+          }))
+
+        const mergedPlans = [...dbPlans, ...newPlansFromSubjects]
+
+        if (plannerData.planner) {
+          setPlanner({
+            ...plannerData.planner,
+            study_plans: mergedPlans,
+          })
+        } else if (newPlansFromSubjects.length > 0) {
+          // planner가 없지만 subjects가 있으면 임시 planner 생성
+          setPlanner({
+            id: `temp-${Date.now()}`,
+            student_id: studentId,
+            date: today,
+            study_plans: newPlansFromSubjects,
+          })
+        } else {
+          setPlanner(null)
+        }
       }
 
       console.log('[StudentPlannerModal] Feedback API response status:', feedbackRes.status)

@@ -110,13 +110,8 @@ export default function LiveScreenPage({ params }: PageProps) {
   useEffect(() => {
     const fetchStudentInfo = async () => {
       try {
-        // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
-        const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-        const queryParams = process.env.NODE_ENV !== 'production'
-          ? `?service=1&orgId=${demoOrgId}`
-          : `?orgSlug=${institutionname}`
-
-        const response = await fetch(`/api/seat-assignments${queryParams}`, { credentials: 'include' })
+        // 항상 orgSlug 사용 (개발/프로덕션 모두)
+        const response = await fetch(`/api/seat-assignments?orgSlug=${institutionname}`, { credentials: 'include' })
         if (response.ok) {
           const data = await response.json() as { orgId?: string; assignments?: any[] }
           console.log('[LiveScreen] 📦 Seat assignments response:', { orgId: data.orgId, assignmentsCount: data.assignments?.length })
@@ -212,6 +207,7 @@ export default function LiveScreenPage({ params }: PageProps) {
   const [managerCallModalOpen, setManagerCallModalOpen] = useState(false)
   const [fullscreenPromptOpen, setFullscreenPromptOpen] = useState(false)
   const [isIOSDevice, setIsIOSDevice] = useState(false)
+  const [isMobileDevice, setIsMobileDevice] = useState(false)
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
 
   // Ranking data - fetch from DB
@@ -281,15 +277,17 @@ export default function LiveScreenPage({ params }: PageProps) {
     const checkIsIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream
     setIsIOSDevice(checkIsIOS)
 
-    // iOS/iPad면 모달 표시
-    if (checkIsIOS) {
+    // 모든 모바일/태블릿에서 풀스크린 모달 표시
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|Tablet/i.test(navigator.userAgent)
+    setIsMobileDevice(isMobile)
+    if (isMobile) {
       setFullscreenPromptOpen(true)
     }
   }, [])
 
-  // 3초마다 풀스크린 상태 체크해서 모달 표시 (iOS만)
+  // 3초마다 풀스크린 상태 체크해서 모달 표시 (모든 모바일/태블릿)
   useEffect(() => {
-    if (!isIOSDevice) return
+    if (!isMobileDevice) return
 
     const checkFullscreenStatus = () => {
       const isInFullscreen = !!(
@@ -308,7 +306,7 @@ export default function LiveScreenPage({ params }: PageProps) {
     const interval = setInterval(checkFullscreenStatus, 3000)
 
     return () => clearInterval(interval)
-  }, [isIOSDevice])
+  }, [isMobileDevice])
 
   // Check if device is mobile or tablet (not PC)
   const isMobileOrTablet = () => {
@@ -943,6 +941,7 @@ export default function LiveScreenPage({ params }: PageProps) {
             <SubjectTimer
               studentId={studentId || ''}
               orgId={orgId || undefined}
+              orgSlug={institutionname}
               containerRef={containerRef}
               theme={theme}
               onSubjectsChange={setSubjects}
@@ -994,7 +993,7 @@ export default function LiveScreenPage({ params }: PageProps) {
 
         {activeView === 'stats' && (
           <>
-            <StudyStatistics studentId={studentId || ''} />
+            <StudyStatistics studentId={studentId || ''} orgId={orgId || undefined} />
             {/* Spacer for bottom navigation */}
             <div className="h-20" />
           </>

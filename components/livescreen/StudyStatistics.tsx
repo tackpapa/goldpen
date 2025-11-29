@@ -27,6 +27,7 @@ import type { Subject, SubjectStatistics } from '@/lib/types/database'
 
 interface StudyStatisticsProps {
   studentId: string
+  orgId?: string
 }
 
 interface DailyRecord {
@@ -64,7 +65,7 @@ interface Achievement {
   date?: string
 }
 
-export function StudyStatistics({ studentId }: StudyStatisticsProps) {
+export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [todayStats, setTodayStats] = useState<SubjectStatistics[]>([])
   const [yesterdayStats, setYesterdayStats] = useState<SubjectStatistics[]>([])
@@ -84,10 +85,11 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
     if (!studentId) return
 
     const today = new Date().toISOString().split('T')[0]
+    const orgIdParam = orgId ? `&orgId=${orgId}` : ''
 
     // Fetch today's statistics from DB
     try {
-      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${today}`, {
+      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${today}${orgIdParam}`, {
         credentials: 'include',
       })
       if (response.ok) {
@@ -115,7 +117,7 @@ export function StudyStatistics({ studentId }: StudyStatisticsProps) {
     const yesterdayStr = yesterday.toISOString().split('T')[0]
 
     try {
-      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${yesterdayStr}`, {
+      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${yesterdayStr}${orgIdParam}`, {
         credentials: 'include',
       })
       if (response.ok) {

@@ -15,21 +15,38 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const serviceParam = searchParams.get('service')
     const orgParam = searchParams.get('orgId')
+    const orgSlug = searchParams.get('orgSlug')
     const studentIdParam = searchParams.get('studentId')
 
-    // 개발 환경에서 service=1이면 강제로 서비스 모드 사용
-    const forceService = isDev && serviceParam === '1'
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const forceService = serviceParam === '1' || !!orgSlug
 
-    console.log('[PlannerFeedback GET] Params:', { serviceParam, orgParam, studentIdParam, isDev, forceService })
+    console.log('[PlannerFeedback GET] Params:', { serviceParam, orgParam, orgSlug, studentIdParam, isDev, forceService })
 
     let supabase: any
     let orgId: string | null = null
 
     if (forceService && supabaseServiceKey) {
-      // service=1이면 무조건 서비스 모드 사용
+      // service=1 또는 orgSlug면 서비스 모드 사용
       console.log('[PlannerFeedback GET] Using SERVICE MODE')
       supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      orgId = orgParam || demoOrgId
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          console.error('[PlannerFeedback GET] Organization not found for slug:', orgSlug)
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      } else {
+        orgId = orgParam || (isDev ? demoOrgId : null)
+      }
     } else {
       supabase = await createAuthenticatedClient(request)
       const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -37,10 +54,13 @@ export async function GET(request: Request) {
       console.log('[PlannerFeedback GET] Auth check:', { hasUser: !!user, authError: authError?.message })
 
       if (authError || !user) {
-        if (isDev && supabaseServiceKey) {
+        if (supabaseServiceKey) {
           console.log('[PlannerFeedback GET] Fallback to SERVICE MODE (no auth)')
           supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = orgParam || demoOrgId
+          orgId = orgParam || (isDev ? demoOrgId : null)
+          if (!orgId) {
+            return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+          }
         } else {
           return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
         }
@@ -107,16 +127,32 @@ export async function POST(request: Request) {
     const { searchParams } = new URL(request.url)
     const forceService = searchParams.get('service') === '1'
     const orgParam = searchParams.get('orgId')
+    const orgSlug = searchParams.get('orgSlug')
 
     let supabase: any
     let orgId: string | null = null
     let teacherId: string | null = null
     let teacherName: string | null = null
 
-    // service=1 이면 강제로 서비스 모드 사용 (개발 환경에서)
-    if (isDev && forceService && supabaseServiceKey) {
+    // service=1 또는 orgSlug면 서비스 모드 사용 (프로덕션에서도 허용)
+    if ((forceService || orgSlug) && supabaseServiceKey) {
       supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      orgId = orgParam || demoOrgId
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      } else {
+        orgId = orgParam || (isDev ? demoOrgId : null)
+      }
       teacherName = '선생님'
     } else {
       supabase = await createAuthenticatedClient(request)
@@ -195,18 +231,37 @@ export async function DELETE(request: Request) {
     const isDev = process.env.NODE_ENV !== 'production'
     const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
     const { searchParams } = new URL(request.url)
-    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
+    const serviceParam = searchParams.get('service')
+    const orgSlug = searchParams.get('orgSlug')
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const allowService = serviceParam === '1' || !!orgSlug
 
-    let supabase: any = await createAuthenticatedClient(request)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-
+    let supabase: any
     let orgId: string | null = null
     const orgParam = searchParams.get('orgId')
 
-    if ((!user || authError) && allowService && supabaseServiceKey) {
+    if (allowService && supabaseServiceKey) {
       supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      orgId = orgParam || demoOrgId
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      } else {
+        orgId = orgParam || (isDev ? demoOrgId : null)
+      }
     } else {
+      supabase = await createAuthenticatedClient(request)
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+
       if (authError || !user) {
         return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
       }

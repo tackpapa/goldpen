@@ -766,11 +766,8 @@ export default function SeatsPage() {
     const fetchSeatConfigAndAssignments = async () => {
       try {
         // Fetch config and assignments in parallel
-        // 프로덕션: orgSlug 사용, 개발: service=1 + demoOrgId 사용
-        const demoOrgId = process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-        const queryParams = process.env.NODE_ENV !== 'production'
-          ? `?service=1&orgId=${demoOrgId}`
-          : `?orgSlug=${institutionName}`
+        // orgSlug를 사용 (Cloudflare에서 process.env.NODE_ENV 런타임 사용 불가)
+        const queryParams = `?orgSlug=${institutionName}`
         const [configRes, assignmentsRes] = await Promise.all([
           fetch(`/api/seat-config${queryParams}`, { credentials: 'include' }),
           fetch(`/api/seat-assignments${queryParams}`, { credentials: 'include' }),

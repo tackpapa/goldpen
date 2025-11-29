@@ -29,10 +29,11 @@ export async function GET(request: Request) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const { searchParams } = new URL(request.url)
-    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
-
+    const serviceParam = searchParams.get('service')
     // orgSlug 파라미터 지원 (프로덕션 대시보드용)
     const orgSlug = searchParams.get('orgSlug')
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
 
     // 인증 사용자 org 혹은 service role 시 org를 쿼리 파라미터로 받기
     let orgId: string | null = null

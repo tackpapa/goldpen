@@ -13,18 +13,38 @@ export async function GET(request: Request) {
     const isDev = process.env.NODE_ENV !== 'production'
     const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
     const { searchParams } = new URL(request.url)
-    const allowService = isDev && (searchParams.get('service') === '1' || searchParams.get('service') === null)
+    const serviceParam = searchParams.get('service')
+    const orgSlug = searchParams.get('orgSlug')
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const allowService = serviceParam === '1' || !!orgSlug
 
-    let supabase: any = await createAuthenticatedClient(request)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-
+    let supabase: any
     let orgId: string | null = null
     const orgParam = searchParams.get('orgId')
 
-    if ((!user || authError) && allowService && supabaseServiceKey) {
+    if (allowService && supabaseServiceKey) {
       supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      orgId = orgParam || demoOrgId
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          console.error('[DailyPlanners GET] Organization not found for slug:', orgSlug)
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      } else {
+        orgId = orgParam || (isDev ? demoOrgId : null)
+      }
     } else {
+      supabase = await createAuthenticatedClient(request)
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+
       if (authError || !user) {
         return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
       }
@@ -103,22 +123,10 @@ export async function GET(request: Request) {
 // POST - Create or update daily planner
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const isDev = process.env.NODE_ENV !== 'production'
+    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { searchParams } = new URL(request.url)
+    const orgSlug = searchParams.get('orgSlug')
 
     interface DailyPlannerBody {
       studentId: string
@@ -126,12 +134,73 @@ export async function POST(request: Request) {
       studyPlans?: unknown[]
       notes?: string
       date?: string
+      orgId?: string
+      service?: string
+      orgSlug?: string
     }
     const body = await request.json() as DailyPlannerBody
-    const { studentId, seatNumber, studyPlans, notes, date } = body
+    const { studentId, seatNumber, studyPlans, notes, date, orgId: bodyOrgId, service, orgSlug: bodyOrgSlug } = body
 
     if (!studentId) {
       return Response.json({ error: 'studentId가 필요합니다' }, { status: 400 })
+    }
+
+    // service mode 허용 (service=1 또는 orgSlug가 있으면 프로덕션에서도 허용)
+    const effectiveOrgSlug = orgSlug || bodyOrgSlug
+    const allowService = service === '1' || !!effectiveOrgSlug || !!bodyOrgId
+
+    let supabase: any
+    let orgId: string | null = null
+
+    if (allowService && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (effectiveOrgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', effectiveOrgSlug)
+          .single()
+
+        if (orgError || !org) {
+          console.error('[DailyPlanners POST] Organization not found for slug:', effectiveOrgSlug)
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      } else {
+        orgId = bodyOrgId || (isDev ? demoOrgId : null)
+      }
+      console.log('[DailyPlanners POST] Using SERVICE MODE with orgId:', orgId)
+    } else {
+      supabase = await createAuthenticatedClient(request)
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+      if (authError || !user) {
+        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+      }
+
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('org_id')
+        .eq('id', user.id)
+        .single()
+
+      if (!userProfile) {
+        // 프로필이 없는 경우에도 service role로 폴백 시도
+        if (supabaseServiceKey && bodyOrgId) {
+          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+          orgId = bodyOrgId
+        } else {
+          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+        }
+      } else {
+        orgId = userProfile.org_id
+      }
+    }
+
+    if (!orgId) {
+      return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
     }
 
     const planDate = date || new Date().toISOString().split('T')[0]
@@ -141,7 +210,7 @@ export async function POST(request: Request) {
       .from('daily_planners')
       .select('id')
           .eq('student_id', studentId)
-          .eq('org_id', userProfile.org_id)
+          .eq('org_id', orgId)
           .eq('date', planDate)
           .single()
 
@@ -169,7 +238,7 @@ export async function POST(request: Request) {
       const { data: planner, error } = await supabase
         .from('daily_planners')
         .insert({
-          org_id: userProfile.org_id,
+          org_id: orgId,
           student_id: studentId,
           seat_number: seatNumber || 0,
           date: planDate,

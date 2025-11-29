@@ -13,6 +13,7 @@ import type { Theme } from '@/hooks/use-theme'
 interface SubjectTimerProps {
   studentId: string
   orgId?: string
+  orgSlug?: string
   containerRef?: React.RefObject<HTMLDivElement>
   theme?: Theme
   onSubjectsChange?: (subjects: Subject[]) => void
@@ -38,6 +39,7 @@ const DEFAULT_COLORS = [
 export function SubjectTimer({
   studentId,
   orgId,
+  orgSlug,
   containerRef,
   theme = 'color',
   onSubjectsChange,
@@ -231,9 +233,12 @@ export function SubjectTimer({
     if (!newSubjectName.trim()) return
 
     try {
-      // 개발 모드에서 service params 추가
-      const isDev = process.env.NODE_ENV !== 'production'
-      const serviceParams = isDev && orgId ? `?service=1&orgId=${orgId}` : ''
+      // orgSlug가 있으면 프로덕션 모드, 없으면 개발 모드로 service params 추가
+      const serviceParams = orgSlug
+        ? `?orgSlug=${orgSlug}`
+        : orgId
+        ? `?service=1&orgId=${orgId}`
+        : ''
 
       const response = await fetch(`/api/subjects${serviceParams}`, {
         method: 'POST',
@@ -316,9 +321,12 @@ export function SubjectTimer({
 
   const handleDeleteSubject = async (subjectId: string) => {
     try {
-      // 개발 모드에서 service params 추가
-      const isDev = process.env.NODE_ENV !== 'production'
-      const serviceParams = isDev && orgId ? `&service=1&orgId=${orgId}` : ''
+      // orgSlug가 있으면 프로덕션 모드, 없으면 개발 모드로 service params 추가
+      const serviceParams = orgSlug
+        ? `&orgSlug=${orgSlug}`
+        : orgId
+        ? `&service=1&orgId=${orgId}`
+        : ''
 
       const response = await fetch(`/api/subjects?id=${subjectId}${serviceParams}`, {
         method: 'DELETE',
