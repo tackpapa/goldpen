@@ -70,55 +70,98 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  const supabase = createServerClient(
-    supabaseUrl,
-    supabaseKey,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: any) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-        },
-      },
-    }
-  )
+  // 커스텀 sb-auth-token 쿠키 또는 Supabase SSR 표준 쿠키 확인
+  const customAuthToken = request.cookies.get('sb-auth-token')?.value
+  const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1]
+  const standardAuthToken = projectRef ? request.cookies.get(`sb-${projectRef}-auth-token`)?.value : null
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+
+  // 1. 커스텀 sb-auth-token 쿠키가 있으면 파싱 시도
+  if (customAuthToken) {
+    try {
+      const decoded = decodeURIComponent(customAuthToken)
+      const session = JSON.parse(decoded)
+      if (session.access_token) {
+        const supabase = createServerClient(supabaseUrl, supabaseKey, {
+          cookies: { get: () => undefined, set: () => undefined, remove: () => undefined },
+        })
+        const { data } = await supabase.auth.getUser(session.access_token)
+        user = data.user
+      }
+    } catch {
+      // 파싱 실패 시 무시
+    }
+  }
+
+  // 2. 표준 Supabase SSR 쿠키가 있으면 파싱 시도 (Base64 인코딩)
+  if (!user && standardAuthToken) {
+    try {
+      const decoded = atob(standardAuthToken)
+      const session = JSON.parse(decoded)
+      if (session.access_token) {
+        const supabase = createServerClient(supabaseUrl, supabaseKey, {
+          cookies: { get: () => undefined, set: () => undefined, remove: () => undefined },
+        })
+        const { data } = await supabase.auth.getUser(session.access_token)
+        user = data.user
+      }
+    } catch {
+      // 파싱 실패 시 무시
+    }
+  }
+
+  // 3. 표준 Supabase SSR 방식 폴백
+  if (!user) {
+    const supabase = createServerClient(
+      supabaseUrl,
+      supabaseKey,
+      {
+        cookies: {
+          get(name: string) {
+            return request.cookies.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            request.cookies.set({
+              name,
+              value,
+              ...options,
+            })
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
+            response.cookies.set({
+              name,
+              value,
+              ...options,
+            })
+          },
+          remove(name: string, options: any) {
+            request.cookies.set({
+              name,
+              value: '',
+              ...options,
+            })
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
+            response.cookies.set({
+              name,
+              value: '',
+              ...options,
+            })
+          },
+        },
+      }
+    )
+
+    const { data } = await supabase.auth.getUser()
+    user = data.user
+  }
 
   // 인증이 필요한 경로 - [institutionname] 동적 라우팅 지원
   // 패턴: /[institutionname]/(dashboard)/* 형태의 경로 체크
