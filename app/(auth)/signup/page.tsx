@@ -12,8 +12,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Mail } from 'lucide-react'
 
 const signupSchema = z.object({
   org_slug: z.string()
@@ -36,6 +37,8 @@ export default function SignupPage() {
   const router = useRouter()
   const { toast } = useToast()
   const [isLoading, setIsLoading] = useState(false)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [registeredEmail, setRegisteredEmail] = useState('')
 
   const {
     register,
@@ -80,21 +83,9 @@ export default function SignupPage() {
         return
       }
 
-      // 이메일 확인 필요 여부에 따른 메시지
-      if (result.emailConfirmationRequired) {
-        toast({
-          title: '회원가입 완료',
-          description: '입력하신 이메일로 확인 메일을 발송했습니다. 이메일을 확인하여 계정을 활성화해주세요.',
-        })
-      } else {
-        toast({
-          title: '회원가입 성공',
-          description: `${result.org?.name}에 오신 것을 환영합니다!`,
-        })
-      }
-
-      router.push('/login')
-      router.refresh()
+      // 회원가입 성공 - 모달 표시
+      setRegisteredEmail(data.email)
+      setShowSuccessModal(true)
     } catch (error) {
       toast({
         title: '오류 발생',
@@ -106,13 +97,46 @@ export default function SignupPage() {
     }
   }
 
+  const handleModalConfirm = () => {
+    setShowSuccessModal(false)
+    router.push('/login')
+  }
+
   return (
+    <>
+      {/* 이메일 인증 안내 모달 */}
+      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
+              <Mail className="h-6 w-6 text-green-600" />
+            </div>
+            <DialogTitle className="text-center">회원가입 완료</DialogTitle>
+            <DialogDescription className="text-center space-y-2">
+              <p>
+                <strong>{registeredEmail}</strong>로 인증 메일을 발송했습니다.
+              </p>
+              <p>
+                이메일을 확인하여 계정을 활성화해주세요.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="sm:justify-center">
+            <Button onClick={handleModalConfirm} className="w-full sm:w-auto">
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     <Card className="w-full max-w-md">
       <CardHeader className="space-y-1">
         <div className="flex items-center justify-center mb-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <span className="text-2xl font-bold text-primary-foreground">G</span>
-          </div>
+          <img
+            src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+            alt="GoldPen"
+            className="h-12"
+          />
         </div>
         <CardTitle className="text-2xl text-center">회원가입</CardTitle>
         <CardDescription className="text-center">
@@ -123,7 +147,7 @@ export default function SignupPage() {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* 기관 아이디 */}
           <div className="space-y-2">
-            <Label htmlFor="org_slug">기관 아이디</Label>
+            <Label htmlFor="org_slug">기관 아이디 <span className="text-destructive">*</span></Label>
             <Input
               id="org_slug"
               type="text"
@@ -131,6 +155,7 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('org_slug')}
               disabled={isLoading}
+              required
             />
             <p className="text-xs text-blue-600">
               이 항목은 절대 바꿀수 없는 항목입니다, 영어로 적어주세요
@@ -142,7 +167,7 @@ export default function SignupPage() {
 
           {/* 기관명 (지점명) */}
           <div className="space-y-2">
-            <Label htmlFor="org_name">기관명 (지점명)</Label>
+            <Label htmlFor="org_name">기관명 (지점명) <span className="text-destructive">*</span></Label>
             <Input
               id="org_name"
               type="text"
@@ -150,6 +175,7 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('org_name')}
               disabled={isLoading}
+              required
             />
             {errors.org_name && (
               <p className="text-sm text-destructive">{errors.org_name.message}</p>
@@ -158,7 +184,7 @@ export default function SignupPage() {
 
           {/* 원장 이름 */}
           <div className="space-y-2">
-            <Label htmlFor="name">원장 이름</Label>
+            <Label htmlFor="name">원장 이름 <span className="text-destructive">*</span></Label>
             <Input
               id="name"
               type="text"
@@ -166,8 +192,8 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('name')}
               disabled={isLoading}
+              required
             />
-            <p className="text-xs text-muted-foreground">가입 시 등록된 이름입니다</p>
             {errors.name && (
               <p className="text-sm text-destructive">{errors.name.message}</p>
             )}
@@ -175,7 +201,7 @@ export default function SignupPage() {
 
           {/* 전화번호 */}
           <div className="space-y-2">
-            <Label htmlFor="phone">전화번호</Label>
+            <Label htmlFor="phone">전화번호 <span className="text-destructive">*</span></Label>
             <Input
               id="phone"
               type="tel"
@@ -183,6 +209,7 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('phone')}
               disabled={isLoading}
+              required
             />
             {errors.phone && (
               <p className="text-sm text-destructive">{errors.phone.message}</p>
@@ -191,7 +218,7 @@ export default function SignupPage() {
 
           {/* 이메일 */}
           <div className="space-y-2">
-            <Label htmlFor="email">이메일</Label>
+            <Label htmlFor="email">이메일 <span className="text-destructive">*</span></Label>
             <Input
               id="email"
               type="email"
@@ -199,6 +226,7 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('email')}
               disabled={isLoading}
+              required
             />
             {errors.email && (
               <p className="text-sm text-destructive">{errors.email.message}</p>
@@ -207,7 +235,7 @@ export default function SignupPage() {
 
           {/* 비밀번호 */}
           <div className="space-y-2">
-            <Label htmlFor="password">비밀번호</Label>
+            <Label htmlFor="password">비밀번호 <span className="text-destructive">*</span></Label>
             <Input
               id="password"
               type="password"
@@ -215,6 +243,7 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('password')}
               disabled={isLoading}
+              required
             />
             {errors.password && (
               <p className="text-sm text-destructive">{errors.password.message}</p>
@@ -223,7 +252,7 @@ export default function SignupPage() {
 
           {/* 비밀번호 확인 */}
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">비밀번호 확인</Label>
+            <Label htmlFor="confirmPassword">비밀번호 확인 <span className="text-destructive">*</span></Label>
             <Input
               id="confirmPassword"
               type="password"
@@ -231,6 +260,7 @@ export default function SignupPage() {
               className="placeholder:opacity-50"
               {...register('confirmPassword')}
               disabled={isLoading}
+              required
             />
             {errors.confirmPassword && (
               <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
@@ -252,5 +282,6 @@ export default function SignupPage() {
         </div>
       </CardFooter>
     </Card>
+    </>
   )
 }
