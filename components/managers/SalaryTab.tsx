@@ -22,8 +22,9 @@ export function SalaryTab({ manager }: SalaryTabProps) {
   const periodStart = new Date(currentYear, currentMonth, 1)
   const periodEnd = new Date(currentYear, currentMonth + 1, 0)
 
-  // 지급일: 다음달 10일 (예시)
-  const paymentDate = new Date(currentYear, currentMonth + 1, 10)
+  // 지급일: 매니저 설정된 급여일 사용 (기본값: 10일)
+  const paymentDay = manager.payment_day || 10
+  const paymentDate = new Date(currentYear, currentMonth + 1, paymentDay)
 
   const formatDate = (date: Date) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`

@@ -26,6 +26,7 @@ export interface Manager {
   employment_type: 'full_time' | 'part_time' | 'contract'
   salary_type: 'monthly' | 'hourly'
   salary_amount: number
+  payment_day: number | null
   hire_date: string
   notes: string | null
   created_at: string
@@ -80,6 +81,7 @@ export function ManagerDetailModal({
         employment_type: 'full_time',
         salary_type: 'monthly',
         salary_amount: 0,
+        payment_day: 25,
         hire_date: '',
         notes: null,
         created_at: '',
@@ -101,6 +103,7 @@ export function ManagerDetailModal({
         employment_type: updatedManager.employment_type,
         salary_type: updatedManager.salary_type,
         salary_amount: updatedManager.salary_amount,
+        payment_day: updatedManager.payment_day,
         hire_date: updatedManager.hire_date,
         notes: updatedManager.notes,
       }
