@@ -128,6 +128,42 @@ function parseCookies(cookieHeader: string): Record<string, string> {
 }
 
 /**
+ * Supabase 청크 쿠키 조합 함수
+ * Supabase SSR은 큰 토큰을 여러 쿠키로 분할 저장: sb-xxx-auth-token.0, sb-xxx-auth-token.1, ...
+ */
+function combineChunkedCookies(cookies: Record<string, string>, baseName: string): string | null {
+  // 청크가 없으면 기본값 반환
+  if (cookies[baseName]) {
+    return cookies[baseName]
+  }
+
+  // 청크 쿠키 찾기 (baseName.0, baseName.1, ...)
+  const chunks: string[] = []
+  let chunkIndex = 0
+
+  while (true) {
+    const chunkKey = `${baseName}.${chunkIndex}`
+    if (cookies[chunkKey]) {
+      chunks.push(cookies[chunkKey])
+      chunkIndex++
+    } else {
+      break
+    }
+  }
+
+  if (chunks.length > 0) {
+    return chunks.join('')
+  }
+
+  return null
+}
+
+// 빌드 타임에 결정되는 프로덕션 여부 (Cloudflare Workers 런타임 호환)
+const IS_PRODUCTION = process.env.NEXT_PUBLIC_VERCEL_ENV === 'production' ||
+  process.env.CF_PAGES === '1' ||
+  process.env.NEXT_PUBLIC_APP_URL?.includes('goldpen.kr')
+
+/**
  * 인증된 Supabase 클라이언트 생성
  *
  * Request에서 토큰을 추출하고 세션 설정
@@ -136,7 +172,8 @@ export async function createAuthenticatedClient(request: Request) {
   const supabase = createClient()
 
   // 개발 편의: 토큰이 없고 서비스 롤 키가 있으면 서비스 클라이언트로 교체 + 가짜 유저 반환
-  if (!getAuthToken(request) && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NODE_ENV !== 'production') {
+  // 주의: 프로덕션에서는 절대 활성화되지 않음 (IS_PRODUCTION 사용)
+  if (!getAuthToken(request) && process.env.SUPABASE_SERVICE_ROLE_KEY && !IS_PRODUCTION) {
     const adminClient = createSupabaseClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
