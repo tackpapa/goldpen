@@ -7,7 +7,18 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// UUID 형식 검증 함수
+function isValidUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  return uuidRegex.test(str)
+}
+
 export async function GET(request: Request, { params }: { params: { id: string } }) {
+  // ID가 UUID 형식이 아니면 거부 (예: "logs" 같은 예약어 라우트 보호)
+  if (!isValidUUID(params.id)) {
+    return Response.json({ error: '유효하지 않은 ID 형식입니다' }, { status: 400 })
+  }
+
   try {
     const { db, orgId } = await getSupabaseWithOrg(request)
 
@@ -29,6 +40,11 @@ export async function GET(request: Request, { params }: { params: { id: string }
 }
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+  // ID가 UUID 형식이 아니면 거부
+  if (!isValidUUID(params.id)) {
+    return Response.json({ error: '유효하지 않은 ID 형식입니다' }, { status: 400 })
+  }
+
   try {
     const { db, orgId, user, role } = await getSupabaseWithOrg(request)
 
@@ -75,6 +91,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+  // ID가 UUID 형식이 아니면 거부
+  if (!isValidUUID(params.id)) {
+    return Response.json({ error: '유효하지 않은 ID 형식입니다' }, { status: 400 })
+  }
+
   try {
     const { db, orgId, user, role } = await getSupabaseWithOrg(request)
     if (!['owner', 'manager', 'service_role'].includes(role || '')) {
