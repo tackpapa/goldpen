@@ -250,8 +250,9 @@ export default function AttendancePage() {
       offset: (pageToLoad * HISTORY_PAGE_SIZE).toString(),
     })
     params.set('target_date', targetDate)
+    params.set('orgSlug', institutionName)
     const response = await fetch(`/api/attendance?${params.toString()}`, { credentials: 'include' })
-    const logsResponse = await fetch(`/api/attendance/logs?date=${targetDate}`, { credentials: 'include' })
+    const logsResponse = await fetch(`/api/attendance/logs?date=${targetDate}&orgSlug=${institutionName}`, { credentials: 'include' })
     const data = await response.json() as { attendance?: Attendance[]; todayStudents?: TodayStudent[]; weeklyStats?: WeeklyStatItem[]; studentRates?: any[]; selectedDate?: string; error?: string }
     const logsData = logsResponse.ok ? await logsResponse.json() as { logs?: Array<{ student_id: string; check_in_time: string | null; check_out_time: string | null }> } : { logs: [] }
 

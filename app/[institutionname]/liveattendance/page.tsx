@@ -280,7 +280,7 @@ export default function LiveAttendancePage() {
   useEffect(() => {
     const fetchSeatAssignments = async () => {
       try {
-        const response = await fetch('/api/seat-assignments', { credentials: 'include' })
+        const response = await fetch(`/api/seat-assignments?orgSlug=${institutionName}`, { credentials: 'include' })
         if (response.ok) {
           const data = await response.json() as { assignments?: any[] }
           const assignmentsWithCodes = data.assignments?.map((a: any) => ({
@@ -377,7 +377,7 @@ export default function LiveAttendancePage() {
     setAttendanceStatus((prev) => ({ ...prev, [studentId]: optimisticStatus }))
 
     try {
-      const response = await fetch('/api/attendance/logs', {
+      const response = await fetch(`/api/attendance/logs?orgSlug=${institutionName}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

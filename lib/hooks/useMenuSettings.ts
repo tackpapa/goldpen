@@ -70,7 +70,10 @@ export function useMenuSettings(options: UseMenuSettingsOptions = {}) {
     menuOrder: string[]
   ): Promise<boolean> => {
     try {
-      const res = await fetch('/api/settings/menu-settings', {
+      const params = new URLSearchParams()
+      if (options.orgSlug) params.set('orgSlug', options.orgSlug)
+
+      const res = await fetch(`/api/settings/menu-settings?${params}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

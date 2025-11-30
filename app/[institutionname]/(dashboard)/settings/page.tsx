@@ -119,7 +119,7 @@ export default function SettingsPage() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch('/api/settings', { credentials: 'include' })
+        const response = await fetch(`/api/settings?orgSlug=${slug}`, { credentials: 'include' })
         const data = await response.json() as {
           organization?: Organization
           branches?: Branch[]
@@ -449,7 +449,7 @@ export default function SettingsPage() {
       const form = new FormData()
       form.append('file', file)
       try {
-        const res = await fetch('/api/settings/logo', {
+        const res = await fetch(`/api/settings/logo?orgSlug=${slug}`, {
           method: 'POST',
           credentials: 'include',
           body: form,
@@ -583,7 +583,7 @@ export default function SettingsPage() {
       return
     }
     try {
-      const res = await fetch(`/api/rooms`, {
+      const res = await fetch(`/api/rooms?orgSlug=${slug}`, {
         method: editingRoom ? 'PATCH' : 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -612,7 +612,7 @@ export default function SettingsPage() {
     const room = rooms.find(r => r.id === roomId)
     if (!confirm(`${room?.name} 교실을 삭제하시겠습니까?`)) return
     try {
-      const res = await fetch(`/api/rooms`, {
+      const res = await fetch(`/api/rooms?orgSlug=${slug}`, {
         method: 'DELETE',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },

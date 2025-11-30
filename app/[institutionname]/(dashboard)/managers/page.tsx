@@ -80,6 +80,7 @@ interface Manager {
   employment_type: 'full_time' | 'part_time' | 'contract'
   salary_type: 'monthly' | 'hourly'
   salary_amount: number
+  payment_day: number | null
   hire_date: string
   notes: string | null
   created_at: string
