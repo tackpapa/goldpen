@@ -1645,7 +1645,7 @@ export default function SeatsPage() {
     }))
 
     try {
-      const response = await fetch('/api/seat-assignments', {
+      const response = await fetch(`/api/seat-assignments?orgSlug=${institutionName}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
