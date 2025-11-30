@@ -105,6 +105,30 @@ export async function POST(request: Request) {
       return Response.json({ error: '사용자 정보 저장 실패' }, { status: 500 })
     }
 
+    // 강사인 경우 teachers 테이블에도 추가
+    if (invitation.role === 'teacher') {
+      const { error: teacherError } = await supabase
+        .from('teachers')
+        .insert({
+          org_id: invitation.org_id,
+          user_id: authData.user.id,
+          name,
+          email: invitation.email,
+          phone: '',
+          subjects: [],
+          status: 'active',
+          employment_type: 'full_time',
+          salary_type: 'monthly',
+          salary_amount: 0,
+          hire_date: new Date().toISOString().split('T')[0],
+        })
+
+      if (teacherError) {
+        console.error('[Invitation Accept] Teacher Insert Error:', teacherError)
+        // 경고만 기록 - 사용자는 이미 생성됨, 나중에 강사 관리에서 수동 추가 가능
+      }
+    }
+
     // 초대 상태 업데이트
     const { error: updateError } = await supabase
       .from('invitations')
