@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Play, Pause, Plus, Trash2, Edit2 } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
 import type { Subject, StudySession, SubjectStatistics } from '@/lib/types/database'
 import type { Theme } from '@/hooks/use-theme'
 
@@ -49,6 +50,8 @@ export function SubjectTimer({
   dataLoaded: parentDataLoaded,
   onStatisticsChange,
 }: SubjectTimerProps) {
+  const { toast } = useToast()
+
   // State - use initial values from props if provided
   const [subjects, setSubjects] = useState<Subject[]>(initialSubjects || [])
   const [activeSession, setActiveSession] = useState<StudySession | null>(null)
@@ -230,7 +233,15 @@ export function SubjectTimer({
   }
 
   const handleAddSubject = async () => {
-    if (!newSubjectName.trim()) return
+    if (!newSubjectName.trim()) {
+      toast({ title: '과목명을 입력해주세요', variant: 'destructive' })
+      return
+    }
+
+    if (!studentId) {
+      toast({ title: '학생 정보가 없습니다', description: '좌석 배정을 확인해주세요', variant: 'destructive' })
+      return
+    }
 
     try {
       // orgSlug가 있으면 프로덕션 모드, 없으면 개발 모드로 service params 추가
@@ -239,6 +250,8 @@ export function SubjectTimer({
         : orgId
         ? `?service=1&orgId=${orgId}`
         : ''
+
+      console.log('[SubjectTimer] Adding subject:', { studentId, name: newSubjectName.trim(), serviceParams })
 
       const response = await fetch(`/api/subjects${serviceParams}`, {
         method: 'POST',
@@ -254,15 +267,23 @@ export function SubjectTimer({
 
       if (response.ok) {
         const data = await response.json() as { subject: Subject }
-        setSubjects([...subjects, data.subject])
+        console.log('[SubjectTimer] Subject added successfully:', data.subject)
+        setSubjects(prev => [...prev, data.subject])
+        toast({ title: '과목이 추가되었습니다' })
+
+        // 성공 시에만 모달 닫기 및 상태 초기화
+        setNewSubjectName('')
+        setSelectedColor(DEFAULT_COLORS[0])
+        setIsAddModalOpen(false)
+      } else {
+        const errorData = await response.json() as { error?: string }
+        console.error('[SubjectTimer] API Error:', errorData)
+        toast({ title: '과목 추가 실패', description: errorData.error || '다시 시도해주세요', variant: 'destructive' })
       }
     } catch (error) {
-      console.error('Failed to add subject:', error)
+      console.error('[SubjectTimer] Failed to add subject:', error)
+      toast({ title: '과목 추가 실패', description: '네트워크 오류가 발생했습니다', variant: 'destructive' })
     }
-
-    setNewSubjectName('')
-    setSelectedColor(DEFAULT_COLORS[0])
-    setIsAddModalOpen(false)
 
     // 풀스크린 모드였다면 다시 진입 (사용자 제스처 컨텍스트 유지)
     if (wasFullscreen && containerRef?.current) {

@@ -28,6 +28,7 @@ import type { Subject, SubjectStatistics } from '@/lib/types/database'
 interface StudyStatisticsProps {
   studentId: string
   orgId?: string
+  orgSlug?: string
 }
 
 interface DailyRecord {
@@ -65,7 +66,7 @@ interface Achievement {
   date?: string
 }
 
-export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
+export function StudyStatistics({ studentId, orgId, orgSlug }: StudyStatisticsProps) {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [todayStats, setTodayStats] = useState<SubjectStatistics[]>([])
   const [yesterdayStats, setYesterdayStats] = useState<SubjectStatistics[]>([])
@@ -84,135 +85,115 @@ export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
   const loadData = async () => {
     if (!studentId) return
 
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Date()
+    const todayStr = today.toISOString().split('T')[0]
     const orgIdParam = orgId ? `&orgId=${orgId}` : ''
+    const orgSlugParam = orgSlug ? `&orgSlug=${orgSlug}` : ''
 
-    // Fetch today's statistics from DB
+    // 30일 전 날짜 계산
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 29)
+    const startDateStr = thirtyDaysAgo.toISOString().split('T')[0]
+
+    // DB에서 30일 데이터 한 번에 가져오기
+    let allStats: any[] = []
     try {
-      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${today}${orgIdParam}`, {
-        credentials: 'include',
-      })
+      const response = await fetch(
+        `/api/daily-study-stats?studentId=${studentId}&startDate=${startDateStr}&endDate=${todayStr}${orgIdParam}${orgSlugParam}`,
+        { credentials: 'include' }
+      )
       if (response.ok) {
-        const data = await response.json() as { stats?: SubjectStatistics[] }
-        const stats = data.stats || []
-        setTodayStats(stats)
-        const total = stats.reduce((sum: number, stat: any) => sum + stat.total_seconds, 0)
-        setTotalSeconds(total)
+        const data = await response.json() as { stats?: any[] }
+        allStats = data.stats || []
       }
     } catch (error) {
-      console.error('Failed to fetch today stats:', error)
-      // Fallback to localStorage
-      const savedStats = localStorage.getItem(`subject-stats-${studentId}-${today}`)
-      if (savedStats) {
-        const stats = JSON.parse(savedStats)
-        setTodayStats(stats)
-        const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-        setTotalSeconds(total)
-      }
+      console.error('Failed to fetch stats from DB:', error)
     }
 
-    // Fetch yesterday's statistics
+    // 날짜별로 데이터 그룹화
+    const statsByDate: { [date: string]: any[] } = {}
+    allStats.forEach(stat => {
+      const date = stat.date
+      if (!statsByDate[date]) {
+        statsByDate[date] = []
+      }
+      statsByDate[date].push(stat)
+    })
+
+    // 오늘 통계 설정
+    const todayStatsList = statsByDate[todayStr] || []
+    setTodayStats(todayStatsList)
+    const todayTotal = todayStatsList.reduce((sum: number, stat: any) => sum + (stat.total_seconds || 0), 0)
+    setTotalSeconds(todayTotal)
+
+    // 어제 통계 설정
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
     const yesterdayStr = yesterday.toISOString().split('T')[0]
+    const yesterdayStatsList = statsByDate[yesterdayStr] || []
+    setYesterdayStats(yesterdayStatsList)
+    const yesterdayTotalCalc = yesterdayStatsList.reduce((sum: number, stat: any) => sum + (stat.total_seconds || 0), 0)
+    setYesterdayTotal(yesterdayTotalCalc)
 
-    try {
-      const response = await fetch(`/api/daily-study-stats?studentId=${studentId}&date=${yesterdayStr}${orgIdParam}`, {
-        credentials: 'include',
-      })
-      if (response.ok) {
-        const data = await response.json() as { stats?: SubjectStatistics[] }
-        const stats = data.stats || []
-        setYesterdayStats(stats)
-        const total = stats.reduce((sum: number, stat: any) => sum + stat.total_seconds, 0)
-        setYesterdayTotal(total)
-      }
-    } catch (error) {
-      console.error('Failed to fetch yesterday stats:', error)
-    }
-
-    // Load weekly data (last 7 days) - keep localStorage for now as fallback
+    // 주간 데이터 (최근 7일)
     const weekData: DailyRecord[] = []
     for (let i = 6; i >= 0; i--) {
       const date = new Date()
       date.setDate(date.getDate() - i)
       const dateStr = date.toISOString().split('T')[0]
-
-      const dayStats = localStorage.getItem(`subject-stats-${studentId}-${dateStr}`)
-      if (dayStats) {
-        const stats = JSON.parse(dayStats)
-        const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-        weekData.push({
-          date: dateStr,
-          totalSeconds: total,
-          subjects: stats
-        })
-      } else {
-        weekData.push({
-          date: dateStr,
-          totalSeconds: 0,
-          subjects: []
-        })
-      }
+      const dayStats = statsByDate[dateStr] || []
+      const total = dayStats.reduce((sum: number, stat: any) => sum + (stat.total_seconds || 0), 0)
+      weekData.push({
+        date: dateStr,
+        totalSeconds: total,
+        subjects: dayStats
+      })
     }
     setWeeklyData(weekData)
 
-    // Load monthly data (last 30 days) for averages
+    // 월간 데이터 (30일) + 최고 기록 계산
     const monthData: DailyRecord[] = []
     let maxDaily = 0
     for (let i = 29; i >= 0; i--) {
       const date = new Date()
       date.setDate(date.getDate() - i)
       const dateStr = date.toISOString().split('T')[0]
-
-      const dayStats = localStorage.getItem(`subject-stats-${studentId}-${dateStr}`)
-      if (dayStats) {
-        const stats = JSON.parse(dayStats)
-        const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-        maxDaily = Math.max(maxDaily, total)
-        monthData.push({
-          date: dateStr,
-          totalSeconds: total,
-          subjects: stats
-        })
-      } else {
-        monthData.push({
-          date: dateStr,
-          totalSeconds: 0,
-          subjects: []
-        })
-      }
+      const dayStats = statsByDate[dateStr] || []
+      const total = dayStats.reduce((sum: number, stat: any) => sum + (stat.total_seconds || 0), 0)
+      maxDaily = Math.max(maxDaily, total)
+      monthData.push({
+        date: dateStr,
+        totalSeconds: total,
+        subjects: dayStats
+      })
     }
     setMonthlyData(monthData)
     setPersonalBest(maxDaily)
 
-    // Calculate streak
-    calculateStreak()
+    // 연속 학습일 계산 (DB 데이터 기반)
+    calculateStreakFromData(monthData)
   }
 
-  const calculateStreak = () => {
+  // DB 데이터 기반 연속 학습일 계산
+  const calculateStreakFromData = (monthData: DailyRecord[]) => {
     let currentStreak = 0
     let maxStreakCount = 0
     let tempStreak = 0
 
-    for (let i = 0; i < 30; i++) {
-      const date = new Date()
-      date.setDate(date.getDate() - i)
-      const dateStr = date.toISOString().split('T')[0]
+    // 최신 날짜부터 역순으로 확인
+    const reversedData = [...monthData].reverse()
 
-      const dayStats = localStorage.getItem(`subject-stats-${studentId}-${dateStr}`)
-      if (dayStats) {
-        const stats = JSON.parse(dayStats)
-        const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-
-        if (total > 0) {
-          tempStreak++
-          if (i === 0) currentStreak = tempStreak
-          maxStreakCount = Math.max(maxStreakCount, tempStreak)
-        } else {
-          tempStreak = 0
-        }
+    for (let i = 0; i < reversedData.length; i++) {
+      const dayData = reversedData[i]
+      if (dayData.totalSeconds > 0) {
+        tempStreak++
+        if (i === 0) currentStreak = tempStreak
+        maxStreakCount = Math.max(maxStreakCount, tempStreak)
       } else {
+        if (i === 0) {
+          // 오늘 공부 안 했으면 어제부터 확인
+          currentStreak = 0
+        }
         tempStreak = 0
       }
     }
@@ -220,6 +201,7 @@ export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
     setStreak(currentStreak)
     setMaxStreak(maxStreakCount)
   }
+
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600)
@@ -245,18 +227,16 @@ export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
   }
 
   const getWeeklyComparison = (): WeeklyComparison => {
+    // 이번 주 (최근 7일)
     const thisWeekSeconds = weeklyData.reduce((sum, day) => sum + day.totalSeconds, 0)
 
-    // Get last week data
+    // 지난 주 (monthlyData에서 7~13일 전 데이터 사용)
+    // monthlyData는 30일간의 데이터 (인덱스 0이 29일 전, 인덱스 29가 오늘)
     let lastWeekSeconds = 0
-    for (let i = 7; i < 14; i++) {
-      const date = new Date()
-      date.setDate(date.getDate() - i)
-      const dateStr = date.toISOString().split('T')[0]
-      const dayStats = localStorage.getItem(`subject-stats-${studentId}-${dateStr}`)
-      if (dayStats) {
-        const stats = JSON.parse(dayStats)
-        lastWeekSeconds += stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
+    // 지난 주 = 7일 전 ~ 13일 전 (monthlyData 인덱스: 16~22)
+    for (let i = 16; i <= 22; i++) {
+      if (monthlyData[i]) {
+        lastWeekSeconds += monthlyData[i].totalSeconds
       }
     }
 
@@ -284,13 +264,22 @@ export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
   }
 
   const getTimeSlotData = (): TimeSlotData[] => {
-    // 오전 (00:00~12:00), 오후 (12:01~18:00), 밤 (18:01~24:00)
-    // TODO: Replace with actual session data from DB
-    const mockDistribution = [0.35, 0.40, 0.25]
+    // DB의 morning_seconds, afternoon_seconds, night_seconds 컬럼 사용
+    let morningTotal = 0
+    let afternoonTotal = 0
+    let nightTotal = 0
+
+    // 오늘 통계에서 시간대별 합계 계산
+    todayStats.forEach((stat: any) => {
+      morningTotal += stat.morning_seconds || 0
+      afternoonTotal += stat.afternoon_seconds || 0
+      nightTotal += stat.night_seconds || 0
+    })
+
     return [
-      { slot: '00-12', label: '오전', totalSeconds: totalSeconds * mockDistribution[0], icon: Sun },
-      { slot: '12-18', label: '오후', totalSeconds: totalSeconds * mockDistribution[1], icon: Coffee },
-      { slot: '18-24', label: '밤', totalSeconds: totalSeconds * mockDistribution[2], icon: Moon },
+      { slot: '00-12', label: '오전', totalSeconds: morningTotal, icon: Sun },
+      { slot: '12-18', label: '오후', totalSeconds: afternoonTotal, icon: Coffee },
+      { slot: '18-24', label: '밤', totalSeconds: nightTotal, icon: Moon },
     ]
   }
 
@@ -305,23 +294,15 @@ export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
       '일': { seconds: 0, count: 0 }
     }
 
-    // Collect last 4 weeks of data
-    for (let i = 0; i < 28; i++) {
-      const date = new Date()
-      date.setDate(date.getDate() - i)
-      const dateStr = date.toISOString().split('T')[0]
-      const dayName = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]
-
-      const dayStats = localStorage.getItem(`subject-stats-${studentId}-${dateStr}`)
-      if (dayStats) {
-        const stats = JSON.parse(dayStats)
-        const total = stats.reduce((sum: number, stat: SubjectStatistics) => sum + stat.total_seconds, 0)
-        if (total > 0) {
-          dayMap[dayName].seconds += total
-          dayMap[dayName].count += 1
-        }
+    // monthlyData (30일) 기반으로 요일별 평균 계산
+    monthlyData.forEach((dayData) => {
+      if (dayData.date && dayData.totalSeconds > 0) {
+        const date = new Date(dayData.date)
+        const dayName = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()]
+        dayMap[dayName].seconds += dayData.totalSeconds
+        dayMap[dayName].count += 1
       }
-    }
+    })
 
     return Object.entries(dayMap).map(([day, data]) => ({
       day,
@@ -406,7 +387,7 @@ export function StudyStatistics({ studentId, orgId }: StudyStatisticsProps) {
   const yesterdayChangePercent = yesterdayTotal > 0 ? ((yesterdayChange / yesterdayTotal) * 100) : 0
 
   return (
-    <div className="space-y-4 pb-8">
+    <div className="space-y-4 pb-24">
       {/* Hero 카드 - 오늘 통계 + 핵심 지표 */}
       <Card className="bg-gradient-to-br from-orange-400 via-pink-500 to-purple-600 border-0 overflow-hidden relative">
         <CardContent className="p-5">

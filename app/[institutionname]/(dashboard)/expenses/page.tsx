@@ -45,7 +45,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import type { MonthlyExpenseSummary, ExpenseCategory, ExpenseRecord } from '@/lib/types/database'
-import { expenseCategoryManager } from '@/lib/utils/expense-categories'
+import { useExpenseCategories } from '@/lib/hooks/useExpenseCategories'
 import {
   Dialog,
   DialogContent,
@@ -67,7 +67,6 @@ const { toast } = useToast()
     '#2563eb', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#14b8a6', '#a855f7', '#64748b'
   ]
   const [selectedPeriod, setSelectedPeriod] = useState('6months')
-  const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([])
   const [expenseRecords, setExpenseRecords] = useState<ExpenseRecord[]>([])
   const [monthlyExpenses, setMonthlyExpenses] = useState<MonthlyExpenseSummary[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -79,6 +78,9 @@ const { toast } = useToast()
   const slug = typeof window !== 'undefined'
     ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
     : 'goldpen'
+
+  // useExpenseCategories 훅 사용
+  const { categories: expenseCategories, refetch: refreshExpenseCategories, loading: categoriesLoading } = useExpenseCategories({ orgSlug: slug })
 
   // Expense creation dialog state
   const [isExpenseDialogOpen, setIsExpenseDialogOpen] = useState(false)
@@ -93,24 +95,6 @@ const { toast } = useToast()
   })
 
   useEffect(() => {
-    // Load expense categories: 우선 로컬, 이어서 서버 최신 값으로 덮어쓰기
-    setExpenseCategories(expenseCategoryManager.getCategories())
-
-    const loadCategories = async () => {
-      try {
-        const res = await fetch(`/api/settings/expense-categories?slug=${slug}`, { credentials: 'include' })
-        const data = await res.json() as { categories?: ExpenseCategory[] }
-        if (res.ok && data.categories) {
-          expenseCategoryManager.setCategories(data.categories)
-          setExpenseCategories(expenseCategoryManager.getCategories())
-        }
-      } catch (_) {
-        // 네트워크 실패 시 로컬 값 유지
-        setExpenseCategories(expenseCategoryManager.getCategories())
-      }
-    }
-    loadCategories()
-
     // Fetch expenses from API
     const fetchExpenses = async () => {
       setIsLoading(true)
@@ -145,16 +129,6 @@ const { toast } = useToast()
     fetchExpenses()
   }, [toast])
 
-  const refreshExpenseCategories = async () => {
-    try {
-      const res = await fetch(`/api/settings/expense-categories?slug=${slug}`, { credentials: 'include' })
-      const data = await res.json() as { categories?: ExpenseCategory[] }
-      if (res.ok && data.categories) {
-        expenseCategoryManager.setCategories(data.categories)
-        setExpenseCategories(expenseCategoryManager.getCategories())
-      }
-    } catch (_) {}
-  }
 
   // Computed values from monthlyExpenses
   const latestMonth = monthlyExpenses[monthlyExpenses.length - 1] || {

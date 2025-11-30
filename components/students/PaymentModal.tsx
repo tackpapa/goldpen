@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
-import { revenueCategoryManager } from '@/lib/utils/revenue-categories'
+import { useRevenueCategories } from '@/lib/hooks/useRevenueCategories'
 import { CreditCard, Clock, Calendar as CalendarIcon, Loader2 } from 'lucide-react'
 
 interface PaymentModalProps {
@@ -43,7 +43,8 @@ export function PaymentModal({
     ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
     : 'goldpen'
 
-  const [revenueCategories, setRevenueCategories] = useState(revenueCategoryManager.getActiveCategories())
+  const { getActiveCategories, loading: categoriesLoading } = useRevenueCategories({ orgSlug: slug })
+  const revenueCategories = getActiveCategories()
 
   // Payment form state
   const [amount, setAmount] = useState('')
@@ -60,25 +61,6 @@ export function PaymentModal({
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const refreshRevenueCategories = async () => {
-    try {
-      const res = await fetch(`/api/settings/revenue-categories?slug=${slug}`, { credentials: 'include' })
-      const data = await res.json() as { categories?: any[] }
-      if (res.ok && data.categories) {
-        revenueCategoryManager.setCategories(data.categories)
-        setRevenueCategories(revenueCategoryManager.getActiveCategories())
-      }
-    } catch (_) {
-      setRevenueCategories(revenueCategoryManager.getActiveCategories())
-    }
-  }
-
-  useEffect(() => {
-    if (open) {
-      refreshRevenueCategories()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
 
   // 모달이 닫힐 때 폼 초기화
   useEffect(() => {
@@ -127,7 +109,7 @@ export function PaymentModal({
       return
     }
 
-    const category = revenueCategoryManager.getCategoryById(categoryId)
+    const category = revenueCategories.find(c => c.id === categoryId)
     if (!category) return
 
     setSubmitting(true)

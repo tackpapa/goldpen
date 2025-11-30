@@ -8,7 +8,7 @@ export interface User {
   id: string
   email: string
   name: string
-  role: 'super_admin' | 'owner' | 'manager' | 'teacher' | 'staff' | 'student' | 'parent'
+  role: 'super_admin' | 'owner' | 'manager' | 'teacher' | 'student' | 'parent'
 }
 
 export interface Organization {
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
       const { data: sessionData } = await supabase.auth.getSession()
-      const bearer = sessionData.session?.access_token || accessToken || undefined
+      const bearer = sessionData.session?.access_token || undefined
 
       const response = await fetch('/api/auth/me', {
         method: 'GET',
@@ -59,21 +59,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json() as { user?: User | null; org?: Organization | null }
-        setUser(data.user || null)
-        setOrg(data.org || null)
-        if (data.user && sessionData.session?.access_token) {
-          setAccessToken(sessionData.session.access_token)
+        console.log('[Auth] API response:', data)
+        if (data.user) {
+          setUser(data.user)
+          setOrg(data.org || null)
+          if (sessionData.session?.access_token) {
+            setAccessToken(sessionData.session.access_token)
+          }
         } else {
+          setUser(null)
+          setOrg(null)
           setAccessToken(null)
         }
+      } else {
+        console.error('[Auth] API error:', response.status)
+        setUser(null)
+        setOrg(null)
+        setAccessToken(null)
       }
     } catch (error) {
-      // 네트워크 에러만 로그 출력
+      console.error('[Auth] Network error:', error)
       setUser(null)
       setOrg(null)
       setAccessToken(null)
     }
-  }, [accessToken])
+  }, []) // accessToken 의존성 제거 - 무한 루프 방지
 
   // 초기 세션 확인
   useEffect(() => {

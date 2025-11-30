@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { permissionManager } from '@/lib/utils/permissions'
+import { usePagePermissions } from '@/lib/hooks/usePagePermissions'
+import { useAuth } from '@/contexts/auth-context'
 import type { PageId } from '@/lib/types/permissions'
 import { ShieldCheck } from 'lucide-react'
 
@@ -12,38 +13,40 @@ interface PagePermissionsProps {
 }
 
 export function PagePermissions({ pageId }: PagePermissionsProps) {
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const { user, isLoading: authLoading } = useAuth()
   const [staffAccess, setStaffAccess] = useState(false)
   const [teacherAccess, setTeacherAccess] = useState(false)
 
-  useEffect(() => {
-    // 현재 로그인한 사용자 역할 확인
-    const role = localStorage.getItem('userRole')
-    setUserRole(role)
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
 
-    // 관리자만 권한 설정 가능
-    if (role === 'admin') {
-      const permissions = permissionManager.getPermissions()
+  const { permissions, updatePermission, loading } = usePagePermissions({ orgSlug: slug })
+
+  // 권한 데이터가 로드되면 상태 업데이트
+  useEffect(() => {
+    if (!loading) {
       const pagePermission = permissions[pageId]
       if (pagePermission) {
         setStaffAccess(pagePermission.staff)
         setTeacherAccess(pagePermission.teacher)
       }
     }
-  }, [pageId])
+  }, [permissions, pageId, loading])
 
-  const handleStaffChange = (checked: boolean) => {
+  const handleManagerChange = async (checked: boolean) => {
     setStaffAccess(checked)
-    permissionManager.updatePagePermission(pageId, 'staff', checked)
+    await updatePermission(pageId, 'manager', checked)
   }
 
-  const handleTeacherChange = (checked: boolean) => {
+  const handleTeacherChange = async (checked: boolean) => {
     setTeacherAccess(checked)
-    permissionManager.updatePagePermission(pageId, 'teacher', checked)
+    await updatePermission(pageId, 'teacher', checked)
   }
 
-  // 관리자만 권한 설정 UI 표시
-  if (userRole !== 'admin') {
+  // 로딩 중이거나 관리자가 아니면 권한 설정 UI 숨김
+  const isAdmin = user?.role && ['owner', 'manager', 'super_admin'].includes(user.role)
+  if (authLoading || !isAdmin) {
     return null
   }
 

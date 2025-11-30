@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { GRADE_ENUM_VALUES } from '@/lib/constants/grades'
 
 /**
  * 학생 생성 스키마 (API용)
@@ -39,7 +40,7 @@ export const StudentSchema = z.object({
   email: z.string().email('올바른 이메일 형식이 아닙니다').optional().or(z.literal('')),
   phone: z.string().optional(),
   school: z.string().min(1, '학교를 입력해주세요'),
-  grade: z.enum(['초1','초2','초3','초4','초5','초6','중1', '중2', '중3', '고1', '고2', '고3', '재수'], {
+  grade: z.enum(GRADE_ENUM_VALUES, {
     errorMap: () => ({ message: '학년을 선택해주세요' })
   }),
   parent_name: z.string().min(1, '학부모 이름을 입력해주세요'),

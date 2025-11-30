@@ -66,7 +66,10 @@ export async function GET(request: Request) {
     }
 
     const studentId = searchParams.get('studentId')
-    const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
+    const date = searchParams.get('date')
+    // 날짜 범위 조회 지원 (주간/월간 통계용)
+    const startDate = searchParams.get('startDate')
+    const endDate = searchParams.get('endDate')
 
     if (!studentId) {
       return Response.json({ error: 'studentId가 필요합니다' }, { status: 400 })
@@ -76,12 +79,27 @@ export async function GET(request: Request) {
       return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
     }
 
-    const { data: stats, error } = await supabase
+    let query = supabase
       .from('daily_study_stats')
       .select('*')
       .eq('student_id', studentId)
       .eq('org_id', orgId)
-      .eq('date', date)
+
+    // 날짜 범위 조회 (startDate, endDate 둘 다 있을 때)
+    if (startDate && endDate) {
+      query = query.gte('date', startDate).lte('date', endDate)
+    } else if (date) {
+      // 단일 날짜 조회
+      query = query.eq('date', date)
+    } else {
+      // 기본값: 오늘 날짜
+      query = query.eq('date', new Date().toISOString().split('T')[0])
+    }
+
+    // 날짜순 정렬
+    query = query.order('date', { ascending: true })
+
+    const { data: stats, error } = await query
 
     if (error) {
       console.error('[DailyStudyStats GET] Error:', error)

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/select'
 import { Building2, GraduationCap, BookOpen, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { GRADE_OPTIONS } from '@/lib/constants/grades'
 
 interface Branch {
   id: string
@@ -56,25 +57,7 @@ const parseCampuses = (notes?: string) => {
     .filter(Boolean)
 }
 
-// Grade options (StudentSchema와 동일)
-const GRADE_OPTIONS = [
-  { value: '초1', label: '초1' },
-  { value: '초2', label: '초2' },
-  { value: '초3', label: '초3' },
-  { value: '초4', label: '초4' },
-  { value: '초5', label: '초5' },
-  { value: '초6', label: '초6' },
-  { value: '중1', label: '중1' },
-  { value: '중2', label: '중2' },
-  { value: '중3', label: '중3' },
-  { value: '고1', label: '고1' },
-  { value: '고2', label: '고2' },
-  { value: '고3', label: '고3' },
-  { value: '재수', label: '재수' },
-  { value: '삼수', label: '삼수' },
-  { value: '사수', label: '사수' },
-  { value: 'N수', label: 'N수' },
-]
+// GRADE_OPTIONS는 @/lib/constants/grades에서 import
 
 export function BasicInfoTab({
   student,

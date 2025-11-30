@@ -43,6 +43,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { Consultation } from '@/lib/types/database'
 import { format } from 'date-fns'
+import { GRADE_OPTIONS } from '@/lib/constants/grades'
+import { createClient } from '@/lib/supabase/client'
 
 // Waitlist type
 interface Waitlist {
@@ -58,25 +60,7 @@ interface Branch {
   status: 'active' | 'inactive'
 }
 
-// Grade options (학생 등록 모달과 동일)
-const gradeOptions = [
-  { value: '초1', label: '초1' },
-  { value: '초2', label: '초2' },
-  { value: '초3', label: '초3' },
-  { value: '초4', label: '초4' },
-  { value: '초5', label: '초5' },
-  { value: '초6', label: '초6' },
-  { value: '중1', label: '중1' },
-  { value: '중2', label: '중2' },
-  { value: '중3', label: '중3' },
-  { value: '고1', label: '고1' },
-  { value: '고2', label: '고2' },
-  { value: '고3', label: '고3' },
-  { value: '재수', label: '재수' },
-  { value: '삼수', label: '삼수' },
-  { value: '사수', label: '사수' },
-  { value: 'N수', label: 'N수' },
-]
+// GRADE_OPTIONS는 @/lib/constants/grades에서 import
 
 export default function ConsultationsPage() {
   usePageAccess('consultations')
@@ -120,6 +104,48 @@ export default function ConsultationsPage() {
     notes: '',
     images: [] as string[],
   })
+  const [isUploadingImages, setIsUploadingImages] = useState(false)
+
+  // Supabase Storage에 이미지 업로드하는 함수
+  const uploadImageToStorage = async (file: File): Promise<string | null> => {
+    try {
+      const supabase = createClient()
+      const timestamp = Date.now()
+      const randomStr = Math.random().toString(36).substring(2, 8)
+      const ext = file.name.split('.').pop() || 'jpg'
+      const fileName = `consultations/${institutionName}/${timestamp}_${randomStr}.${ext}`
+
+      const { data, error } = await supabase.storage
+        .from('consultation-images')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (error) {
+        console.error('Upload error:', error)
+        // 버킷이 없거나 권한 문제일 경우 폴백: Base64로 저장 (작은 이미지만)
+        if (file.size < 500 * 1024) { // 500KB 이하만 Base64 허용
+          return new Promise((resolve) => {
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(reader.result as string)
+            reader.readAsDataURL(file)
+          })
+        }
+        return null
+      }
+
+      // Public URL 생성
+      const { data: urlData } = supabase.storage
+        .from('consultation-images')
+        .getPublicUrl(fileName)
+
+      return urlData.publicUrl
+    } catch (error) {
+      console.error('Upload error:', error)
+      return null
+    }
+  }
 
   // Waitlist states
   const [waitlists, setWaitlists] = useState<Waitlist[]>([])
@@ -1020,7 +1046,7 @@ export default function ConsultationsPage() {
                     <SelectValue placeholder="학년 선택" />
                   </SelectTrigger>
                   <SelectContent>
-                    {gradeOptions.map((grade) => (
+                    {GRADE_OPTIONS.map((grade) => (
                       <SelectItem key={grade.value} value={grade.value}>
                         {grade.label}
                       </SelectItem>
@@ -1118,18 +1144,29 @@ export default function ConsultationsPage() {
                     type="file"
                     accept="image/*"
                     multiple
-                    onChange={(e) => {
+                    disabled={isUploadingImages}
+                    onChange={async (e) => {
                       const files = Array.from(e.target.files || [])
-                      files.forEach((file) => {
-                        const reader = new FileReader()
-                        reader.onloadend = () => {
-                          setNewConsultation((prev) => ({
-                            ...prev,
-                            images: [...prev.images, reader.result as string],
-                          }))
-                        }
-                        reader.readAsDataURL(file)
-                      })
+                      if (files.length === 0) return
+
+                      setIsUploadingImages(true)
+                      toast({ title: '이미지 업로드 중...', description: `${files.length}개 파일 처리 중` })
+
+                      const uploadPromises = files.map(uploadImageToStorage)
+                      const results = await Promise.all(uploadPromises)
+                      const validUrls = results.filter((url): url is string => url !== null)
+
+                      if (validUrls.length > 0) {
+                        setNewConsultation((prev) => ({
+                          ...prev,
+                          images: [...prev.images, ...validUrls],
+                        }))
+                        toast({ title: '업로드 완료', description: `${validUrls.length}개 이미지가 업로드되었습니다.` })
+                      } else {
+                        toast({ title: '업로드 실패', description: '이미지 업로드에 실패했습니다. 파일 크기를 확인해주세요.', variant: 'destructive' })
+                      }
+
+                      setIsUploadingImages(false)
                       e.target.value = '' // Reset input
                     }}
                     className="hidden"
@@ -1137,10 +1174,11 @@ export default function ConsultationsPage() {
                   <Button
                     type="button"
                     variant="outline"
+                    disabled={isUploadingImages}
                     onClick={() => document.getElementById('consultation-image-upload')?.click()}
                   >
                     <Upload className="mr-2 h-4 w-4" />
-                    이미지 추가
+                    {isUploadingImages ? '업로드 중...' : '이미지 추가'}
                   </Button>
                   <span className="text-xs text-muted-foreground">
                     {newConsultation.images.length}개 첨부됨
@@ -1660,7 +1698,7 @@ export default function ConsultationsPage() {
                     <SelectValue placeholder="학년을 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {gradeOptions.map((grade) => (
+                    {GRADE_OPTIONS.map((grade) => (
                       <SelectItem key={grade.value} value={grade.value}>
                         {grade.label}
                       </SelectItem>

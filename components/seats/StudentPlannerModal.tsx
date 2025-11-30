@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Clock, Moon, DoorOpen, Check, Loader2, Send, Trash2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
+import { useToast } from '@/hooks/use-toast'
 
 interface StudyPlan {
   id: string
@@ -72,6 +73,7 @@ export function StudentPlannerModal({
   studentName,
   orgId,
 }: StudentPlannerModalProps) {
+  const { toast } = useToast()
   const [planner, setPlanner] = useState<DailyPlanner | null>(null)
   const [feedback, setFeedback] = useState<PlannerFeedback | null>(null)
   const [feedbackText, setFeedbackText] = useState('')
@@ -210,9 +212,22 @@ export function StudentPlannerModal({
       if (response.ok) {
         const data = await response.json() as { feedback: PlannerFeedback }
         setFeedback(data.feedback)
+        toast({ title: '피드백 저장 완료' })
+      } else {
+        const errorData = await response.json().catch(() => ({})) as { error?: string }
+        toast({
+          title: '피드백 저장 실패',
+          description: errorData.error || '다시 시도해주세요',
+          variant: 'destructive',
+        })
       }
     } catch (error) {
       console.error('Failed to save feedback:', error)
+      toast({
+        title: '피드백 저장 실패',
+        description: '네트워크 오류가 발생했습니다',
+        variant: 'destructive',
+      })
     } finally {
       setSaving(false)
     }
@@ -228,9 +243,22 @@ export function StudentPlannerModal({
       if (response.ok) {
         setFeedback(null)
         setFeedbackText('')
+        toast({ title: '피드백 삭제 완료' })
+      } else {
+        const errorData = await response.json().catch(() => ({})) as { error?: string }
+        toast({
+          title: '피드백 삭제 실패',
+          description: errorData.error || '다시 시도해주세요',
+          variant: 'destructive',
+        })
       }
     } catch (error) {
       console.error('Failed to delete feedback:', error)
+      toast({
+        title: '피드백 삭제 실패',
+        description: '네트워크 오류가 발생했습니다',
+        variant: 'destructive',
+      })
     } finally {
       setSaving(false)
     }

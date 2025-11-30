@@ -1,5 +1,8 @@
 import { Widget } from '@/lib/types/widget'
 
+// Re-export Widget type for convenience
+export type { Widget }
+
 // 사용 가능한 모든 위젯 정의
 export const availableWidgets: Widget[] = [
   // 실시간 현황
@@ -296,7 +299,7 @@ export const availableWidgets: Widget[] = [
     description: '중요한 공지사항 (기능 개발 예정)',
     category: '기타',
     size: 'medium',
-    enabled: false,  // 실제 데이터 테이블이 없으므로 비활성화
+    enabled: false,
     order: 7,
   },
 ]
@@ -306,52 +309,8 @@ export const defaultEnabledWidgetIds = availableWidgets
   .filter((w) => w.enabled)
   .map((w) => w.id)
 
-// LocalStorage 키 (v6로 변경하여 캐시 초기화 - announcements 비활성화)
-export const WIDGETS_STORAGE_KEY = 'dashboard-widgets-config-v6'
-
-// 위젯 설정 가져오기 (Smart Config Merging)
-export function getWidgetsConfig(): Widget[] {
-  if (typeof window === 'undefined') return availableWidgets
-
-  try {
-    const stored = localStorage.getItem(WIDGETS_STORAGE_KEY)
-    if (!stored) return availableWidgets
-
-    const savedConfig = JSON.parse(stored) as Widget[]
-
-    // ✅ availableWidgets를 source of truth로 사용
-    // LocalStorage의 enabled/order만 적용 (size, type 등은 코드에서 가져옴)
-    return availableWidgets.map((widget) => {
-      const saved = savedConfig.find((w) => w.id === widget.id)
-      if (saved) {
-        return {
-          ...widget,  // availableWidgets의 최신 정보 사용
-          enabled: saved.enabled,  // 사용자 설정만 유지
-          order: saved.order,
-        }
-      }
-      return widget
-    }).sort((a, b) => a.order - b.order)
-  } catch (error) {
-    console.error('Failed to load widgets config:', error)
-    return availableWidgets
-  }
-}
-
-// 위젯 설정 저장
-export function saveWidgetsConfig(widgets: Widget[]) {
-  if (typeof window === 'undefined') return
-
-  try {
-    localStorage.setItem(WIDGETS_STORAGE_KEY, JSON.stringify(widgets))
-  } catch (error) {
-    console.error('Failed to save widgets config:', error)
-  }
-}
-
-// 활성화된 위젯만 가져오기
-export function getEnabledWidgets(): Widget[] {
-  return getWidgetsConfig()
-    .filter((w) => w.enabled)
-    .sort((a, b) => a.order - b.order)
-}
+// ============================================
+// NOTE: localStorage 함수 제거됨
+// DB 기반 위젯 설정은 useWidgetSettings hook 사용
+// import { useWidgetSettings } from '@/lib/hooks'
+// ============================================

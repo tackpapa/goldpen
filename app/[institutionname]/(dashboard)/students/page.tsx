@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { generateUniqueAttendanceCode } from '@/lib/utils/generate-attendance-code'
+import { GRADE_OPTIONS } from '@/lib/constants/grades'
 
 const StudentDetailModal = dynamic(
   () => import('@/components/students/StudentDetailModal').then((m) => m.StudentDetailModal),
@@ -60,22 +61,7 @@ interface Branch {
   status: 'active' | 'inactive'
 }
 
-// Grade options
-const gradeOptions = [
-  { value: '초1', label: '초1' },
-  { value: '초2', label: '초2' },
-  { value: '초3', label: '초3' },
-  { value: '초4', label: '초4' },
-  { value: '초5', label: '초5' },
-  { value: '초6', label: '초6' },
-  { value: '중1', label: '중1' },
-  { value: '중2', label: '중2' },
-  { value: '중3', label: '중3' },
-  { value: '고1', label: '고1' },
-  { value: '고2', label: '고2' },
-  { value: '고3', label: '고3' },
-  { value: '재수', label: '재수' },
-]
+// GRADE_OPTIONS는 @/lib/constants/grades에서 import
 
 export default function StudentsPage() {
   usePageAccess('students')
@@ -670,7 +656,7 @@ export default function StudentsPage() {
                     <SelectValue placeholder="학년을 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {gradeOptions.map((grade) => (
+                    {GRADE_OPTIONS.map((grade) => (
                       <SelectItem key={grade.value} value={grade.value}>
                         {grade.label}
                       </SelectItem>

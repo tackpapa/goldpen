@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -11,56 +11,59 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
-import { LogOut, User, Settings, Menu } from 'lucide-react'
+import { LogOut, Menu } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
+import { useAuth } from '@/contexts/auth-context'
 import { MobileSidebar } from './MobileSidebar'
 
 export function Header() {
   const router = useRouter()
   const pathname = usePathname()
   const { toast } = useToast()
-  const supabase = createClient()
+  const { user, logout, isLoading } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [userName, setUserName] = useState<string>('사용자')
-  const [userEmail, setUserEmail] = useState<string>('')
 
   // URL에서 institution 이름 추출
   const institutionName = pathname?.split('/')[1] || 'goldpen'
 
-  // Get user info from Supabase Auth and localStorage
-  useEffect(() => {
-    const loadUserInfo = async () => {
-      // Supabase Auth에서 이메일 가져오기
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user?.email) {
-        setUserEmail(user.email)
-      }
+  // useAuth에서 사용자 정보 가져오기
+  const userRole = user?.role || null
+  const userName = user?.name || '사용자'
+  const userEmail = user?.email || ''
 
-      // localStorage에서 역할/이름 가져오기
-      if (typeof window !== 'undefined') {
-        const role = localStorage.getItem('userRole')
-        const name = localStorage.getItem('userName') || '사용자'
-        setUserRole(role)
-        setUserName(name)
-      }
+  // 역할 한글 표시
+  const getRoleLabel = () => {
+    switch (userRole) {
+      case 'super_admin':
+        return '슈퍼관리자'
+      case 'owner':
+        return '원장'
+      case 'manager':
+        return '매니저'
+      case 'teacher':
+        return '강사'
+      case 'student':
+        return '학생'
+      case 'parent':
+        return '학부모'
+      default:
+        return ''
     }
-    loadUserInfo()
-  }, [])
+  }
 
   // Get greeting based on role
   const getGreeting = () => {
     if (!userRole) return `${userName}님 안녕하세요!`
 
     switch (userRole) {
-      case 'admin':
+      case 'owner':
+      case 'super_admin':
         return `원장님 안녕하세요!`
+      case 'manager':
+        return `${userName} 매니저님 안녕하세요!`
       case 'teacher':
         return `${userName} 강사님 안녕하세요!`
-      case 'staff':
-        return `${userName} 매니저님 안녕하세요!`
       default:
         return `${userName}님 안녕하세요!`
     }
@@ -68,12 +71,11 @@ export function Header() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut()
+      await logout()
       toast({
         title: '로그아웃 완료',
         description: '성공적으로 로그아웃되었습니다.',
       })
-      router.push('/login')
     } catch (error) {
       toast({
         title: '로그아웃 실패',
@@ -126,20 +128,20 @@ export function Header() {
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{userName}</p>
-                <p className="text-xs leading-none text-muted-foreground">
-                  {userEmail || '로딩 중...'}
-                </p>
+                {isLoading ? (
+                  <p className="text-xs leading-none text-muted-foreground">로딩 중...</p>
+                ) : (
+                  <>
+                    {getRoleLabel() && (
+                      <p className="text-xs leading-none text-primary font-medium">{getRoleLabel()}</p>
+                    )}
+                    {userEmail && (
+                      <p className="text-xs leading-none text-muted-foreground">{userEmail}</p>
+                    )}
+                  </>
+                )}
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => router.push(`/${institutionName}/settings` as any)}>
-              <User className="mr-2 h-4 w-4" />
-              <span>프로필</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/${institutionName}/settings` as any)}>
-              <Settings className="mr-2 h-4 w-4" />
-              <span>설정</span>
-            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout}>
               <LogOut className="mr-2 h-4 w-4" />

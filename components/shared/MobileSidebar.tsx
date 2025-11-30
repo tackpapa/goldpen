@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -10,7 +10,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import { navigationItems, getFilteredNavigation, type BadgeType } from '@/lib/config/navigation'
+import { navigationItems, getInstitutionName, type BadgeType, type NavigationItem } from '@/lib/config/navigation'
+import { useMenuSettings } from '@/lib/hooks/useMenuSettings'
+import { usePagePermissions } from '@/lib/hooks/usePagePermissions'
+import { useAuth } from '@/contexts/auth-context'
+import type { PageId, UserRole } from '@/lib/types/permissions'
 
 const BadgeComponent = ({ type, isActive }: { type: BadgeType; isActive: boolean }) => {
   const badgeStyles: Record<BadgeType, string> = {
@@ -47,25 +51,64 @@ interface MobileSidebarProps {
 
 export function MobileSidebar({ open, onOpenChange }: MobileSidebarProps) {
   const pathname = usePathname()
-  const [navigation, setNavigation] = useState(navigationItems)
+  const [navigation, setNavigation] = useState<NavigationItem[]>(navigationItems)
+  const [institutionName, setInstitutionName] = useState('')
+
+  // URL에서 slug 추출
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
+
+  // 인증 정보
+  const { user } = useAuth()
+
+  const { getFilteredNavigation, loading: menuLoading } = useMenuSettings({ orgSlug: slug })
+
+  // 페이지 권한 설정
+  const { canAccessPage, loading: permissionsLoading } = usePagePermissions({ orgSlug: slug })
 
   useEffect(() => {
-    // Update navigation when menu settings change
-    const updateNavigation = () => {
-      setNavigation(getFilteredNavigation())
-    }
-
-    updateNavigation()
-
-    // Listen for storage changes (menu settings updates)
-    window.addEventListener('storage', updateNavigation)
-    window.addEventListener('menuSettingsChanged', updateNavigation)
-
-    return () => {
-      window.removeEventListener('storage', updateNavigation)
-      window.removeEventListener('menuSettingsChanged', updateNavigation)
+    if (typeof window !== 'undefined') {
+      setInstitutionName(getInstitutionName())
     }
   }, [])
+
+  // ref로 함수를 저장하여 dependency 문제 해결
+  const getFilteredNavigationRef = useRef(getFilteredNavigation)
+  const canAccessPageRef = useRef(canAccessPage)
+
+  useEffect(() => {
+    getFilteredNavigationRef.current = getFilteredNavigation
+    canAccessPageRef.current = canAccessPage
+  }, [getFilteredNavigation, canAccessPage])
+
+  // 메뉴 설정과 페이지 권한이 로드되면 navigation 업데이트 (역할 기반 필터링 적용)
+  useEffect(() => {
+    if (!menuLoading && !permissionsLoading) {
+      const menuFiltered = getFilteredNavigationRef.current(institutionName)
+
+      // 사용자 역할에 따라 페이지 접근 권한 필터링
+      const userRole = user?.role as UserRole | undefined
+
+      // settings 페이지는 owner만 접근 가능하도록 별도 처리
+      const roleFiltered = menuFiltered.filter((item) => {
+        // settings 페이지는 owner만 접근 가능
+        if (item.id === 'settings') {
+          return userRole === 'owner'
+        }
+
+        // 다른 페이지들은 canAccessPage로 체크
+        if (userRole) {
+          return canAccessPageRef.current(item.id as PageId, userRole)
+        }
+
+        // 로그인되지 않은 경우 모든 메뉴 표시 (페이지 자체에서 권한 체크)
+        return true
+      })
+
+      setNavigation(roleFiltered)
+    }
+  }, [menuLoading, permissionsLoading, institutionName, user?.role])
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>

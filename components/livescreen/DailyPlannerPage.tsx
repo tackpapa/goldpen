@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, Plus, Trash2, CheckCircle2, Circle, Moon, DoorOpen } from 'lucide-react'
+import { useToast } from '@/hooks/use-toast'
 import type { DailyPlanner, StudyPlan, Subject, SleepRecord, OutingRecord } from '@/lib/types/database'
 import { createClient } from '@/lib/supabase/client'
 
@@ -60,6 +61,8 @@ export function DailyPlannerPage({
   dataLoaded: parentDataLoaded,
   isVisible = true,
 }: DailyPlannerPageProps) {
+  const { toast } = useToast()
+
   // Use initialPlanner from parent if available, otherwise existingPlanner
   const effectivePlanner = initialPlanner ?? existingPlanner
   const [plans, setPlans] = useState<StudyPlan[]>(
@@ -304,9 +307,21 @@ export function DailyPlannerPage({
           setSavedPlanId(editedPlanId)
           setTimeout(() => setSavedPlanId(null), 2000)
         }
+      } else {
+        const errorData = await response.json().catch(() => ({ error: '저장에 실패했습니다' })) as { error?: string }
+        toast({
+          title: '플래너 저장 실패',
+          description: errorData.error || '다시 시도해주세요',
+          variant: 'destructive',
+        })
       }
     } catch (error) {
       console.error('Failed to save planner:', error)
+      toast({
+        title: '플래너 저장 실패',
+        description: '네트워크 오류가 발생했습니다',
+        variant: 'destructive',
+      })
     } finally {
       setIsSaving(false)
     }
@@ -373,7 +388,7 @@ export function DailyPlannerPage({
     // Save to DB
     if (plannerId) {
       try {
-        await fetch('/api/daily-planners', {
+        const response = await fetch('/api/daily-planners', {
           method: 'PATCH',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -385,8 +400,21 @@ export function DailyPlannerPage({
             elapsedSeconds,
           }),
         })
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({})) as { error?: string }
+          toast({
+            title: '태스크 완료 저장 실패',
+            description: errorData.error || '다시 시도해주세요',
+            variant: 'destructive',
+          })
+        }
       } catch (error) {
         console.error('Failed to complete task:', error)
+        toast({
+          title: '태스크 완료 저장 실패',
+          description: '네트워크 오류가 발생했습니다',
+          variant: 'destructive',
+        })
       }
     } else {
       await savePlannerToDB(updatedPlans, notes)
@@ -424,13 +452,27 @@ export function DailyPlannerPage({
         : `?id=${subjectId}`
 
       try {
-        await fetch(`/api/subjects${deleteParams}`, {
+        const response = await fetch(`/api/subjects${deleteParams}`, {
           method: 'DELETE',
         })
-        // 부모 컴포넌트에 삭제된 과목 알림
-        onSubjectDeleted?.(subjectId)
+        if (response.ok) {
+          // 부모 컴포넌트에 삭제된 과목 알림
+          onSubjectDeleted?.(subjectId)
+        } else {
+          const errorData = await response.json().catch(() => ({})) as { error?: string }
+          toast({
+            title: '과목 삭제 실패',
+            description: errorData.error || '다시 시도해주세요',
+            variant: 'destructive',
+          })
+        }
       } catch (error) {
         console.error('Failed to delete subject:', error)
+        toast({
+          title: '과목 삭제 실패',
+          description: '네트워크 오류가 발생했습니다',
+          variant: 'destructive',
+        })
       }
     }
   }

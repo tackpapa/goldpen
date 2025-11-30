@@ -7,7 +7,7 @@ export async function middleware(request: NextRequest) {
   const isApiRequest = request.nextUrl.pathname.startsWith('/api/')
 
   // 시스템 경로는 slug 검증 제외
-  const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico']
+  const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite']
   const firstSegment = pathSegments[0]
 
   if (pathSegments.length >= 1 && !isApiRequest && !systemPaths.includes(firstSegment)) {

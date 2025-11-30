@@ -175,72 +175,8 @@ export const navigationItems: NavigationItem[] = [
   },
 ]
 
-// Helper function to get enabled menu items from localStorage
-export function getEnabledMenuIds(): string[] {
-  if (typeof window === 'undefined') return navigationItems.map(item => item.id)
-
-  const stored = localStorage.getItem('enabledMenus')
-  if (!stored) return navigationItems.map(item => item.id)
-
-  try {
-    const parsed = JSON.parse(stored)
-    // If empty array, return all items (safety check)
-    if (Array.isArray(parsed) && parsed.length === 0) {
-      return navigationItems.map(item => item.id)
-    }
-    return parsed
-  } catch {
-    return navigationItems.map(item => item.id)
-  }
-}
-
-// Helper function to save enabled menu items to localStorage
-export function setEnabledMenuIds(ids: string[]): void {
-  if (typeof window === 'undefined') return
-  localStorage.setItem('enabledMenus', JSON.stringify(ids))
-}
-
-// Helper function to get menu order from localStorage
-export function getMenuOrder(): string[] {
-  if (typeof window === 'undefined') return navigationItems.map(item => item.id)
-
-  const stored = localStorage.getItem('menuOrder')
-  if (!stored) return navigationItems.map(item => item.id)
-
-  try {
-    return JSON.parse(stored)
-  } catch {
-    return navigationItems.map(item => item.id)
-  }
-}
-
-// Helper function to save menu order to localStorage
-export function setMenuOrder(order: string[]): void {
-  if (typeof window === 'undefined') return
-  localStorage.setItem('menuOrder', JSON.stringify(order))
-}
-
-// Helper function to get filtered navigation items with institution prefix
-export function getFilteredNavigation(institutionName?: string): NavigationItem[] {
-  const enabledIds = getEnabledMenuIds()
-  const menuOrder = getMenuOrder()
-  const institution = institutionName || getInstitutionName()
-
-  // Sort by custom order
-  const orderedItems = menuOrder
-    .map(id => navigationItems.find(item => item.id === id))
-    .filter((item): item is NavigationItem => item !== undefined)
-
-  // Add any new items that aren't in the order yet
-  const orderedIds = new Set(menuOrder)
-  const newItems = navigationItems.filter(item => !orderedIds.has(item.id))
-
-  const allItems = [...orderedItems, ...newItems]
-  const filteredItems = allItems.filter(item => enabledIds.includes(item.id))
-
-  // Add institution prefix to hrefs
-  return filteredItems.map(item => ({
-    ...item,
-    href: `/${institution}${item.href}`
-  }))
-}
+// ============================================
+// NOTE: localStorage 함수 제거됨
+// DB 기반 메뉴 설정은 useMenuSettings hook 사용
+// import { useMenuSettings } from '@/lib/hooks'
+// ============================================

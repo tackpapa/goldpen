@@ -35,6 +35,7 @@ import { useAllSeatsRealtime } from '@/hooks/use-all-seats-realtime'
 import { useSeatAssignmentsRealtime } from '@/hooks/use-seat-assignments-realtime'
 import { createClient } from '@/lib/supabase/client'
 import { StudentPlannerModal } from '@/components/seats/StudentPlannerModal'
+import { GRADE_OPTIONS } from '@/lib/constants/grades'
 
 // LiveScreen State Types
 interface LiveScreenState {
@@ -109,16 +110,7 @@ interface SeatType {
   typeName: string
 }
 
-// Grade options
-const gradeOptions = [
-  { value: '중1', label: '중1' },
-  { value: '중2', label: '중2' },
-  { value: '중3', label: '중3' },
-  { value: '고1', label: '고1' },
-  { value: '고2', label: '고2' },
-  { value: '고3', label: '고3' },
-  { value: '재수', label: '재수' },
-]
+// GRADE_OPTIONS는 @/lib/constants/grades에서 import
 
 // Student interface for local use
 interface LocalStudent {
@@ -2062,7 +2054,7 @@ export default function SeatsPage() {
                     <SelectValue placeholder="학년을 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {gradeOptions.map((grade) => (
+                    {GRADE_OPTIONS.map((grade) => (
                       <SelectItem key={grade.value} value={grade.value}>
                         {grade.label}
                       </SelectItem>

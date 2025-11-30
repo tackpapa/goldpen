@@ -150,6 +150,10 @@ export async function POST(request: Request) {
         slug: validated.org_slug, // 기관 아이디 (URL 경로용)
         type: 'academy', // 기본값
         owner_id: authData.user.id,
+        // 설정 페이지 기관정보 탭에 표시될 정보도 함께 저장
+        owner_name: validated.name, // 원장 이름
+        phone: validated.phone, // 기관 전화번호
+        email: validated.email, // 기관 이메일
       })
       .select()
       .single()

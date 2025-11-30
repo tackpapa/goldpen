@@ -1,5 +1,7 @@
-// 사용자 역할 타입
-export type UserRole = 'admin' | 'teacher' | 'staff'
+// 사용자 역할 타입 (3단계: 운영자/강사/학부모·학생)
+// owner/manager = 운영자 (전체 접근)
+// teacher = 강사 (담당 반만 접근)
+export type UserRole = 'owner' | 'manager' | 'teacher'
 
 // 페이지 식별자
 export type PageId =
@@ -31,7 +33,7 @@ export interface PageInfo {
 // 페이지 권한 설정
 export interface PagePermissions {
   [key: string]: {
-    staff: boolean  // 직원 접속 가능
+    manager: boolean  // 매니저 접속 가능
     teacher: boolean  // 강사 접속 가능
   }
 }
@@ -40,9 +42,10 @@ export interface PagePermissions {
 export interface UserAccount {
   id: string
   username: string
-  password: string
+  password?: string // API 응답에서는 제외됨
   name: string
   role: UserRole
+  is_active: boolean
   createdAt: string
 }
 
@@ -66,10 +69,10 @@ export const ALL_PAGES: PageInfo[] = [
   { id: 'expenses', name: '지출정산', path: '/expenses' },
 ]
 
-// 기본 페이지 권한 (모든 페이지를 staff와 teacher가 접속 가능하도록 설정)
+// 기본 페이지 권한 (모든 페이지를 manager와 teacher가 접속 가능하도록 설정)
 export const DEFAULT_PERMISSIONS: PagePermissions = ALL_PAGES.reduce((acc, page) => {
   acc[page.id] = {
-    staff: true,
+    manager: true,
     teacher: true,
   }
   return acc

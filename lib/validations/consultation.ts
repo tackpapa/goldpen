@@ -1,10 +1,11 @@
 import { z } from 'zod'
+import { GRADE_VALUES } from '@/lib/constants/grades'
 
 // Consultation status enum
 const consultationStatusEnum = z.enum(['new', 'scheduled', 'enrolled', 'rejected', 'on_hold', 'waitlist'])
 
-// Grade options (학생 등록 모달과 동일)
-const gradeOptions = ['초1', '초2', '초3', '초4', '초5', '초6', '중1', '중2', '중3', '고1', '고2', '고3', '재수', '삼수', '사수', 'N수'] as const
+// Grade options (공통 상수 사용)
+const gradeOptions = GRADE_VALUES
 
 // Create consultation schema - matches DB schema in 20251121_create_consultations_tables.sql
 export const createConsultationSchema = z.object({

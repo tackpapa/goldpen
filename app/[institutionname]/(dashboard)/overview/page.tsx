@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Plus, Loader2 } from 'lucide-react'
 import { Widget } from '@/lib/types/widget'
 import { WidgetData, emptyWidgetData } from '@/lib/types/widget-data'
-import { getEnabledWidgets, saveWidgetsConfig, getWidgetsConfig } from '@/lib/config/widgets'
+import { useWidgetSettings } from '@/lib/hooks/useWidgetSettings'
 import { WidgetManager } from '@/components/dashboard/WidgetManager'
 import { DraggableWidget } from '@/components/dashboard/DraggableWidget'
 import {
@@ -32,6 +32,20 @@ export default function OverviewPage() {
   const [widgetManagerOpen, setWidgetManagerOpen] = useState(false)
   const [widgetData, setWidgetData] = useState<WidgetData>(emptyWidgetData)
   const [isLoading, setIsLoading] = useState(true)
+
+  // URL에서 slug 추출
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
+
+  // useWidgetSettings 훅 사용
+  const {
+    settings: widgetSettings,
+    getEnabledWidgets,
+    getWidgetsConfig,
+    saveSettings: saveWidgetsConfig,
+    loading: widgetSettingsLoading
+  } = useWidgetSettings({ orgSlug: slug })
 
   // 드래그 센서 설정
   const sensors = useSensors(
@@ -71,10 +85,13 @@ export default function OverviewPage() {
     return () => clearInterval(refreshInterval)
   }, [])
 
-  // 위젯 설정 로드
+  // 위젯 설정 로드 (훅 로딩 완료 시)
   useEffect(() => {
-    setWidgets(getEnabledWidgets())
-  }, [])
+    if (!widgetSettingsLoading) {
+      setWidgets(getEnabledWidgets())
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [widgetSettingsLoading, widgetSettings])
 
   // 1초마다 시간 업데이트 (기존 로직 유지)
   useEffect(() => {

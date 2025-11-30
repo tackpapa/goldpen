@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
-import { revenueCategoryManager } from '@/lib/utils/revenue-categories'
+import { useRevenueCategories } from '@/lib/hooks/useRevenueCategories'
 import { CreditCard, Clock, Calendar as CalendarIcon, Loader2 } from 'lucide-react'
 
 interface PaymentTabProps {
@@ -38,7 +38,8 @@ export function PaymentTab({
     ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
     : 'goldpen'
 
-  const [revenueCategories, setRevenueCategories] = useState(revenueCategoryManager.getActiveCategories())
+  const { getActiveCategories, loading: categoriesLoading } = useRevenueCategories({ orgSlug: slug })
+  const revenueCategories = getActiveCategories()
 
   // Payment form state
   const [amount, setAmount] = useState('')
@@ -55,25 +56,6 @@ export function PaymentTab({
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const refreshRevenueCategories = async () => {
-    try {
-      const res = await fetch(`/api/settings/revenue-categories?slug=${slug}`, { credentials: 'include' })
-      const data = await res.json() as { categories?: any[] }
-      if (res.ok && data.categories) {
-        // 서버에서 전달된 항목 + 로컬 기본값을 병합하고 활성 항목만 표시
-        revenueCategoryManager.setCategories(data.categories)
-        setRevenueCategories(revenueCategoryManager.getActiveCategories())
-      }
-    } catch (_) {
-      // keep local cache
-      setRevenueCategories(revenueCategoryManager.getActiveCategories())
-    }
-  }
-
-  useEffect(() => {
-    refreshRevenueCategories()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const calculateExpiryDate = (type: 'hours' | 'days', amount: number): string => {
     const now = new Date()
@@ -107,7 +89,7 @@ export function PaymentTab({
       return
     }
 
-    const category = revenueCategoryManager.getCategoryById(categoryId)
+    const category = revenueCategories.find(c => c.id === categoryId)
     if (!category) return
 
     setSubmitting(true)

@@ -110,6 +110,164 @@ async function upsertAttendanceForStudent(params: {
 }
 
 /**
+ * Record daily study stats for seat attendance (study room usage)
+ * Called when student checks out from a seat
+ */
+async function recordDailyStudyStats(
+  orgId: string,
+  studentId: string,
+  durationMinutes: number,
+  checkInTime: Date
+) {
+  const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+
+  const today = new Date().toISOString().split('T')[0]
+  const durationSeconds = durationMinutes * 60
+  const hour = checkInTime.getHours()
+
+  // Determine time slot: 오전(00-12), 오후(12-18), 밤(18-24)
+  let timeSlot = 'morning'
+  if (hour >= 12 && hour < 18) {
+    timeSlot = 'afternoon'
+  } else if (hour >= 18) {
+    timeSlot = 'night'
+  }
+
+  const morningAdd = timeSlot === 'morning' ? durationSeconds : 0
+  const afternoonAdd = timeSlot === 'afternoon' ? durationSeconds : 0
+  const nightAdd = timeSlot === 'night' ? durationSeconds : 0
+
+  // subject_name을 "독서실 학습"으로 고정 (독서실 출결 통계)
+  const subjectName = '독서실 학습'
+  // subject_id는 UUID 타입이므로 null 사용 (독서실은 별도 과목이 아님)
+  const subjectId = null
+
+  // Check if record exists for today
+  const { data: existing } = await admin
+    .from('daily_study_stats')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('org_id', orgId)
+    .eq('subject_name', subjectName)
+    .eq('date', today)
+    .single()
+
+  if (existing) {
+    const { error } = await admin
+      .from('daily_study_stats')
+      .update({
+        total_seconds: existing.total_seconds + durationSeconds,
+        session_count: existing.session_count + 1,
+        morning_seconds: existing.morning_seconds + morningAdd,
+        afternoon_seconds: existing.afternoon_seconds + afternoonAdd,
+        night_seconds: existing.night_seconds + nightAdd,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+
+    if (error) console.error('[recordDailyStudyStats] update error:', error)
+  } else {
+    const { error } = await admin
+      .from('daily_study_stats')
+      .insert({
+        org_id: orgId,
+        student_id: studentId,
+        subject_id: subjectId,
+        subject_name: subjectName,
+        subject_color: '#10B981', // 녹색 - 독서실
+        date: today,
+        total_seconds: durationSeconds,
+        session_count: 1,
+        morning_seconds: morningAdd,
+        afternoon_seconds: afternoonAdd,
+        night_seconds: nightAdd,
+      })
+
+    if (error) console.error('[recordDailyStudyStats] insert error:', error)
+  }
+
+  console.log(`[recordDailyStudyStats] Recorded ${durationMinutes}min for student ${studentId}`)
+}
+
+/**
+ * Record study time records for ranking (study room usage)
+ * Called when student checks out from a seat
+ */
+async function recordStudyTimeRecords(
+  orgId: string,
+  studentId: string,
+  durationMinutes: number,
+  checkInTime: Date
+) {
+  const admin = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } })
+
+  const today = new Date().toISOString().split('T')[0]
+  const hour = checkInTime.getHours()
+
+  // Determine time slot
+  let timeSlot = 'morning'
+  if (hour >= 12 && hour < 18) {
+    timeSlot = 'afternoon'
+  } else if (hour >= 18) {
+    timeSlot = 'night'
+  }
+
+  const morningAdd = timeSlot === 'morning' ? durationMinutes : 0
+  const afternoonAdd = timeSlot === 'afternoon' ? durationMinutes : 0
+  const nightAdd = timeSlot === 'night' ? durationMinutes : 0
+
+  // Get student name
+  const { data: student } = await admin
+    .from('students')
+    .select('name')
+    .eq('id', studentId)
+    .single()
+
+  const studentName = student?.name || '학생'
+
+  // Check if record exists
+  const { data: existing } = await admin
+    .from('study_time_records')
+    .select('*')
+    .eq('student_id', studentId)
+    .eq('org_id', orgId)
+    .eq('date', today)
+    .single()
+
+  if (existing) {
+    const { error } = await admin
+      .from('study_time_records')
+      .update({
+        total_minutes: existing.total_minutes + durationMinutes,
+        morning_minutes: existing.morning_minutes + morningAdd,
+        afternoon_minutes: existing.afternoon_minutes + afternoonAdd,
+        night_minutes: existing.night_minutes + nightAdd,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id)
+
+    if (error) console.error('[recordStudyTimeRecords] update error:', error)
+  } else {
+    const { error } = await admin
+      .from('study_time_records')
+      .insert({
+        org_id: orgId,
+        student_id: studentId,
+        student_name: studentName,
+        date: today,
+        total_minutes: durationMinutes,
+        morning_minutes: morningAdd,
+        afternoon_minutes: afternoonAdd,
+        night_minutes: nightAdd,
+      })
+
+    if (error) console.error('[recordStudyTimeRecords] insert error:', error)
+  }
+
+  console.log(`[recordStudyTimeRecords] Recorded ${durationMinutes}min for student ${studentId}`)
+}
+
+/**
  * Record institution-wide stay log (check-in/out) in attendance_logs table.
  * - check_in: inserts a new row if no open session
  * - check_out: closes the latest open session and sets duration_minutes
@@ -476,6 +634,11 @@ export async function PUT(request: Request) {
 
           console.log(`[SeatAssignments PUT] Deducted ${usedHours.toFixed(2)}h from pass ${activePass.id}. New remaining: ${newRemaining.toFixed(2)}h`)
         }
+
+        // 학습 통계 저장 (daily_study_stats, study_time_records)
+        const checkInTime = new Date(currentAssignment.session_start_time)
+        await recordDailyStudyStats(orgToUse, currentAssignment.student_id, usedMinutes, checkInTime)
+        await recordStudyTimeRecords(orgToUse, currentAssignment.student_id, usedMinutes, checkInTime)
       }
 
       updateData.session_start_time = null

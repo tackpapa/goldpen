@@ -993,7 +993,7 @@ export default function LiveScreenPage({ params }: PageProps) {
 
         {activeView === 'stats' && (
           <>
-            <StudyStatistics studentId={studentId || ''} orgId={orgId || undefined} />
+            <StudyStatistics studentId={studentId || ''} orgId={orgId || undefined} orgSlug={institutionname} />
             {/* Spacer for bottom navigation */}
             <div className="h-20" />
           </>

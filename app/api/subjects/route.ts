@@ -170,6 +170,7 @@ export async function POST(request: Request) {
         name,
         color: color || '#4A90E2',
         order: order || 0,
+        is_active: true,
       })
       .select()
       .single()

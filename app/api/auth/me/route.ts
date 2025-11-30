@@ -32,7 +32,7 @@ export async function GET(request: Request) {
               id: 'demo-user',
               email: 'demo@goldpen.local',
               name: '데모 사용자',
-              role: 'staff',
+              role: 'manager',
               phone: null,
               created_at: null,
             },
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
         org_id: demoOrg,
         name: user.email || '서비스 사용자',
         email: user.email || 'service@goldpen.local',
-        role: 'staff',
+        role: 'manager',
         phone: null,
         created_at: null,
       }

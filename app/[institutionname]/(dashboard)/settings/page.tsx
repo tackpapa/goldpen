@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare, CreditCard, Wallet as WalletIcon, Check, Zap, Crown } from 'lucide-react'
-import { navigationItems, setEnabledMenuIds, setMenuOrder as persistMenuOrder } from '@/lib/config/navigation'
+import { navigationItems } from '@/lib/config/navigation'
+import { useMenuSettings } from '@/lib/hooks/useMenuSettings'
 import {
   Dialog,
   DialogContent,
@@ -101,6 +102,14 @@ export default function SettingsPage() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [kakaoTalkUsages, setKakaoTalkUsages] = useState<KakaoTalkUsage[]>([])
   const [serviceUsages, setServiceUsages] = useState<ServiceUsage[]>([])
+
+  // URL에서 slug 추출
+  const slug = typeof window !== 'undefined'
+    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+    : 'goldpen'
+
+  // 메뉴 설정 훅 사용
+  const { saveSettings: saveMenuSettingsToDb } = useMenuSettings({ orgSlug: slug })
 
   // Fetch settings data from API
   useEffect(() => {
@@ -293,11 +302,28 @@ export default function SettingsPage() {
     role: UserRole
     phone?: string | null
     created_at?: string
+    status?: 'active' | 'pending' // 활성 또는 초대 대기
+  }
+
+  type Invitation = {
+    id: string
+    email: string
+    role: UserRole
+    status: 'pending' | 'accepted' | 'expired'
+    created_at: string
+    expires_at: string
   }
 
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [invitations, setInvitations] = useState<Invitation[]>([])
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false)
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
   const [editingAccount, setEditingAccount] = useState<Account | null>(null)
+  const [inviteForm, setInviteForm] = useState({
+    email: '',
+    role: 'teacher' as UserRole,
+  })
+  const [isInviting, setIsInviting] = useState(false)
   const [accountForm, setAccountForm] = useState({
     username: '',
     password: '',
@@ -310,7 +336,7 @@ export default function SettingsPage() {
   const [menuOrder, setMenuOrder] = useState<string[]>([])
 
   // Page permissions state
-  const [pagePermissions, setPagePermissions] = useState<Record<string, { staff: boolean; teacher: boolean }>>({})
+  const [pagePermissions, setPagePermissions] = useState<Record<string, { manager: boolean; teacher: boolean }>>({})
 
   // Service plan view state
   const [showPricingPlans, setShowPricingPlans] = useState(false)
@@ -334,12 +360,9 @@ export default function SettingsPage() {
     color: '#6b7280',
   })
 
-  // 기관 슬러그 (URL 1번째 segment)
-  const slug = typeof window !== 'undefined'
-    ? window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
-    : 'goldpen'
+  // 기관 슬러그는 위에서 이미 정의됨 (라인 107)
   const basePath = `/api/settings`
-  const withSlug = (path: string) => (path.includes('?') ? `${path}&slug=${slug}` : `${path}?slug=${slug}`)
+  const withSlug = (path: string) => (path.includes('?') ? `${path}&orgSlug=${slug}` : `${path}?orgSlug=${slug}`)
 
   const fetchJson = async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const res = await fetch(path, { credentials: 'include', ...init })
@@ -385,18 +408,19 @@ export default function SettingsPage() {
       }
       setBranches(branchesRes.branches || [])
       setRooms(roomsRes.rooms || [])
-      setAccounts([])
 
       // permissions payload might come as array; normalize to record
       setPagePermissions({})
 
-      // 즉시 수입/지출 카테고리와 사용량 로드
-      const [rev, exp] = await Promise.all([
+      // 즉시 수입/지출 카테고리, 계정, 사용량 로드
+      const [rev, exp, acc] = await Promise.all([
         fetchJson<{ categories: any[] }>(withSlug(`${basePath}/revenue-categories`)).catch(() => ({ categories: [] })),
         fetchJson<{ categories: any[] }>(withSlug(`${basePath}/expense-categories`)).catch(() => ({ categories: [] })),
+        fetchJson<{ accounts: Account[] }>(withSlug(`${basePath}/user-accounts`)).catch(() => ({ accounts: [] })),
       ])
       setRevenueCategories(rev.categories || [])
       setExpenseCategories(exp.categories || [])
+      setAccounts(acc.accounts || [])
       setKakaoTalkUsages([])
       setServiceUsages([])
     } catch (e) {
@@ -663,9 +687,97 @@ export default function SettingsPage() {
   }
 
   // Account management functions
+  const handleOpenInviteDialog = () => {
+    setInviteForm({ email: '', role: 'teacher' })
+    setIsInviteDialogOpen(true)
+  }
+
+  const handleSendInvite = async () => {
+    if (!inviteForm.email.trim()) {
+      toast({ title: '입력 오류', description: '이메일을 입력해주세요.', variant: 'destructive' })
+      return
+    }
+    // 이메일 형식 검증
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(inviteForm.email)) {
+      toast({ title: '입력 오류', description: '올바른 이메일 형식을 입력해주세요.', variant: 'destructive' })
+      return
+    }
+    setIsInviting(true)
+    try {
+      const res = await fetch(withSlug(`${basePath}/invitations`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: inviteForm.email,
+          role: inviteForm.role,
+        }),
+      })
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '초대 전송 실패')
+      await loadInvitations()
+      toast({
+        title: '초대 전송 완료',
+        description: `${inviteForm.email}로 초대 메일이 전송되었습니다.`,
+      })
+      setIsInviteDialogOpen(false)
+    } catch (e) {
+      toast({ title: '초대 전송 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    } finally {
+      setIsInviting(false)
+    }
+  }
+
+  const loadInvitations = async () => {
+    try {
+      const res = await fetchJson<{ invitations: Invitation[] }>(withSlug(`${basePath}/invitations`)).catch(() => ({ invitations: [] }))
+      setInvitations(res.invitations || [])
+    } catch {
+      setInvitations([])
+    }
+  }
+
+  const handleCancelInvitation = async (invitationId: string) => {
+    const invitation = invitations.find(i => i.id === invitationId)
+    if (!confirm(`${invitation?.email}에 대한 초대를 취소하시겠습니까?`)) return
+    try {
+      const res = await fetch(withSlug(`${basePath}/invitations`), {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: invitationId }),
+      })
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '초대 취소 실패')
+      await loadInvitations()
+      toast({ title: '초대 취소 완료', description: `${invitation?.email}에 대한 초대가 취소되었습니다.` })
+    } catch (e) {
+      toast({ title: '초대 취소 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    }
+  }
+
+  const handleResendInvitation = async (invitationId: string) => {
+    const invitation = invitations.find(i => i.id === invitationId)
+    try {
+      const res = await fetch(withSlug(`${basePath}/invitations/resend`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: invitationId }),
+      })
+      const data = await res.json() as ApiResponse
+      if (!res.ok) throw new Error(data.error || '초대 재전송 실패')
+      await loadInvitations()
+      toast({ title: '초대 재전송 완료', description: `${invitation?.email}로 초대 메일이 재전송되었습니다.` })
+    } catch (e) {
+      toast({ title: '초대 재전송 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
+    }
+  }
+
   const handleAddAccount = () => {
     setEditingAccount(null)
-    setAccountForm({ username: '', password: '', name: '', role: 'staff' })
+    setAccountForm({ username: '', password: '', name: '', role: 'manager' })
     setIsAccountDialogOpen(true)
   }
 
@@ -735,9 +847,8 @@ export default function SettingsPage() {
     setEnabledMenus(menus)
     if (order) setMenuOrder(order)
 
-    // 로컬 스토리지에 즉시 반영하여 사이드바가 바로 갱신되도록 함
-    setEnabledMenuIds(menus)
-    if (order) persistMenuOrder(order)
+    // DB에 즉시 반영하여 사이드바가 바로 갱신되도록 함
+    await saveMenuSettingsToDb(menus, order || menuOrder)
     const nextSettings = {
       ...(organization.settings || {}),
       enabledMenus: menus,
@@ -783,11 +894,11 @@ export default function SettingsPage() {
   }
 
   // Page permission handlers
-  const handlePermissionChange = async (pageId: string, role: 'staff' | 'teacher', checked: boolean) => {
+  const handlePermissionChange = async (pageId: string, role: 'manager' | 'teacher', checked: boolean) => {
     const next = {
       ...pagePermissions,
       [pageId]: {
-        ...(pagePermissions[pageId] || { staff: false, teacher: false }),
+        ...(pagePermissions[pageId] || { manager: false, teacher: false }),
         [role]: checked,
       },
     }
@@ -795,10 +906,10 @@ export default function SettingsPage() {
     try {
       const payload = Object.entries(next).map(([pid, val]) => ({
         page_id: pid,
-        staff: val.staff,
+        manager: val.manager,
         teacher: val.teacher,
       }))
-    await fetch(withSlug(`${basePath}/permissions`), {
+    await fetch(withSlug(`${basePath}/page-permissions`), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -806,7 +917,7 @@ export default function SettingsPage() {
       })
     } catch (_) {}
 
-    const roleName = role === 'staff' ? '직원' : '강사'
+    const roleName = role === 'manager' ? '매니저' : '강사'
     toast({
       title: '권한 설정 변경',
       description: `${pageId} 페이지의 ${roleName} 접속 권한이 ${checked ? '활성화' : '비활성화'}되었습니다.`,
@@ -1202,9 +1313,7 @@ export default function SettingsPage() {
         const roleMap: Record<string, { label: string; color: string }> = {
           owner: { label: '원장', color: 'bg-yellow-100 text-yellow-800' },
           manager: { label: '매니저', color: 'bg-blue-100 text-blue-800' },
-          staff: { label: '스태프', color: 'bg-blue-100 text-blue-800' },
           teacher: { label: '강사', color: 'bg-green-100 text-green-800' },
-          admin: { label: '관리자', color: 'bg-purple-100 text-purple-800' },
           super_admin: { label: '슈퍼관리자', color: 'bg-purple-100 text-purple-800' },
         }
         const roleInfo = roleMap[role] ?? { label: role || '미정', color: 'bg-slate-100 text-slate-800' }
@@ -1269,6 +1378,7 @@ export default function SettingsPage() {
           <TabsTrigger value="organization">기관 정보</TabsTrigger>
           <TabsTrigger value="branches">지점 관리</TabsTrigger>
           <TabsTrigger value="rooms">교실 관리</TabsTrigger>
+          <TabsTrigger value="accounts">계정 관리</TabsTrigger>
           <TabsTrigger value="revenue">수입관리</TabsTrigger>
           <TabsTrigger value="expense">지출관리</TabsTrigger>
           <TabsTrigger value="menus">메뉴 관리</TabsTrigger>
@@ -1592,7 +1702,7 @@ export default function SettingsPage() {
         {/* Accounts Tab */}
         <TabsContent value="accounts" className="space-y-4">
           {/* Account Stats (탭 바로 아래) */}
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">총 계정</CardTitle>
@@ -1615,37 +1725,97 @@ export default function SettingsPage() {
             </Card>
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">직원 계정</CardTitle>
+                <CardTitle className="text-sm font-medium">매니저 계정</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold text-green-600">
-                  {accounts.filter((a) => a.role === 'staff').length}개
+                  {accounts.filter((a) => a.role === 'manager').length}개
                 </div>
-                <p className="text-xs text-muted-foreground">직원 전용 계정</p>
+                <p className="text-xs text-muted-foreground">매니저 전용 계정</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">대기중 초대</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-orange-600">
+                  {invitations.filter((i) => i.status === 'pending').length}개
+                </div>
+                <p className="text-xs text-muted-foreground">승인 대기중인 초대</p>
               </CardContent>
             </Card>
           </div>
 
+          {/* 초대하기 섹션 */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0">
               <div>
-                <CardTitle>계정 관리</CardTitle>
-                <CardDescription>시스템 사용자 계정을 관리하세요</CardDescription>
+                <CardTitle>팀원 초대</CardTitle>
+                <CardDescription>이메일로 새로운 팀원을 초대하세요</CardDescription>
               </div>
-              <Button onClick={handleAddAccount}>
+              <Button onClick={handleOpenInviteDialog}>
                 <UserPlus className="mr-2 h-4 w-4" />
-                계정 추가
+                초대하기
               </Button>
-          </CardHeader>
-          <CardContent>
-            <DataTable
-              columns={accountColumns}
-              data={accounts}
-              searchKey="email"
-              searchPlaceholder="이름 또는 아이디로 검색..."
-            />
-          </CardContent>
-        </Card>
+            </CardHeader>
+            {invitations.length > 0 && (
+              <CardContent>
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-muted-foreground">대기중인 초대</h4>
+                  {invitations.filter(i => i.status === 'pending').map((invitation) => (
+                    <div key={invitation.id} className="flex items-center justify-between p-3 border rounded-lg bg-orange-50 border-orange-200">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center">
+                          <UserPlus className="h-4 w-4 text-orange-600" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{invitation.email}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {invitation.role === 'teacher' ? '강사' : invitation.role === 'manager' ? '매니저' : '원장'}
+                            {' · '}
+                            {new Date(invitation.expires_at) > new Date()
+                              ? `${Math.ceil((new Date(invitation.expires_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24))}일 후 만료`
+                              : '만료됨'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => handleResendInvitation(invitation.id)}>
+                          <RotateCcw className="h-4 w-4 mr-1" />
+                          재전송
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700" onClick={() => handleCancelInvitation(invitation.id)}>
+                          <X className="h-4 w-4 mr-1" />
+                          취소
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                  {invitations.filter(i => i.status === 'pending').length === 0 && (
+                    <p className="text-sm text-muted-foreground py-2">대기중인 초대가 없습니다.</p>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+
+          {/* 기존 계정 관리 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>등록된 계정</CardTitle>
+              <CardDescription>현재 시스템에 등록된 사용자 계정입니다</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DataTable
+                columns={accountColumns}
+                data={accounts}
+                searchKey="email"
+                searchPlaceholder="이름 또는 이메일로 검색..."
+              />
+            </CardContent>
+          </Card>
 
           {/* Account Info */}
           <Card>
@@ -2098,7 +2268,7 @@ export default function SettingsPage() {
                   const isEnabled = enabledMenus.includes(item.id)
                   const isEssential = item.id === 'settings'
 
-                  const permission = pagePermissions[item.id] || { staff: false, teacher: false }
+                  const permission = pagePermissions[item.id] || { manager: false, teacher: false }
 
                   return (
                     <div
@@ -2155,16 +2325,16 @@ export default function SettingsPage() {
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-1.5">
                               <Checkbox
-                                id={`staff-${item.id}`}
-                                checked={permission.staff}
-                                onCheckedChange={(checked) => handlePermissionChange(item.id, 'staff', checked as boolean)}
+                                id={`manager-${item.id}`}
+                                checked={permission.manager}
+                                onCheckedChange={(checked) => handlePermissionChange(item.id, 'manager', checked as boolean)}
                                 className="h-3.5 w-3.5"
                               />
                               <Label
-                                htmlFor={`staff-${item.id}`}
+                                htmlFor={`manager-${item.id}`}
                                 className="text-xs font-medium cursor-pointer whitespace-nowrap"
                               >
-                                직원 접속 가능
+                                매니저 접속 가능
                               </Label>
                             </div>
                             <div className="flex items-center gap-1.5">
@@ -3409,6 +3579,65 @@ export default function SettingsPage() {
               {editingBranch ? '수정' : '추가'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite Dialog */}
+      <Dialog open={isInviteDialogOpen} onOpenChange={setIsInviteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>팀원 초대</DialogTitle>
+            <DialogDescription>
+              이메일 주소를 입력하면 초대 메일이 전송됩니다.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form
+            className="grid gap-4 py-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSendInvite()
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">이메일 *</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                placeholder="example@email.com"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="invite-role">역할 *</Label>
+              <Select
+                value={inviteForm.role}
+                onValueChange={(value: UserRole) => setInviteForm({ ...inviteForm, role: value })}
+              >
+                <SelectTrigger id="invite-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="teacher">강사</SelectItem>
+                  <SelectItem value="manager">매니저</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                역할에 따라 접근 가능한 페이지가 달라집니다.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsInviteDialogOpen(false)}>
+                취소
+              </Button>
+              <Button type="submit" disabled={isInviting}>
+                {isInviting ? '전송 중...' : '초대 메일 보내기'}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

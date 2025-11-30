@@ -219,6 +219,7 @@ export default function LessonsPage() {
     director_feedback?: string
     final_message?: string
     homework_submitted?: boolean
+    homework_due_date?: string
   }>>({
     lesson_date: selectedDate,
     lesson_time: '',
@@ -229,6 +230,7 @@ export default function LessonsPage() {
     student_attitudes: '',
     comprehension_level: 'medium',
     homework_assigned: '',
+    homework_due_date: '',
     next_lesson_plan: '',
     parent_feedback: '',
     director_feedback: '',
@@ -250,6 +252,7 @@ export default function LessonsPage() {
       student_attitudes: '',
       comprehension_level: 'medium',
       homework_assigned: '',
+      homework_due_date: '',
       next_lesson_plan: '',
       parent_feedback: '',
     })
@@ -606,10 +609,44 @@ export default function LessonsPage() {
       const data = await response.json() as { lesson: LessonNote }
       setLessons((prev) => [data.lesson, ...prev])
 
-      toast({
-        title: '수업일지 작성 완료',
-        description: '수업일지가 성공적으로 저장되었습니다.',
-      })
+      // 과제명과 마감일이 모두 있으면 과제 자동 생성
+      if (formData.homework_assigned && formData.homework_due_date && formData.class_id) {
+        try {
+          const homeworkResponse = await fetch('/api/homework', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              class_id: formData.class_id,
+              title: formData.homework_assigned,
+              due_date: formData.homework_due_date,
+            }),
+          })
+
+          if (homeworkResponse.ok) {
+            toast({
+              title: '수업일지 작성 완료',
+              description: '수업일지와 과제가 성공적으로 저장되었습니다.',
+            })
+          } else {
+            toast({
+              title: '수업일지 작성 완료',
+              description: '수업일지는 저장되었지만 과제 생성에 실패했습니다.',
+              variant: 'destructive',
+            })
+          }
+        } catch {
+          toast({
+            title: '수업일지 작성 완료',
+            description: '수업일지는 저장되었지만 과제 생성에 실패했습니다.',
+            variant: 'destructive',
+          })
+        }
+      } else {
+        toast({
+          title: '수업일지 작성 완료',
+          description: '수업일지가 성공적으로 저장되었습니다.',
+        })
+      }
 
       setIsDialogOpen(false)
       setSelectedLesson(null)
@@ -1420,15 +1457,35 @@ export default function LessonsPage() {
 
             <div className="space-y-2">
               <Label htmlFor="homework_assigned">과제 부여</Label>
-              <Textarea
-                id="homework_assigned"
-                value={formData.homework_assigned}
-                onChange={(e) =>
-                  setFormData({ ...formData, homework_assigned: e.target.value })
-                }
-                placeholder="과제를 부여하세요! (작성 완료 시 학생들에게 자동으로 전송됩니다)"
-                rows={2}
-              />
+              <div className="flex gap-2">
+                <Textarea
+                  id="homework_assigned"
+                  value={formData.homework_assigned}
+                  onChange={(e) =>
+                    setFormData({ ...formData, homework_assigned: e.target.value })
+                  }
+                  placeholder="과제명을 적어주세요"
+                  rows={2}
+                  className="flex-1"
+                />
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor="homework_due_date" className="text-xs text-muted-foreground">마감일</Label>
+                  <Input
+                    id="homework_due_date"
+                    type="date"
+                    value={formData.homework_due_date || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, homework_due_date: e.target.value })
+                    }
+                    className="w-[140px]"
+                  />
+                </div>
+              </div>
+              {formData.homework_assigned && formData.homework_due_date && (
+                <p className="text-xs text-muted-foreground">
+                  과제가 자동으로 생성됩니다
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">
