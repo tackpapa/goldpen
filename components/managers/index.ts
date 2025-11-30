@@ -1,0 +1,5 @@
+export { ManagerDetailModal } from './ManagerDetailModal'
+export type { Manager } from './ManagerDetailModal'
+export { BasicInfoTab } from './BasicInfoTab'
+export { SalaryTab } from './SalaryTab'
+export { ActivityTab } from './ActivityTab'

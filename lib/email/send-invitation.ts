@@ -18,6 +18,12 @@ const roleLabels: Record<string, string> = {
   teacher: '강사'
 }
 
+// Resend API 응답 타입 정의
+interface ResendApiResponse {
+  id?: string
+  message?: string
+}
+
 // 초대 이메일 HTML 템플릿 생성
 function generateInvitationEmailHtml(params: InvitationEmailParams): string {
   const { orgName, role, token, inviterName, expiresAt } = params
@@ -208,7 +214,7 @@ export async function sendInvitationEmail(params: InvitationEmailParams): Promis
       })
     })
 
-    const data = await response.json()
+    const data = await response.json() as ResendApiResponse
 
     if (!response.ok) {
       console.error('[Email] Resend API 에러:', data)

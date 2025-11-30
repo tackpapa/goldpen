@@ -8,6 +8,33 @@ export const dynamic = 'force-dynamic'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
+// Invitation 타입 정의 (Supabase 타입에 없는 테이블)
+interface Invitation {
+  id: string
+  org_id: string
+  email: string
+  role: string
+  token: string
+  status: 'pending' | 'accepted' | 'expired'
+  created_at: string
+  expires_at: string
+}
+
+// Organization 타입 정의
+interface Organization {
+  id: string
+  name: string
+  slug: string
+}
+
+// User 타입 정의
+interface UserProfile {
+  id: string
+  org_id: string
+  email: string
+  role: string
+}
+
 interface ResendInvitationBody {
   id: string
 }
@@ -44,7 +71,7 @@ export async function POST(request: Request) {
         .from('organizations')
         .select('id, name')
         .eq('slug', orgSlug)
-        .single()
+        .single() as { data: Pick<Organization, 'id' | 'name'> | null; error: unknown }
 
       if (orgError || !org) {
         return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
@@ -56,7 +83,7 @@ export async function POST(request: Request) {
         .from('users')
         .select('org_id, role')
         .eq('id', user.id)
-        .single()
+        .single() as { data: Pick<UserProfile, 'org_id' | 'role'> | null; error: unknown }
 
       if (!userProfile) {
         return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
@@ -73,7 +100,7 @@ export async function POST(request: Request) {
         .from('organizations')
         .select('name')
         .eq('id', orgId)
-        .single()
+        .single() as { data: Pick<Organization, 'name'> | null; error: unknown }
       orgName = org?.name || ''
     } else {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
@@ -92,7 +119,7 @@ export async function POST(request: Request) {
       .select('id, email, role, status')
       .eq('id', id)
       .eq('org_id', orgId)
-      .single()
+      .single() as { data: Pick<Invitation, 'id' | 'email' | 'role' | 'status'> | null; error: unknown }
 
     if (fetchError || !existingInvitation) {
       return Response.json({ error: '초대를 찾을 수 없습니다' }, { status: 404 })
@@ -109,8 +136,9 @@ export async function POST(request: Request) {
     newExpiresAt.setDate(newExpiresAt.getDate() + 7) // 7일 후 만료
 
     // 초대 업데이트
-    const { data: invitation, error: updateError } = await supabase
-      .from('invitations')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const invitationsTable = supabase.from('invitations') as any
+    const { data: invitation, error: updateError } = await invitationsTable
       .update({
         token: newToken,
         expires_at: newExpiresAt.toISOString()
@@ -118,7 +146,7 @@ export async function POST(request: Request) {
       .eq('id', id)
       .eq('org_id', orgId)
       .select('id, email, role, status, created_at, expires_at')
-      .single()
+      .single() as { data: Invitation | null; error: unknown }
 
     if (updateError) {
       console.error('[Invitations Resend] Error:', updateError)

@@ -1,14 +1,18 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import type { PageId, UserRole } from '@/lib/types/permissions'
 
 type MeResponse = { user?: { id: string; role: UserRole; org_id?: string } }
 type PermResponse = { permissions?: Array<{ page_id: string; staff: boolean; teacher: boolean }> }
 
+// owner만 접근 가능한 페이지 목록
+const OWNER_ONLY_PAGES: PageId[] = ['settings']
+
 export function usePageAccess(pageId: PageId) {
   const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     let cancelled = false
@@ -27,7 +31,18 @@ export function usePageAccess(pageId: PageId) {
           return
         }
 
-        // 나머지는 권한 체크 없이 통과 (개발/테스트용)
+        // owner만 접근 가능한 페이지 체크 (manager, teacher 접근 불가)
+        if (OWNER_ONLY_PAGES.includes(pageId)) {
+          if (role === 'manager' || role === 'teacher') {
+            // 기관 slug 추출 (pathname에서 첫 번째 세그먼트)
+            const segments = pathname.split('/').filter(Boolean)
+            const institutionName = segments[0] || 'goldpen'
+            if (!cancelled) router.push(`/${institutionName}/overview`)
+            return
+          }
+        }
+
+        // 나머지는 권한 체크 없이 통과
         return
       } catch (_) {
         router.push('/login')
@@ -37,5 +52,5 @@ export function usePageAccess(pageId: PageId) {
     return () => {
       cancelled = true
     }
-  }, [pageId, router])
+  }, [pageId, router, pathname])
 }

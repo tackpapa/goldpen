@@ -28,13 +28,13 @@ export function PagePermissions({ pageId }: PagePermissionsProps) {
     if (!loading) {
       const pagePermission = permissions[pageId]
       if (pagePermission) {
-        setStaffAccess(pagePermission.staff)
+        setStaffAccess(pagePermission.manager)
         setTeacherAccess(pagePermission.teacher)
       }
     }
   }, [permissions, pageId, loading])
 
-  const handleManagerChange = async (checked: boolean) => {
+  const handleStaffChange = async (checked: boolean) => {
     setStaffAccess(checked)
     await updatePermission(pageId, 'manager', checked)
   }

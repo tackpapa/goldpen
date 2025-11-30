@@ -575,6 +575,47 @@ export default function AttendancePage() {
       },
     },
     {
+      id: 'attendance_status',
+      header: '출결 상태',
+      cell: ({ row }) => {
+        const studentId = row.original.student_id
+        const logs = dailyLogsByStudent[studentId] || []
+        const schedules = allStudentSchedules[studentId] || []
+        const today = new Date(selectedDate)
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+        const todayWeekday = dayNames[today.getDay()]
+        const todaySchedule = schedules.find((s) => s.day_of_week === todayWeekday)
+
+        // 등원 시간 없으면 예정 시간 경과 여부로 결석/예정 판단
+        const firstCheckIn = logs.find((l) => l.in)?.in
+        const now = new Date()
+        const nowMinutes = now.getHours() * 60 + now.getMinutes()
+
+        if (!todaySchedule?.start_time) {
+          return <Badge variant="outline" className="text-gray-600">-</Badge>
+        }
+
+        const [schH, schM] = todaySchedule.start_time.split(':').map(Number)
+        const scheduledMinutes = schH * 60 + schM
+
+        if (firstCheckIn) {
+          // 체크인 있음 - 출석/지각 판단
+          const checkInDate = new Date(firstCheckIn)
+          const checkInMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
+          if (checkInMinutes > scheduledMinutes) {
+            return <Badge variant="secondary" className="bg-orange-100 text-orange-700">지각</Badge>
+          }
+          return <Badge variant="default" className="bg-green-100 text-green-700">출석</Badge>
+        }
+
+        // 체크인 없음 - 예정 시간 경과 여부
+        if (nowMinutes > scheduledMinutes) {
+          return <Badge variant="destructive" className="bg-red-100 text-red-700">결석</Badge>
+        }
+        return <Badge variant="outline" className="text-gray-600">예정</Badge>
+      },
+    },
+    {
       id: 'check_in',
       header: '등원 시간',
       cell: ({ row }) => {
@@ -638,12 +679,51 @@ export default function AttendancePage() {
     },
   ]
 
-  // 좌석 배정 정보가 있으면 그 학생들로 필터, 없으면 전체 표시
+  // commute_schedules에 오늘 요일 일정이 있는 학생 기반으로 테이블 데이터 생성
   const seatFilteredAttendance = useMemo(() => {
-    if (assignedStudentIds.length === 0) return todayAttendance
-    const set = new Set(assignedStudentIds)
-    return todayAttendance.filter((record) => set.has(record.student_id))
-  }, [assignedStudentIds, todayAttendance])
+    // 오늘 요일 계산
+    const today = new Date(selectedDate)
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const todayWeekday = dayNames[today.getDay()]
+
+    // commute_schedules에 오늘 요일 일정이 있는 학생 목록 추출
+    const studentsWithTodaySchedule: string[] = []
+    Object.entries(allStudentSchedules).forEach(([studentId, schedules]) => {
+      if (schedules.some((s) => s.day_of_week === todayWeekday && s.start_time)) {
+        studentsWithTodaySchedule.push(studentId)
+      }
+    })
+
+    // 아직 일정 로드 안됐으면 기존 방식 (좌석 배정 기준)
+    if (studentsWithTodaySchedule.length === 0 && Object.keys(allStudentSchedules).length === 0) {
+      if (assignedStudentIds.length === 0) return todayAttendance
+      const set = new Set(assignedStudentIds)
+      return todayAttendance.filter((record) => set.has(record.student_id))
+    }
+
+    // commute 일정 기반 학생 목록 생성 (체크인 여부와 관계없이)
+    const todayAttendanceMap = new Map(todayAttendance.map((r) => [r.student_id, r]))
+
+    return studentsWithTodaySchedule.map((studentId) => {
+      // 이미 체크인한 기록이 있으면 그 데이터 사용
+      const existing = todayAttendanceMap.get(studentId)
+      if (existing) return existing
+
+      // 체크인 안 한 학생은 기본 데이터 생성
+      // rawAssignments에서 학생 정보 찾기
+      const assignment = rawAssignments.find((a) =>
+        (a.studentId || a.student_id) === studentId
+      )
+      const studentName = assignment?.studentName || assignment?.student_name || '알 수 없음'
+
+      return {
+        student_id: studentId,
+        student_name: studentName,
+        classes: [],
+        status: 'scheduled' as const,
+      }
+    })
+  }, [assignedStudentIds, todayAttendance, allStudentSchedules, selectedDate, rawAssignments])
 
   const filteredAttendanceHistory = useMemo(() => {
     if (assignedStudentIds.length === 0) return attendanceHistory

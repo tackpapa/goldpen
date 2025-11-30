@@ -8,6 +8,33 @@ export const dynamic = 'force-dynamic'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
 
+// Invitation 타입 정의 (Supabase 타입에 없는 테이블)
+interface Invitation {
+  id: string
+  org_id: string
+  email: string
+  role: string
+  token: string
+  status: 'pending' | 'accepted' | 'expired'
+  created_at: string
+  expires_at: string
+}
+
+// Organization 타입 정의
+interface Organization {
+  id: string
+  name: string
+  slug: string
+}
+
+// User 타입 정의
+interface UserProfile {
+  id: string
+  org_id: string
+  email: string
+  role: string
+}
+
 // Request body types
 interface CreateInvitationBody {
   email: string
@@ -48,7 +75,7 @@ export async function GET(request: Request) {
         .from('organizations')
         .select('id')
         .eq('slug', orgSlug)
-        .single()
+        .single() as { data: Pick<Organization, 'id'> | null; error: unknown }
 
       if (orgError || !org) {
         return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
@@ -59,7 +86,7 @@ export async function GET(request: Request) {
         .from('users')
         .select('org_id')
         .eq('id', user.id)
-        .single()
+        .single() as { data: Pick<UserProfile, 'org_id'> | null; error: unknown }
 
       if (!userProfile) {
         return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
@@ -72,8 +99,8 @@ export async function GET(request: Request) {
     const { data: invitations, error } = await supabase
       .from('invitations')
       .select('id, email, role, status, created_at, expires_at')
-      .eq('org_id', orgId)
-      .order('created_at', { ascending: false })
+      .eq('org_id', orgId!)
+      .order('created_at', { ascending: false }) as { data: Invitation[] | null; error: unknown }
 
     if (error) {
       console.error('[Invitations GET] Error:', error)
@@ -109,7 +136,7 @@ export async function POST(request: Request) {
         .from('organizations')
         .select('id, name')
         .eq('slug', orgSlug)
-        .single()
+        .single() as { data: Pick<Organization, 'id' | 'name'> | null; error: unknown }
 
       if (orgError || !org) {
         return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
@@ -121,7 +148,7 @@ export async function POST(request: Request) {
         .from('users')
         .select('org_id, role')
         .eq('id', user.id)
-        .single()
+        .single() as { data: Pick<UserProfile, 'org_id' | 'role'> | null; error: unknown }
 
       if (!userProfile) {
         return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
@@ -138,7 +165,7 @@ export async function POST(request: Request) {
         .from('organizations')
         .select('name')
         .eq('id', orgId)
-        .single()
+        .single() as { data: Pick<Organization, 'name'> | null; error: unknown }
       orgName = org?.name || ''
     } else {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
@@ -165,10 +192,10 @@ export async function POST(request: Request) {
     const { data: existingInvitation } = await supabase
       .from('invitations')
       .select('id')
-      .eq('org_id', orgId)
+      .eq('org_id', orgId!)
       .eq('email', email)
       .eq('status', 'pending')
-      .single()
+      .single() as { data: Pick<Invitation, 'id'> | null; error: unknown }
 
     if (existingInvitation) {
       return Response.json({ error: '이미 초대된 이메일입니다' }, { status: 409 })
@@ -178,9 +205,9 @@ export async function POST(request: Request) {
     const { data: existingUser } = await supabase
       .from('users')
       .select('id')
-      .eq('org_id', orgId)
+      .eq('org_id', orgId!)
       .eq('email', email)
-      .single()
+      .single() as { data: Pick<UserProfile, 'id'> | null; error: unknown }
 
     if (existingUser) {
       return Response.json({ error: '이미 등록된 사용자입니다' }, { status: 409 })
@@ -211,10 +238,11 @@ export async function POST(request: Request) {
     expiresAt.setDate(expiresAt.getDate() + 7) // 7일 후 만료
 
     // 초대 레코드 생성
-    const { data: invitation, error } = await supabase
-      .from('invitations')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const invitationsTable = supabase.from('invitations') as any
+    const { data: invitation, error } = await invitationsTable
       .insert({
-        org_id: orgId,
+        org_id: orgId!,
         email,
         role,
         token,
@@ -222,7 +250,7 @@ export async function POST(request: Request) {
         expires_at: expiresAt.toISOString()
       })
       .select('id, email, role, status, created_at, expires_at')
-      .single()
+      .single() as { data: Invitation | null; error: unknown }
 
     if (error) {
       console.error('[Invitations POST] Error:', error)
@@ -279,7 +307,7 @@ export async function DELETE(request: Request) {
         .from('organizations')
         .select('id')
         .eq('slug', orgSlug)
-        .single()
+        .single() as { data: Pick<Organization, 'id'> | null; error: unknown }
 
       if (orgError || !org) {
         return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
@@ -290,7 +318,7 @@ export async function DELETE(request: Request) {
         .from('users')
         .select('org_id, role')
         .eq('id', user.id)
-        .single()
+        .single() as { data: Pick<UserProfile, 'org_id' | 'role'> | null; error: unknown }
 
       if (!userProfile) {
         return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
@@ -315,7 +343,7 @@ export async function DELETE(request: Request) {
       .from('invitations')
       .delete()
       .eq('id', id)
-      .eq('org_id', orgId)
+      .eq('org_id', orgId!)
 
     if (error) {
       console.error('[Invitations DELETE] Error:', error)

@@ -32,7 +32,7 @@ export async function GET(request: Request) {
               id: 'demo-user',
               email: 'demo@goldpen.local',
               name: '데모 사용자',
-              role: 'manager',
+              role: 'owner',  // 개발/데모 모드에서는 owner 권한 부여
               phone: null,
               created_at: null,
             },
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
         org_id: demoOrg,
         name: user.email || '서비스 사용자',
         email: user.email || 'service@goldpen.local',
-        role: 'manager',
+        role: 'owner',  // 개발/서비스 모드에서는 owner 권한 부여
         phone: null,
         created_at: null,
       }

@@ -13,6 +13,7 @@ export type PageId =
   | 'seatsattendance'
   | 'schedule'
   | 'teachers'
+  | 'managers'
   | 'lessons'
   | 'rooms'
   | 'seats'
@@ -21,6 +22,7 @@ export type PageId =
   | 'homework'
   | 'billing'
   | 'expenses'
+  | 'settings'
 
 // 페이지 정보
 export interface PageInfo {
@@ -59,6 +61,7 @@ export const ALL_PAGES: PageInfo[] = [
   { id: 'seatsattendance', name: '독서실 출결관리', path: '/seatsattendance' },
   { id: 'schedule', name: '수업일지', path: '/schedule' },
   { id: 'teachers', name: '강사 관리', path: '/teachers' },
+  { id: 'managers', name: '매니저 관리', path: '/managers' },
   { id: 'lessons', name: '시간표', path: '/lessons' },
   { id: 'rooms', name: '스케줄관리', path: '/rooms' },
   { id: 'seats', name: '자리현황판', path: '/seats' },

@@ -23,6 +23,14 @@ interface OrganizationInfo {
   slug: string
 }
 
+// API 응답 타입 정의
+interface InvitationApiResponse {
+  invitation?: InvitationInfo
+  organization?: OrganizationInfo
+  error?: string
+  status?: string
+}
+
 type InviteStatus = 'loading' | 'valid' | 'invalid' | 'expired' | 'accepted' | 'success'
 
 const roleLabels: Record<string, string> = {
@@ -52,7 +60,7 @@ export default function InviteAcceptPage() {
     const loadInvitation = async () => {
       try {
         const response = await fetch(`/api/settings/invitations/accept?token=${token}`)
-        const data = await response.json()
+        const data = await response.json() as InvitationApiResponse
 
         if (!response.ok) {
           if (data.status === 'accepted') {
@@ -68,8 +76,8 @@ export default function InviteAcceptPage() {
           return
         }
 
-        setInvitation(data.invitation)
-        setOrganization(data.organization)
+        setInvitation(data.invitation || null)
+        setOrganization(data.organization || null)
         setStatus('valid')
       } catch (err) {
         console.error('초대 정보 로드 실패:', err)
@@ -113,7 +121,7 @@ export default function InviteAcceptPage() {
         body: JSON.stringify({ token, name, password })
       })
 
-      const data = await response.json()
+      const data = await response.json() as InvitationApiResponse
 
       if (!response.ok) {
         setFormError(data.error || '초대 수락 실패')

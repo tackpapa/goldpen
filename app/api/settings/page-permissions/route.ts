@@ -71,11 +71,11 @@ export async function GET(request: Request) {
       return Response.json({ error: '권한 조회 실패' }, { status: 500 })
     }
 
-    // 페이지별 권한을 객체로 변환
-    const permissionsMap: Record<string, { staff: boolean; teacher: boolean }> = {}
+    // 페이지별 권한을 객체로 변환 (manager로 반환하여 타입과 일치)
+    const permissionsMap: Record<string, { manager: boolean; teacher: boolean }> = {}
     for (const perm of (permissions || [])) {
       permissionsMap[perm.page_id] = {
-        staff: perm.staff_access,
+        manager: perm.staff_access,  // DB의 staff_access를 manager로 반환
         teacher: perm.teacher_access
       }
     }

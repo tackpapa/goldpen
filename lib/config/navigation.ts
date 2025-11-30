@@ -104,6 +104,13 @@ export const navigationItems: NavigationItem[] = [
     badges: ['학원용'],
   },
   {
+    id: 'managers',
+    name: '매니저 관리',
+    href: '/managers',
+    icon: Users,
+    badges: ['학원용', '독서실', '공부방'],
+  },
+  {
     id: 'schedule',
     name: '강사 시간표',
     href: '/schedule',

@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare, CreditCard, Wallet as WalletIcon, Check, Zap, Crown } from 'lucide-react'
 import { navigationItems } from '@/lib/config/navigation'
 import { useMenuSettings } from '@/lib/hooks/useMenuSettings'
+import { usePageAccess } from '@/hooks/use-page-access'
 import {
   Dialog,
   DialogContent,
@@ -96,6 +97,9 @@ interface ApiResponse {
 }
 
 export default function SettingsPage() {
+  // 설정 페이지 접근 권한 체크 (owner만 접근 가능)
+  usePageAccess('settings')
+
   const { toast } = useToast()
   const [organization, setOrganization] = useState<Organization>(defaultOrganization)
   const [institutionName, setInstitutionName] = useState<string>('')
@@ -1326,9 +1330,12 @@ export default function SettingsPage() {
     },
     {
       accessorKey: 'createdAt',
-      header: '생성일',
+      header: '입사일',
       cell: ({ row }) => {
-        const date = new Date(row.getValue('createdAt'))
+        const value = row.getValue('createdAt')
+        if (!value) return '-'
+        const date = new Date(value as string)
+        if (isNaN(date.getTime())) return '-'
         return date.toLocaleDateString('ko-KR')
       },
     },
@@ -1337,7 +1344,7 @@ export default function SettingsPage() {
       cell: ({ row }) => {
         const account = row.original
         // 관리자 계정은 삭제/수정 불가
-        const isAdmin = account.role === 'admin'
+        const isAdmin = account.role === 'owner'
         return (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

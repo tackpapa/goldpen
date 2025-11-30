@@ -395,7 +395,27 @@ async function checkStudyRoomAttendance(
     if (!hasCheckin && nowMinutes > checkInMinutes) {
       // 결석 체크: 하원 시간도 경과
       if (checkOutMinutes && nowMinutes > checkOutMinutes) {
-        // 설정에서 템플릿 가져오기
+        // 1. attendance_logs 테이블에 결석 레코드 삽입 (source: 'cron_absent')
+        // 독서실의 경우 attendance_logs에 기록
+        try {
+          await sql`
+            INSERT INTO attendance_logs (org_id, student_id, check_in_time, check_out_time, duration_minutes, source)
+            VALUES (
+              ${schedule.org_id},
+              ${schedule.student_id},
+              ${todayDate}::date + TIME '00:00:00',
+              ${todayDate}::date + TIME '00:00:00',
+              0,
+              'cron_absent'
+            )
+            ON CONFLICT DO NOTHING
+          `;
+          console.log(`[StudyRoom] Marked absent: ${schedule.student_name}`);
+        } catch (insertError) {
+          console.error(`[StudyRoom] Failed to insert absence record:`, insertError);
+        }
+
+        // 2. 설정에서 템플릿 가져오기
         const template = await getTemplate(sql, schedule.org_id, 'study_absent');
         const message = fillTemplate(template, {
           '기관명': schedule.org_name,
@@ -510,7 +530,27 @@ async function checkClassAttendance(
       if (!hasAttendance) {
         // 결석 체크: 수업 종료 시간 경과
         if (nowMinutes > endMinutes) {
-          // 설정에서 템플릿 가져오기
+          // 1. attendance 테이블에 결석 레코드 삽입
+          try {
+            await sql`
+              INSERT INTO attendance (org_id, class_id, student_id, date, status, class_name, student_name)
+              VALUES (
+                ${cls.org_id},
+                ${cls.class_id},
+                ${enrollment.student_id},
+                ${todayDate}::date,
+                'absent',
+                ${cls.class_name},
+                ${enrollment.student_name}
+              )
+              ON CONFLICT (org_id, class_id, student_id, date) DO NOTHING
+            `;
+            console.log(`[Class] Marked absent: ${enrollment.student_name} for ${cls.class_name}`);
+          } catch (insertError) {
+            console.error(`[Class] Failed to insert absence record:`, insertError);
+          }
+
+          // 2. 알림 발송 (기존 로직)
           const template = await getTemplate(sql, cls.org_id, 'class_absent');
           const message = fillTemplate(template, {
             '기관명': cls.org_name,
