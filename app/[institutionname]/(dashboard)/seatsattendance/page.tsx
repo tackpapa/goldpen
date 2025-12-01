@@ -650,32 +650,15 @@ export default function AttendancePage() {
     },
   ]
 
-  // commute_schedules에 오늘 요일 일정이 있는 학생 기반으로 테이블 데이터 생성
+  // 좌석 배정된 학생 기반으로 테이블 데이터 생성 (commute_schedules 유무와 관계없이)
   const seatFilteredAttendance = useMemo(() => {
-    // 오늘 요일 계산
-    const today = new Date(selectedDate)
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-    const todayWeekday = dayNames[today.getDay()]
+    // 좌석 배정된 학생이 없으면 기존 todayAttendance 반환
+    if (assignedStudentIds.length === 0) return todayAttendance
 
-    // commute_schedules에 오늘 요일 일정이 있는 학생 목록 추출
-    const studentsWithTodaySchedule: string[] = []
-    Object.entries(allStudentSchedules).forEach(([studentId, schedules]) => {
-      if (schedules.some((s) => s.day_of_week === todayWeekday && s.start_time)) {
-        studentsWithTodaySchedule.push(studentId)
-      }
-    })
-
-    // 아직 일정 로드 안됐으면 기존 방식 (좌석 배정 기준)
-    if (studentsWithTodaySchedule.length === 0 && Object.keys(allStudentSchedules).length === 0) {
-      if (assignedStudentIds.length === 0) return todayAttendance
-      const set = new Set(assignedStudentIds)
-      return todayAttendance.filter((record) => set.has(record.student_id))
-    }
-
-    // commute 일정 기반 학생 목록 생성 (체크인 여부와 관계없이)
     const todayAttendanceMap = new Map(todayAttendance.map((r) => [r.student_id, r]))
 
-    return studentsWithTodaySchedule.map((studentId) => {
+    // 좌석 배정된 모든 학생을 표시 (commute_schedules 유무와 관계없이)
+    return assignedStudentIds.map((studentId) => {
       // 이미 체크인한 기록이 있으면 그 데이터 사용
       const existing = todayAttendanceMap.get(studentId)
       if (existing) return existing
@@ -694,7 +677,7 @@ export default function AttendancePage() {
         status: 'scheduled' as const,
       }
     })
-  }, [assignedStudentIds, todayAttendance, allStudentSchedules, selectedDate, rawAssignments])
+  }, [assignedStudentIds, todayAttendance, rawAssignments])
 
   const filteredAttendanceHistory = useMemo(() => {
     if (assignedStudentIds.length === 0) return attendanceHistory

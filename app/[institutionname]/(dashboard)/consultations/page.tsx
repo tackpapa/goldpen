@@ -822,10 +822,23 @@ export default function ConsultationsPage() {
       return
     }
 
+    // 프론트엔드 검증: 이미 다른 대기리스트에 있는지 확인
+    const consultationId = selectedConsultationForWaitlist.id
+    const existingWaitlist = waitlists.find(wl =>
+      wl.consultationIds.includes(consultationId)
+    )
+    if (existingWaitlist) {
+      toast({
+        title: '추가 불가',
+        description: `이 학생은 이미 "${existingWaitlist.name}" 대기리스트에 있습니다.`,
+        variant: 'destructive',
+      })
+      return
+    }
+
     // Optimistic: 즉시 UI 업데이트
     const previousWaitlists = waitlists
     const previousConsultations = consultations
-    const consultationId = selectedConsultationForWaitlist.id
     const waitlistId = selectedWaitlistId
     const studentName = selectedConsultationForWaitlist.student_name
 
@@ -1564,16 +1577,16 @@ export default function ConsultationsPage() {
                             {consultation.student_name}
                           </div>
                           <div className="text-xs text-muted-foreground">
-                            {consultation.student_grade || '학년 미입력'}
+                            {consultation.student_grade ? `${consultation.student_grade}학년` : '학년 미입력'}
                           </div>
                         </div>
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 w-6 p-0 ml-2"
+                          className="h-6 w-6 p-0 ml-2 text-muted-foreground hover:text-destructive"
                           onClick={() => handleRemoveFromWaitlist(waitlist.id, consultation.id)}
                         >
-                          <X className="h-3 w-3" />
+                          <Trash2 className="h-3 w-3" />
                         </Button>
                       </div>
                     ))
