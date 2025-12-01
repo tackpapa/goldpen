@@ -3,8 +3,8 @@ export const runtime = 'edge'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest } from 'next/server'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 // PATCH /api/payments/[id] - 결제 취소 (상태 변경 + 크레딧/독서실시간 환수)
 export async function PATCH(
