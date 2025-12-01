@@ -533,15 +533,13 @@ async function checkClassAttendance(
           // 1. attendance 테이블에 결석 레코드 삽입
           try {
             await sql`
-              INSERT INTO attendance (org_id, class_id, student_id, date, status, class_name, student_name)
+              INSERT INTO attendance (org_id, class_id, student_id, date, status)
               VALUES (
                 ${cls.org_id},
                 ${cls.class_id},
                 ${enrollment.student_id},
                 ${todayDate}::date,
-                'absent',
-                ${cls.class_name},
-                ${enrollment.student_name}
+                'absent'
               )
               ON CONFLICT (org_id, class_id, student_id, date) DO NOTHING
             `;

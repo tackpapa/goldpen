@@ -270,6 +270,7 @@ ${nextLessonPlan ? `다음 수업 계획: ${nextLessonPlan}` : ''}
         const updatedTotalHours = (teacher.total_hours_worked || 0) + lessonHours
         const updatedEarnedSalary = (teacher.earned_salary || 0) + earnedAmount
 
+        console.log('[Salary Update]', {
           teacher_name: teacher.name,
           lesson_duration_minutes: lessonDuration,
           lesson_hours: lessonHours,
@@ -283,6 +284,7 @@ ${nextLessonPlan ? `다음 수업 계획: ${nextLessonPlan}` : ''}
         // For now, just log it
       }
 
+      console.log('[Lesson Note]', {
         teacher_id: teacher?.id,
         teacher_name: teacher?.name,
         student_id: selectedStudentId,

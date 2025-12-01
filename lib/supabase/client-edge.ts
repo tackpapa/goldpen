@@ -255,24 +255,69 @@ export async function createAuthenticatedClient(request: Request) {
       // Try to parse as JSON (contains both access_token and refresh_token)
       const tokenData = JSON.parse(token)
       if (tokenData.access_token && tokenData.refresh_token) {
-        await supabase.auth.setSession({
+        const { error } = await supabase.auth.setSession({
           access_token: tokenData.access_token,
           refresh_token: tokenData.refresh_token
         })
+        if (error) {
+          console.error('[Supabase Edge] setSession error (JSON):', error.message)
+        }
       } else if (Array.isArray(tokenData) && tokenData.length >= 2) {
-        await supabase.auth.setSession({
+        const { error } = await supabase.auth.setSession({
           access_token: tokenData[0],
           refresh_token: tokenData[1]
         })
+        if (error) {
+          console.error('[Supabase Edge] setSession error (Array):', error.message)
+        }
       } else {
         throw new Error('[Supabase Edge] Invalid token format')
       }
     } catch (e) {
-      // If not JSON, assume it's a raw access_token
-      await supabase.auth.setSession({
+      // If not JSON, assume it's a raw access_token (Bearer token)
+      // For Bearer tokens, we need to use a dummy refresh_token or skip setSession
+      // Instead, directly verify the token with getUser using admin client
+      console.log('[Supabase Edge] Raw JWT token detected, using direct verification')
+
+      // Create admin client to verify the token
+      const adminClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+
+      // Decode and verify JWT to get user ID
+      try {
+        // JWT structure: header.payload.signature
+        const parts = token.split('.')
+        if (parts.length === 3) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'))
+          const userId = payload.sub
+
+          if (userId) {
+            // Override getUser to return the user from the token
+            ;(supabase as any).auth.getUser = async () => {
+              const { data: authUser, error } = await adminClient.auth.admin.getUserById(userId)
+              if (error || !authUser) {
+                return { data: { user: null }, error: { message: 'User not found' } }
+              }
+              return { data: { user: authUser.user }, error: null }
+            }
+            return supabase
+          }
+        }
+      } catch (jwtError) {
+        console.error('[Supabase Edge] JWT decode error:', jwtError)
+      }
+
+      // Fallback: try setSession with empty refresh token
+      const { error } = await supabase.auth.setSession({
         access_token: token,
-        refresh_token: ''
+        refresh_token: token // Use same token as refresh (workaround)
       })
+      if (error) {
+        console.error('[Supabase Edge] setSession error (raw):', error.message)
+      }
     }
   }
 

@@ -129,26 +129,28 @@ export function Header() {
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="end" forceMount>
-            <DropdownMenuLabel>
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{userName}</p>
+          <DropdownMenuContent className="w-64" align="end" forceMount>
+            <DropdownMenuLabel className="p-4">
+              <div className="flex flex-col space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-base font-semibold leading-none">{userName}</p>
+                  {!isLoading && getRoleLabel() && (
+                    <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                      {getRoleLabel()}
+                    </span>
+                  )}
+                </div>
                 {isLoading ? (
-                  <p className="text-xs leading-none text-muted-foreground">로딩 중...</p>
+                  <p className="text-sm text-muted-foreground">로딩 중...</p>
                 ) : (
-                  <>
-                    {getRoleLabel() && (
-                      <p className="text-xs leading-none text-primary font-medium">{getRoleLabel()}</p>
-                    )}
-                    {userEmail && (
-                      <p className="text-xs leading-none text-muted-foreground">{userEmail}</p>
-                    )}
-                  </>
+                  userEmail && (
+                    <p className="text-sm text-muted-foreground truncate">{userEmail}</p>
+                  )
                 )}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout}>
+            <DropdownMenuItem onClick={handleLogout} className="p-3 cursor-pointer">
               <LogOut className="mr-2 h-4 w-4" />
               <span>로그아웃</span>
             </DropdownMenuItem>
