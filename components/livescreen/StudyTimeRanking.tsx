@@ -95,10 +95,13 @@ export function StudyTimeRankingDisplay({
               </div>
 
               {/* Student Name */}
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className={`font-semibold ${isMe ? 'text-primary' : ''}`}>
-                  {ranking.surname}
-                  {isMe && ' (나)'}
+                  <span className="truncate inline-block max-w-full">
+                    {ranking.surname}
+                    {ranking.student_school ? ` (${ranking.student_school})` : ''}
+                    {isMe && ' (나)'}
+                  </span>
                 </p>
               </div>
 

@@ -648,6 +648,7 @@ export interface StudyTimeRanking {
   student_id: string
   student_name: string
   surname: string // 성만 공개 (예: 김**)
+  student_school?: string | null
   total_minutes: number
   rank: number
   period_type: 'daily' | 'weekly' | 'monthly'

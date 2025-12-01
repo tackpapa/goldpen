@@ -854,7 +854,7 @@ export default function LiveScreenPage({ params }: PageProps) {
                       <CardTitle className={`text-base md:text-lg truncate ${
                         theme === 'dark' ? 'text-[#c9d1d9]' : ''
                       }`}>
-                        {studentName} {studentSchool ? `(${studentSchool}) ` : ''}님
+                        {studentName} 님
                       </CardTitle>
                     </div>
                   </div>
