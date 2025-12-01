@@ -514,21 +514,6 @@ export default function LiveScreenPage({ params }: PageProps) {
         (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as CallRecord
-            // 디버깅: 비교 값 확인
-              'record.org_id': record.org_id,
-              'expected orgId': orgId,
-              'org_id match': record.org_id === orgId,
-              'record.student_id': record.student_id,
-              'expected studentId': studentId,
-              'student_id match': record.student_id === studentId,
-              'record.seat_number': record.seat_number,
-              'expected seatNumber': parseInt(seatNumber),
-              'seat_number match': record.seat_number === parseInt(seatNumber),
-              'record.date': record.date,
-              'expected today': today,
-              'date match': record.date === today,
-              'record.status': record.status,
-            })
             if (
               record.org_id === orgId &&
               record.student_id === studentId &&
