@@ -26,7 +26,7 @@ export async function GET(request: Request) {
   try {
     const isDev = process.env.NODE_ENV !== 'production'
     const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
     const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const { searchParams } = new URL(request.url)
     const serviceParam = searchParams.get('service')
