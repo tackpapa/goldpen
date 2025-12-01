@@ -28,7 +28,6 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Users, UserCheck, UserX, Settings2, Armchair, Moon, DoorOpen, Copy, Check, ClipboardList } from 'lucide-react'
-import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 import type { Student } from '@/lib/types/database'
 import { useAllSeatsRealtime } from '@/hooks/use-all-seats-realtime'
@@ -567,7 +566,7 @@ export default function SeatsPage() {
 
   const params = useParams()
   const institutionName = params.institutionname as string
-  const { toast } = useToast()
+  const toast = () => {}
   const [totalSeats, setTotalSeats] = useState(20)
   const [seatTypes, setSeatTypes] = useState<SeatType[]>([])
   const [seats, setSeats] = useState<Seat[]>(initializeSeats(20, []))
