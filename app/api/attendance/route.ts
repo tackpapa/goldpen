@@ -183,14 +183,17 @@ export async function GET(request: Request) {
       friday: '금',
       saturday: '토',
     }
+    // 해당 요일에 스케줄이 있는 경우에만 반환, 없으면 null (폴백 제거)
     const pickSchedule = (schedArr: any[]) => {
+      // 영문 요일명으로 검색
       let found = schedArr.find((s) => s.day === todayDay)
       if (!found) {
+        // 한글 요일명으로 검색
         const kor = korDayMap[todayDay]
         found = schedArr.find((s) => s.day === kor)
       }
-      if (!found) found = schedArr[0]
-      return found
+      // 폴백 제거: 해당 요일에 스케줄이 없으면 null 반환
+      return found || null
     }
 
     // attendance map (key: student-class)
@@ -207,6 +210,8 @@ export async function GET(request: Request) {
         const schedArr = Array.isArray(cls.schedule) ? cls.schedule : []
         if (schedArr.length === 0) return null
         const picked = pickSchedule(schedArr)
+        // 해당 요일에 스케줄이 없으면 제외
+        if (!picked) return null
         const key = `${en.student_id}-${en.class_id || ''}`
         const att = attendanceMap.get(key)
         const status = att?.status || 'scheduled'

@@ -146,55 +146,32 @@ export default function LessonsPage() {
   const todayLessonsList = lessons.filter((lesson) => lesson.lesson_date === selectedDate)
 
   // Filter scheduled classes based on user role
-  // 강사 계정일 경우: 해당 강사의 스케줄만 표시
-  // 원장/관리자 계정일 경우: 모든 스케줄 표시
+  // 강사 계정일 경우: 해당 강사의 모든 반 표시 (요일/시간 무관)
+  // 원장/관리자 계정일 경우: 전체 반 표시
+  // 수업일지는 자정 넘어서 작성하거나 다음날 작성하는 경우가 있으므로 요일/시간 필터 제거
   const filteredScheduledClasses = useMemo(() => {
-    const dayIdx = new Date(selectedDate).getDay() // 0=Sun
-    const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
-    const todayKey = dayMap[dayIdx]
-
-    const isFinished = (schedule: ScheduledClass & { lesson_time?: string }) => {
-      if (!schedule.lesson_time) return false
-      const [start, end] = schedule.lesson_time.split('-').map((t) => t?.trim())
-      if (!end) return false
-
-      const selDate = new Date(selectedDate)
-      if (Number.isNaN(selDate.getTime())) return false
-
-      const endDateTime = new Date(`${selectedDate}T${end}:00`)
-      const today = new Date()
-
-      // 과거 날짜면 모두 완료로 간주
-      const selDay = new Date(selectedDate.split('T')[0] || selectedDate)
-      const nowDay = new Date(today.toISOString().slice(0, 10))
-      selDay.setHours(0, 0, 0, 0)
-      nowDay.setHours(0, 0, 0, 0)
-      if (selDay < nowDay) return true
-      if (selDay > nowDay) return false
-
-      // 같은 날짜면 종료 시간이 현재보다 이전인지 확인
-      return endDateTime.getTime() <= today.getTime()
-    }
-
     const list = scheduledClasses.filter((schedule) => {
-      const matchTeacher =
-        userRole === 'teacher' && currentTeacherId
-          ? (schedule as ScheduledClass & { teacher_id?: string }).teacher_id === currentTeacherId
-          : true
-      const matchDay = schedule.day === todayKey
-      const finished = isFinished(schedule as ScheduledClass & { lesson_time?: string })
-      return matchTeacher && matchDay && finished
+      // 강사는 본인 담당 반만, 원장/관리자/owner는 전체
+      const isAdmin = userRole === 'director' || userRole === 'admin' || userRole === 'owner'
+      if (isAdmin) return true
+
+      // 강사인 경우 본인 담당 반만
+      if (userRole === 'teacher' && currentTeacherId) {
+        return (schedule as ScheduledClass & { teacher_id?: string }).teacher_id === currentTeacherId
+      }
+
+      return true
     })
 
-    // 중복 제거: class_id + lesson_time + day 기준
+    // 중복 제거: class_id 기준 (같은 반은 하나만 표시)
     const seen = new Set<string>()
     return list.filter((s) => {
-      const key = `${s.class_id ?? s.id}-${s.lesson_time}-${s.day ?? ''}`
+      const key = s.class_id ?? s.id
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
-  }, [userRole, currentTeacherId, scheduledClasses, selectedDate])
+  }, [userRole, currentTeacherId, scheduledClasses])
 
   // Date navigation functions
   const handlePreviousDay = () => {
@@ -1087,15 +1064,15 @@ export default function LessonsPage() {
           <div className="grid gap-4 py-4">
             {!isEditing && (
               <div className="space-y-2">
-                <Label htmlFor="scheduled_class">오늘 수업 선택</Label>
+                <Label htmlFor="scheduled_class">수업 선택</Label>
                 <Select value={selectedSchedule} onValueChange={handleScheduleChange}>
                   <SelectTrigger id="scheduled_class">
-                    <SelectValue placeholder="스케줄에서 수업을 선택하세요" />
+                    <SelectValue placeholder="수업일지를 작성할 반을 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
                     {filteredScheduledClasses.map((schedule) => (
                       <SelectItem key={schedule.id} value={schedule.id}>
-                        {schedule.lesson_time} - {schedule.class_name} ({schedule.class_type}) - {schedule.teacher_name}
+                        {schedule.class_name} - {schedule.teacher_name} ({schedule.subject || '과목 미지정'})
                       </SelectItem>
                     ))}
                   </SelectContent>
