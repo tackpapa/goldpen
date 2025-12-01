@@ -30,7 +30,6 @@ export default function NewConsultationPage() {
     setIsLoading(true)
     try {
       // TODO: Supabase에 저장
-      console.log('상담 신청 데이터:', data)
 
       toast({
         title: '상담 신청 완료',

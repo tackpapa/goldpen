@@ -612,8 +612,6 @@ export default function ExamsPage() {
     const feedbackCount = Object.keys(feedbacksToSave).length
 
     // 실제로는 여기서 API 호출하여 DB에 저장
-    console.log('저장할 성적:', scoresToSave)
-    console.log('저장할 피드백:', feedbacksToSave)
 
     toast({
       title: '성적 저장 완료',

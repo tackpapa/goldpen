@@ -204,7 +204,6 @@ export default function AttendancePage() {
 
       const fetchedCount = data.attendance?.length || 0
       const serverHasMore = (data as any).hasMore
-      console.log(
         '[history] page',
         pageToLoad,
         'fetched',
@@ -253,7 +252,6 @@ export default function AttendancePage() {
         setTodayPage(1)
         // Mark initial load as complete (prevents redundant classAttendanceRate recalculation)
         initialLoadCompleteRef.current = true
-        console.log('[Attendance] ✅ Initial load complete')
       } catch (err) {
         toast({
           title: '출결 데이터 로드 실패',

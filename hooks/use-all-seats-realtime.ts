@@ -39,8 +39,6 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
       try {
         setStatus((prev) => ({ ...prev, loading: true }))
 
-        console.log('🔍 [AllSeatsRealtime] Loading status for studentIds:', studentIds)
-        console.log('🔍 [AllSeatsRealtime] Today:', today)
 
         // Load all sleep records at once
         const { data: sleepData, error: sleepError } = await supabase
@@ -60,8 +58,6 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
           .eq('date', today)
           .eq('status', 'out')
 
-        console.log('🔍 [AllSeatsRealtime] Sleep data:', sleepData, 'Error:', sleepError)
-        console.log('🔍 [AllSeatsRealtime] Outing data:', outingData, 'Error:', outingError)
 
         const sleepMap = new Map<string, SleepRecord>()
         sleepData?.forEach((record) => {
@@ -73,7 +69,6 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
           outingMap.set(record.student_id, record as OutingRecord)
         })
 
-        console.log('🔍 [AllSeatsRealtime] Final maps - Sleep:', sleepMap.size, 'Outing:', outingMap.size)
 
         setStatus({
           sleepRecords: sleepMap,
@@ -105,20 +100,17 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
           filter: `org_id=eq.${orgId}`,
         },
         async (payload) => {
-          console.log('💤 Sleep record changed:', payload)
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as SleepRecord
             // Filter client-side
             if (studentIds.includes(record.student_id) && record.date === today) {
               if (record.status === 'sleeping') {
-                console.log('😴 Student is sleeping:', record.student_id)
                 setStatus((prev) => {
                   const newMap = new Map(prev.sleepRecords)
                   newMap.set(record.student_id, record)
                   return { ...prev, sleepRecords: newMap }
                 })
               } else if (record.status === 'awake') {
-                console.log('😃 Student woke up:', record.student_id)
                 setStatus((prev) => {
                   const newMap = new Map(prev.sleepRecords)
                   newMap.delete(record.student_id)
@@ -137,7 +129,6 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
         }
       )
       .subscribe((status) => {
-        console.log('🔌 [All Seats] Sleep channel status:', status)
       })
 
     // Subscribe to ALL outing_records changes (single channel)
@@ -157,20 +148,17 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
           filter: `org_id=eq.${orgId}`,
         },
         async (payload) => {
-          console.log('🚪 Outing record changed:', payload)
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as OutingRecord
             // Filter client-side
             if (studentIds.includes(record.student_id) && record.date === today) {
               if (record.status === 'out') {
-                console.log('🏃 Student is out:', record.student_id)
                 setStatus((prev) => {
                   const newMap = new Map(prev.outingRecords)
                   newMap.set(record.student_id, record)
                   return { ...prev, outingRecords: newMap }
                 })
               } else if (record.status === 'returned') {
-                console.log('🏠 Student returned:', record.student_id)
                 setStatus((prev) => {
                   const newMap = new Map(prev.outingRecords)
                   newMap.delete(record.student_id)
@@ -189,7 +177,6 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
         }
       )
       .subscribe((status) => {
-        console.log('🔌 [All Seats] Outing channel status:', status)
       })
 
     return () => {

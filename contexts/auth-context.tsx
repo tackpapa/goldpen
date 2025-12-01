@@ -59,7 +59,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json() as { user?: User | null; org?: Organization | null }
-        console.log('[Auth] API response:', data)
         if (data.user) {
           setUser(data.user)
           setOrg(data.org || null)
@@ -95,7 +94,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const demoRefresh = urlParams.get('demo_refresh')
 
         if (demoToken && demoRefresh) {
-          console.log('[Auth] Demo tokens found in URL, setting session...')
           try {
             const { createClient } = await import('@/lib/supabase/client')
             const supabase = createClient()
@@ -107,7 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (error) {
               console.error('[Auth] Failed to set demo session:', error)
             } else {
-              console.log('[Auth] Demo session set successfully')
               setAccessToken(demoToken)
             }
 

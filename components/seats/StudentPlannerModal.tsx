@@ -113,19 +113,16 @@ export function StudentPlannerModal({
           .eq('date', today),
       ])
 
-      console.log('[StudentPlannerModal] Planner API response status:', plannerRes.status)
 
       // subjects 데이터 가져오기
       let subjects: Subject[] = []
       if (subjectsRes.ok) {
         const subjectsData = await subjectsRes.json() as { subjects?: Subject[] }
         subjects = subjectsData.subjects || []
-        console.log('[StudentPlannerModal] Subjects data:', subjects)
       }
 
       if (plannerRes.ok) {
         const plannerData = await plannerRes.json() as { planner?: DailyPlanner }
-        console.log('[StudentPlannerModal] Planner data:', plannerData)
 
         // planner.study_plans와 subjects를 merge (livescreen과 동일한 로직)
         const dbPlans = plannerData.planner?.study_plans || []
@@ -163,10 +160,8 @@ export function StudentPlannerModal({
         }
       }
 
-      console.log('[StudentPlannerModal] Feedback API response status:', feedbackRes.status)
       if (feedbackRes.ok) {
         const feedbackData = await feedbackRes.json() as { feedback?: PlannerFeedback }
-        console.log('[StudentPlannerModal] Feedback data:', feedbackData)
         setFeedback(feedbackData.feedback || null)
         setFeedbackText(feedbackData.feedback?.feedback || '')
       }

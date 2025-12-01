@@ -114,10 +114,8 @@ export default function LiveScreenPage({ params }: PageProps) {
         const response = await fetch(`/api/seat-assignments?orgSlug=${institutionname}`, { credentials: 'include' })
         if (response.ok) {
           const data = await response.json() as { orgId?: string; assignments?: any[] }
-          console.log('[LiveScreen] 📦 Seat assignments response:', { orgId: data.orgId, assignmentsCount: data.assignments?.length })
           const assignment = data.assignments?.find((a: any) => a.seatNumber === parseInt(seatNumber))
           if (assignment && assignment.studentId) {
-            console.log('[LiveScreen] ✅ Found assignment:', { studentId: assignment.studentId, orgId: assignment.orgId })
             setStudentId(assignment.studentId)
             setStudentName(assignment.studentName || '학생')
             setOrgId(assignment.orgId || null)
@@ -504,8 +502,6 @@ export default function LiveScreenPage({ params }: PageProps) {
     fetchCurrentCall()
 
     // Realtime 구독 - 필터 없이 모든 이벤트 수신 후 클라이언트에서 필터링
-    console.log('[LiveScreen] 🔌 Subscribing to call_records (no filter) - will filter client-side')
-    console.log('[LiveScreen] 📋 Expected values: org_id:', orgId, 'student_id:', studentId, 'seat_number:', seatNumber)
     const channel = supabase
       .channel(`call-${studentId}-${seatNumber}-${Date.now()}`)
       .on(
@@ -516,11 +512,9 @@ export default function LiveScreenPage({ params }: PageProps) {
           table: 'call_records',
         },
         (payload) => {
-          console.log('[LiveScreen] 📞 Call record changed:', payload)
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as CallRecord
             // 디버깅: 비교 값 확인
-            console.log('[LiveScreen] 🔍 Comparing values:', {
               'record.org_id': record.org_id,
               'expected orgId': orgId,
               'org_id match': record.org_id === orgId,
@@ -542,7 +536,6 @@ export default function LiveScreenPage({ params }: PageProps) {
               record.date === today &&
               record.status === 'calling'
             ) {
-              console.log('[LiveScreen] ✅ All conditions matched! Showing call modal')
               setCurrentCall(record)
             } else if (record.status === 'acknowledged') {
               setCurrentCall(null)
@@ -556,7 +549,6 @@ export default function LiveScreenPage({ params }: PageProps) {
         }
       )
       .subscribe((status) => {
-        console.log('[LiveScreen] 🔌 Call records channel status:', status)
       })
 
     return () => {
@@ -713,7 +705,6 @@ export default function LiveScreenPage({ params }: PageProps) {
         status: 'calling' as const,
       }
 
-      console.log('[Manager Call] 📞 Inserting manager call:', insertData)
 
       const { data, error } = await supabase
         .from('manager_calls')
@@ -725,7 +716,6 @@ export default function LiveScreenPage({ params }: PageProps) {
         throw error
       }
 
-      console.log('[Manager Call] ✅ Insert successful:', data)
 
       setManagerCallModalOpen(false)
       toast({

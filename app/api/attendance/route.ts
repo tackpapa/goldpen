@@ -111,7 +111,6 @@ export async function GET(request: Request) {
       .eq('date', selectedDateStr)
       .order('updated_at', { ascending: false })
 
-    console.log('[Attendance GET] selectedDate', selectedDateStr, 'rows', todayRows?.length || 0)
 
     // 선택 날짜 요일에 맞는 수업 스케줄 조회해 선생님/시간 매핑
     const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const

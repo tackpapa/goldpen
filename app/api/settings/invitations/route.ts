@@ -270,7 +270,6 @@ export async function POST(request: Request) {
       console.error(`[Invitations] 이메일 발송 실패: ${email}, 에러: ${emailResult.error}`)
       // 이메일 발송 실패해도 초대 레코드는 유지 (재전송 가능)
     } else {
-      console.log(`[Invitations] 초대 이메일 발송 성공: ${email}, messageId: ${emailResult.messageId}`)
     }
 
     return Response.json({

@@ -748,7 +748,6 @@ export default function SeatsPage() {
           }>
 
           // Apply assignments to seats
-          console.log('[Seats] Assignments from API:', assignments)
           assignments.forEach(assignment => {
             const seatIndex = initialSeats.findIndex(s => s.number === assignment.seatNumber)
             if (seatIndex !== -1) {
@@ -772,7 +771,6 @@ export default function SeatsPage() {
         // Mark initial load as complete AFTER setSeats
         // This prevents realtime sync from overwriting with empty data
         initialLoadCompleteRef.current = true
-        console.log('[Seats] ✅ Initial load complete, realtime sync enabled')
       } catch {
         console.error('Failed to fetch seat config/assignments')
         // Still mark as complete to prevent blocking
@@ -856,7 +854,6 @@ export default function SeatsPage() {
     fetchCallRecords()
 
     // Realtime 구독
-    console.log('[Seats] 🔌 Subscribing to call_records with org_id:', orgId)
     const channel = supabase
       .channel('call-records-all')
       .on(
@@ -868,7 +865,6 @@ export default function SeatsPage() {
           filter: `org_id=eq.${orgId}`,
         },
         (payload) => {
-          console.log('[Seats] 📞 Call record changed:', payload)
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as CallRecord
             setCallRecords((prev) => {
@@ -891,7 +887,6 @@ export default function SeatsPage() {
         }
       )
       .subscribe((status) => {
-        console.log('[Seats] 🔌 Call records channel status:', status)
       })
 
     return () => {
@@ -905,7 +900,6 @@ export default function SeatsPage() {
 
     const supabase = createClient()
 
-    console.log('[Seats] 🔌 Subscribing to manager_calls with org_id:', orgId)
     const channel = supabase
       .channel('manager-calls-all')
       .on(
@@ -917,7 +911,6 @@ export default function SeatsPage() {
           filter: `org_id=eq.${orgId}`,
         },
         (payload) => {
-          console.log('[Seats] 🚨 Manager call received:', payload)
           const record = payload.new as any
           setManagerCallAlert({
             seatNumber: record.seat_number,
@@ -926,7 +919,6 @@ export default function SeatsPage() {
         }
       )
       .subscribe((status) => {
-        console.log('[Seats] 🔌 Manager calls channel status:', status)
       })
 
     return () => {
@@ -1123,7 +1115,6 @@ export default function SeatsPage() {
       const today = new Date().toISOString().split('T')[0]
       const supabase = createClient()
 
-      console.log('[Student Call] 📞 Inserting call record:', {
         org_id: orgId,
         student_id: callStudentInfo.studentId,
         seat_number: callStudentInfo.seatNumber,
@@ -1147,7 +1138,6 @@ export default function SeatsPage() {
         throw error
       }
 
-      console.log('[Student Call] ✅ Insert successful:', data)
 
       setCallModalOpen(false)
       toast({

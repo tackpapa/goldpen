@@ -187,7 +187,6 @@ async function recordDailyStudyStats(
     if (error) console.error('[recordDailyStudyStats] insert error:', error)
   }
 
-  console.log(`[recordDailyStudyStats] Recorded ${durationMinutes}min for student ${studentId}`)
 }
 
 /**
@@ -265,7 +264,6 @@ async function recordStudyTimeRecords(
     if (error) console.error('[recordStudyTimeRecords] insert error:', error)
   }
 
-  console.log(`[recordStudyTimeRecords] Recorded ${durationMinutes}min for student ${studentId}`)
 }
 
 /**
@@ -656,7 +654,6 @@ export async function PUT(request: Request) {
             .update({ remaining_amount: newRemaining })
             .eq('id', activePass.id)
 
-          console.log(`[SeatAssignments PUT] Deducted ${usedHours.toFixed(2)}h from pass ${activePass.id}. New remaining: ${newRemaining.toFixed(2)}h`)
         }
 
         // 학습 통계 저장 (daily_study_stats, study_time_records)

@@ -251,7 +251,6 @@ export function SubjectTimer({
         ? `?service=1&orgId=${orgId}`
         : ''
 
-      console.log('[SubjectTimer] Adding subject:', { studentId, name: newSubjectName.trim(), serviceParams })
 
       const response = await fetch(`/api/subjects${serviceParams}`, {
         method: 'POST',
@@ -267,7 +266,6 @@ export function SubjectTimer({
 
       if (response.ok) {
         const data = await response.json() as { subject: Subject }
-        console.log('[SubjectTimer] Subject added successfully:', data.subject)
         setSubjects(prev => [...prev, data.subject])
         toast({ title: '과목이 추가되었습니다' })
 

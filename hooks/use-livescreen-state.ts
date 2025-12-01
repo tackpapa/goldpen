@@ -195,7 +195,6 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
   }
 
   async function startSleep() {
-    console.log('🛏️ [SLEEP] Starting sleep for seat', seatNumber, 'studentId:', studentId)
     if (!studentId || !orgId) {
       console.error('❌ [SLEEP] Cannot start sleep: studentId is empty')
       throw new Error('studentId is required')
@@ -220,7 +219,6 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
         throw sleepError
       }
 
-      console.log('✅ [SLEEP] Record inserted:', sleepRecord.id)
 
       // Update state
       await updateState({
@@ -269,7 +267,6 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
   }
 
   async function startOuting(reason: string) {
-    console.log('🚪 [OUTING] Starting outing for seat', seatNumber, 'studentId:', studentId)
     if (!studentId || !orgId) {
       console.error('❌ [OUTING] Cannot start outing: studentId is empty')
       throw new Error('studentId is required')

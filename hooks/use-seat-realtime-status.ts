@@ -77,14 +77,11 @@ export function useSeatRealtimeStatus(studentId: string | null, seatNumber: numb
           filter: `student_id=eq.${studentId}`,
         },
         async (payload) => {
-          console.log('💤 Sleep record changed:', payload)
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as SleepRecord
             if (record.status === 'sleeping' && record.date === today) {
-              console.log('😴 Student is sleeping:', record)
               setStatus((prev) => ({ ...prev, sleepRecord: record }))
             } else if (record.status === 'awake') {
-              console.log('😃 Student woke up')
               setStatus((prev) => ({ ...prev, sleepRecord: null }))
             }
           } else if (payload.eventType === 'DELETE') {
@@ -93,7 +90,6 @@ export function useSeatRealtimeStatus(studentId: string | null, seatNumber: numb
         }
       )
       .subscribe((status) => {
-        console.log(`🔌 [Seat ${seatNumber}] Sleep channel status:`, status)
       })
 
     // Subscribe to outing_records changes
@@ -113,14 +109,11 @@ export function useSeatRealtimeStatus(studentId: string | null, seatNumber: numb
           filter: `student_id=eq.${studentId}`,
         },
         async (payload) => {
-          console.log('🚪 Outing record changed:', payload)
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as OutingRecord
             if (record.status === 'out' && record.date === today) {
-              console.log('🏃 Student is out:', record)
               setStatus((prev) => ({ ...prev, outingRecord: record }))
             } else if (record.status === 'returned') {
-              console.log('🏠 Student returned')
               setStatus((prev) => ({ ...prev, outingRecord: null }))
             }
           } else if (payload.eventType === 'DELETE') {
@@ -129,7 +122,6 @@ export function useSeatRealtimeStatus(studentId: string | null, seatNumber: numb
         }
       )
       .subscribe((status) => {
-        console.log(`🔌 [Seat ${seatNumber}] Outing channel status:`, status)
       })
 
     return () => {

@@ -221,7 +221,6 @@ export async function sendInvitationEmail(params: InvitationEmailParams): Promis
       return { success: false, error: data.message || 'Email send failed' }
     }
 
-    console.log(`[Email] 초대 이메일 발송 성공: ${to}, messageId: ${data.id}`)
     return { success: true, messageId: data.id }
   } catch (error) {
     console.error('[Email] 이메일 발송 실패:', error)

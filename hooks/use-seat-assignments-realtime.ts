@@ -80,16 +80,13 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
   }, [orgId, supabase])
 
   useEffect(() => {
-    console.log('🔍 [SeatAssignments] useEffect triggered, orgId:', orgId)
 
     if (!orgId) {
-      console.log('⚠️ [SeatAssignments] No orgId, skipping subscription')
       setState({ assignments: new Map(), loading: false })
       return
     }
 
     // 초기 로드
-    console.log('📥 [SeatAssignments] Loading initial assignments...')
     loadAssignments()
 
     // Realtime 구독
@@ -109,7 +106,6 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
           filter: `org_id=eq.${orgId}`,
         },
         async (payload) => {
-          console.log('🪑 Seat assignment changed:', payload)
 
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as any
@@ -147,7 +143,6 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
               seatsremainingtime: studentRemainingMinutes,
             }
 
-            console.log('✅ Seat assignment updated:', assignment)
 
             setState((prev) => {
               const newMap = new Map(prev.assignments)
@@ -156,7 +151,6 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
             })
           } else if (payload.eventType === 'DELETE') {
             const record = payload.old as any
-            console.log('🗑️ Seat assignment deleted:', record.seat_number)
 
             setState((prev) => {
               const newMap = new Map(prev.assignments)
@@ -167,7 +161,6 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
         }
       )
       .subscribe((status) => {
-        console.log('🔌 [SeatAssignments] Realtime channel status:', status)
       })
 
     return () => {

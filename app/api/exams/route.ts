@@ -62,7 +62,6 @@ export async function GET(request: Request) {
         .select('id, exam_id, student_id, score, notes, student:student_id(name)')
         .in('exam_id', examIds)
 
-      console.log('[Exams GET] Loaded scores:', allScores?.length || 0, 'for', examIds.length, 'exams')
 
       if (!scoresError && allScores) {
         for (const score of allScores) {

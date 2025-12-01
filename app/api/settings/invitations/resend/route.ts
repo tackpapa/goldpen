@@ -165,7 +165,6 @@ export async function POST(request: Request) {
     if (!emailResult.success) {
       console.error(`[Invitations] 재전송 이메일 발송 실패: ${existingInvitation.email}, 에러: ${emailResult.error}`)
     } else {
-      console.log(`[Invitations] 재전송 이메일 발송 성공: ${existingInvitation.email}, messageId: ${emailResult.messageId}`)
     }
 
     return Response.json({

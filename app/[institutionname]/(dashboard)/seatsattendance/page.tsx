@@ -255,7 +255,6 @@ export default function AttendancePage() {
     }
 
     const fetchedCount = data.attendance?.length || 0
-    console.log('[history] page', pageToLoad, 'fetched', fetchedCount, 'hasMore?', fetchedCount === HISTORY_PAGE_SIZE)
     const merged = pageToLoad === 0 ? (data.attendance || []) : [...attendanceHistory, ...(data.attendance || [])]
     setAttendanceHistory(merged)
 
@@ -359,7 +358,6 @@ export default function AttendancePage() {
         setRawAssignments((data as { assignments?: any[] }).assignments || [])
         // Mark seat assignments as loaded (prevents race condition with schedules)
         seatAssignmentsLoadedRef.current = true
-        console.log('[SeatsAttendance] ✅ Seat assignments loaded, schedules fetch enabled')
       } catch (e) {
         // 실패해도 전체 목록 표시 (필터 없이)
         setAssignedStudentIds([])

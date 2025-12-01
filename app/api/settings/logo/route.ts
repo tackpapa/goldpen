@@ -20,8 +20,6 @@ export async function POST(request: Request) {
 
     const form = await request.formData()
     const file = form.get('file')
-    console.log('[Logo Upload] form keys', Array.from(form.keys()))
-    console.log('[Logo Upload] file type', file && (file as any).constructor?.name)
     if (!file || typeof (file as any).arrayBuffer !== 'function') {
       return Response.json({ error: '파일이 필요합니다' }, { status: 400 })
     }

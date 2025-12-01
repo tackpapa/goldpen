@@ -152,7 +152,6 @@ export function DailyPlannerPage({
 
       if (feedbackQueryParams) {
         const feedbackUrl = `/api/planner-feedback${feedbackQueryParams}`
-        console.log('🔄 [DailyPlannerPage] Refreshing feedback (isVisible changed)')
         try {
           const feedbackRes = await fetch(feedbackUrl)
           if (feedbackRes.ok) {

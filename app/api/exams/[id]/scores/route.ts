@@ -110,10 +110,6 @@ export async function POST(
       notes: s.notes || null,
     }))
 
-    console.log('[Exam Scores POST] orgId:', orgId)
-    console.log('[Exam Scores POST] examId:', examId)
-    console.log('[Exam Scores POST] Inserting', scoresToInsert.length, 'scores')
-    console.log('[Exam Scores POST] First score sample:', JSON.stringify(scoresToInsert[0]))
 
     // 학생 ID들이 해당 org에 존재하는지 확인
     const studentIds = validated.scores.map(s => s.student_id)
