@@ -54,18 +54,20 @@ export function Header() {
 
   // Get greeting based on role
   const getGreeting = () => {
-    if (!userRole) return `${userName}님 안녕하세요!`
-
     switch (userRole) {
       case 'owner':
       case 'super_admin':
-        return `원장님 안녕하세요!`
+        return '원장님 안녕하세요!'
       case 'manager':
-        return `${userName} 매니저님 안녕하세요!`
+        return '매니저님 안녕하세요!'
       case 'teacher':
-        return `${userName} 강사님 안녕하세요!`
+        return '강사님 안녕하세요!'
+      case 'student':
+        return '학생님 안녕하세요!'
+      case 'parent':
+        return '학부모님 안녕하세요!'
       default:
-        return `${userName}님 안녕하세요!`
+        return '안녕하세요!'
     }
   }
 
@@ -108,7 +110,7 @@ export function Header() {
               className="h-8 md:h-10 w-auto"
               loading="lazy"
             />
-            <h1 className="text-lg md:text-xl font-bold hidden sm:block">GoldPen</h1>
+            {/* 브랜드 텍스트 제거 */}
           </div>
 
           {/* 역할별 인사말 */}

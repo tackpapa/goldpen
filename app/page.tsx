@@ -33,9 +33,9 @@ const targetSolutions = [
     title: '학원',
     subtitle: '체계적인 학원 운영의 시작',
     description: '학생 관리부터 수업, 출결, 정산까지 학원 운영에 필요한 모든 기능을 제공합니다.',
-    color: 'blue',
-    gradient: 'from-blue-500 to-blue-600',
-    bgGradient: 'from-blue-50 to-blue-100',
+    color: 'amber',
+    gradient: 'from-amber-400 to-amber-500',
+    bgGradient: 'from-amber-50 to-amber-100',
     features: [
       { icon: Users, name: '학생 관리', desc: '학생 정보, 수강 이력, 학습 현황' },
       { icon: BookOpen, name: '수업/반 관리', desc: '반별 커리큘럼, 수업 일정' },
@@ -199,12 +199,12 @@ export default function LandingPage() {
               <Sparkles className="h-4 w-4" />
               AI 기반 학습 리포트 자동 생성
             </div>
-            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
+            <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl leading-tight md:leading-[1.2] lg:leading-[1.3]">
               진짜 쉬운 거 써보세요
               <br />
-              <span className="text-blue-600">학원, 스카 운영엔 골드펜</span>
+              <span className="text-primary">학원, 스카 운영엔 골드펜</span>
             </h1>
-            <p className="mt-6 text-lg text-muted-foreground md:text-xl max-w-2xl mx-auto">
+            <p className="mt-6 text-lg font-bold text-foreground md:text-xl max-w-2xl mx-auto">
               학원, 독서실, 공부방 운영에 필요한 모든 것.
               <br className="hidden sm:block" />
               출결부터 정산까지 하나의 플랫폼에서 관리하세요.
@@ -223,14 +223,108 @@ export default function LandingPage() {
                 데모사이트 보기
               </Link>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">
+            <p className="mt-4 text-sm font-semibold text-foreground">
               말이 필요없어요, 직접보세요
             </p>
           </div>
         </div>
-        {/* Decorative elements */}
-        <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
-        <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-primary/5 blur-3xl" />
+      {/* Decorative elements */}
+      <div className="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
+      <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-primary/5 blur-3xl" />
+    </section>
+
+      {/* Feature Showcase - 10가지 핵심 기능 (히어로 바로 아래로 이동) */}
+      <FeatureShowcase />
+
+      {/* Live Attendance & Seats Management - 히어로 바로 아래 위치 */}
+      <section id="teacher" className="py-24">
+        <div className="container">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-100 to-green-100 px-4 py-1.5 text-sm font-medium text-gray-700 mb-6">
+              <CheckSquare className="h-4 w-4 text-amber-500" />
+              실시간 출결 & 실시간 좌석 관리
+            </div>
+            <h2 className="text-3xl font-bold sm:text-4xl mb-4">
+              현장에서 바로 확인하는
+              <br />
+              <span className="bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
+                스마트 운영 시스템
+              </span>
+            </h2>
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+              학생 체크인부터 좌석 현황까지, 한눈에 파악하고 실시간으로 관리하세요.
+            </p>
+          </div>
+
+          {/* 50% 50% Split Mock UI */}
+          <div className="grid lg:grid-cols-2 gap-6 lg:gap-8">
+            {/* Left: Live Attendance Check-in */}
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
+              <img
+                src="/screenshots/liveattendance.png"
+                alt="실시간 출결 체크 화면"
+                className="w-full h-auto object-cover"
+              />
+              {/* Label */}
+              <div className="absolute top-4 left-4 bg-blue-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-lg">
+                실시간 출결 체크
+              </div>
+            </div>
+
+            {/* Right: Seats Management */}
+            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
+              <img
+                src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/screenshots/sc.png"
+                alt="독서실 좌석 관리 화면"
+                className="w-full h-auto object-cover"
+              />
+              {/* Label */}
+              <div className="absolute top-4 right-4 bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-lg">
+                독서실 좌석 관리
+              </div>
+            </div>
+          </div>
+
+          {/* Feature Highlights */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <div className="rounded-lg bg-blue-100 p-2">
+                <CheckSquare className="h-5 w-5 text-amber-500" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">터치 한 번으로 출석</p>
+                <p className="text-xs text-muted-foreground">4자리 번호 입력으로 즉시 체크인</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <div className="rounded-lg bg-green-100 p-2">
+                <Armchair className="h-5 w-5 text-green-600" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">실시간 좌석 현황</p>
+                <p className="text-xs text-muted-foreground">등원/하원/외출 상태 즉시 확인</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <div className="rounded-lg bg-orange-100 p-2">
+                <Bell className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">자동 알림 발송</p>
+                <p className="text-xs text-muted-foreground">입퇴실 시 학부모 알림 자동 전송</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
+              <div className="rounded-lg bg-purple-100 p-2">
+                <BarChart3 className="h-5 w-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">이용 시간 분석</p>
+                <p className="text-xs text-muted-foreground">학생별 이용 패턴 통계 제공</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Target Solutions */}
@@ -281,9 +375,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* Feature Showcase - 10가지 핵심 기능 */}
-      <FeatureShowcase />
 
       {/* Core Values */}
       <section className="py-24">
@@ -339,97 +430,6 @@ export default function LandingPage() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Live Attendance & Seats Management */}
-      <section id="teacher" className="py-24">
-        <div className="container">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-blue-100 to-green-100 px-4 py-1.5 text-sm font-medium text-gray-700 mb-6">
-              <CheckSquare className="h-4 w-4 text-blue-600" />
-              실시간 출결 & 실시간 좌석 관리
-            </div>
-            <h2 className="text-3xl font-bold sm:text-4xl mb-4">
-              현장에서 바로 확인하는
-              <br />
-              <span className="bg-gradient-to-r from-blue-600 to-green-600 bg-clip-text text-transparent">
-                스마트 운영 시스템
-              </span>
-            </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              학생 체크인부터 좌석 현황까지, 한눈에 파악하고 실시간으로 관리하세요.
-            </p>
-          </div>
-
-          {/* 50% 50% Split Mock UI */}
-          <div className="grid lg:grid-cols-2 gap-6 lg:gap-8">
-            {/* Left: Live Attendance Check-in */}
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
-              <img
-                src="/screenshots/liveattendance.png"
-                alt="실시간 출결 체크 화면"
-                className="w-full h-auto object-cover"
-              />
-              {/* Label */}
-              <div className="absolute top-4 left-4 bg-blue-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-lg">
-                실시간 출결 체크
-              </div>
-            </div>
-
-            {/* Right: Seats Management */}
-            <div className="relative rounded-2xl overflow-hidden shadow-2xl">
-              <img
-                src="/screenshots/seats.png"
-                alt="독서실 좌석 관리 화면"
-                className="w-full h-auto object-cover"
-              />
-              {/* Label */}
-              <div className="absolute top-4 right-4 bg-green-500 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-lg">
-                독서실 좌석 관리
-              </div>
-            </div>
-          </div>
-
-          {/* Feature Highlights */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <div className="rounded-lg bg-blue-100 p-2">
-                <CheckSquare className="h-5 w-5 text-blue-600" />
-              </div>
-              <div>
-                <p className="font-medium text-sm">터치 한 번으로 출석</p>
-                <p className="text-xs text-muted-foreground">4자리 번호 입력으로 즉시 체크인</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <div className="rounded-lg bg-green-100 p-2">
-                <Armchair className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="font-medium text-sm">실시간 좌석 현황</p>
-                <p className="text-xs text-muted-foreground">등원/하원/외출 상태 즉시 확인</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <div className="rounded-lg bg-orange-100 p-2">
-                <Bell className="h-5 w-5 text-orange-600" />
-              </div>
-              <div>
-                <p className="font-medium text-sm">자동 알림 발송</p>
-                <p className="text-xs text-muted-foreground">입퇴실 시 학부모 알림 자동 전송</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 rounded-xl border bg-card p-4">
-              <div className="rounded-lg bg-purple-100 p-2">
-                <BarChart3 className="h-5 w-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="font-medium text-sm">이용 시간 분석</p>
-                <p className="text-xs text-muted-foreground">학생별 이용 패턴 통계 제공</p>
-              </div>
-            </div>
           </div>
         </div>
       </section>
