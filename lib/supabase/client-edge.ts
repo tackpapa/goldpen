@@ -175,8 +175,8 @@ export async function createAuthenticatedClient(request: Request) {
   // 주의: 프로덕션에서는 절대 활성화되지 않음 (IS_PRODUCTION 사용)
   if (!getAuthToken(request) && process.env.SUPABASE_SERVICE_ROLE_KEY && !IS_PRODUCTION) {
     const adminClient = createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY || '',
       { auth: { autoRefreshToken: false, persistSession: false } }
     ) as any
 
