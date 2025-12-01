@@ -53,6 +53,24 @@ interface WidgetRendererProps {
 }
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+const CHART_MIN_HEIGHT = 230
+const PIE_MIN_HEIGHT = 200
+
+function ChartContainer({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="w-full flex-1 flex items-center justify-center h-full pt-3" style={{ minHeight: CHART_MIN_HEIGHT }}>
+      {children}
+    </div>
+  )
+}
+
+function PieContainer({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="w-full flex-1 flex items-center justify-center h-full" style={{ minHeight: PIE_MIN_HEIGHT }}>
+      {children}
+    </div>
+  )
+}
 
 // Helper function to get current classes
 function getCurrentClasses(currentTime: Date, todayClasses: WidgetData['todayClasses']) {
@@ -106,7 +124,7 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
           onRemove={onRemove}
         >
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-3 gap-4 justify-items-center text-center">
               <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">{seatStatus.occupied}</div>
                 <div className="text-xs text-muted-foreground">독서실 이용</div>
@@ -171,22 +189,24 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
           onRemove={onRemove}
         >
           {gradeDistribution.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={gradeDistribution} margin={{ bottom: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="grade"
-                  interval={0}
-                  tick={{ fontSize: 11 }}
-                  angle={-35}
-                  textAnchor="end"
-                  height={50}
-                />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="students" fill="hsl(var(--primary))" />
-              </BarChart>
-            </ResponsiveContainer>
+            <ChartContainer>
+              <ResponsiveContainer width="96%" height="96%">
+                <BarChart data={gradeDistribution} margin={{ top: 20, bottom: 30, left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="grade"
+                    interval={0}
+                    tick={{ fontSize: 11 }}
+                    angle={-35}
+                    textAnchor="end"
+                    height={50}
+                  />
+                  <YAxis />
+                  <Tooltip />
+                  <Bar dataKey="students" fill="hsl(var(--primary))" />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartContainer>
           ) : (
             <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">
               데이터가 없습니다
@@ -226,17 +246,19 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
           onRemove={onRemove}
         >
           {conversionData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={conversionData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="consultations" stroke="#3b82f6" name="상담" />
-                <Line type="monotone" dataKey="enrollments" stroke="#10b981" name="입교" />
-              </LineChart>
-            </ResponsiveContainer>
+            <ChartContainer>
+              <ResponsiveContainer width="95%" height="100%">
+                <LineChart data={conversionData} margin={{ top: 20, bottom: 30, left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="consultations" stroke="#3b82f6" name="상담" />
+                  <Line type="monotone" dataKey="enrollments" stroke="#10b981" name="입교" />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartContainer>
           ) : (
             <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">
               데이터가 없습니다
@@ -437,21 +459,23 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
           onRemove={onRemove}
         >
           {revenueData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={revenueData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}만`} />
-                <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="hsl(var(--primary))"
-                  fill="hsl(var(--primary))"
-                  fillOpacity={0.2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <ChartContainer>
+              <ResponsiveContainer width="95%" height="100%">
+                <AreaChart data={revenueData} margin={{ top: 20, bottom: 30, left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}만`} />
+                  <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="hsl(var(--primary))"
+                    fill="hsl(var(--primary))"
+                    fillOpacity={0.2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartContainer>
           ) : (
             <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">
               데이터가 없습니다
@@ -479,24 +503,26 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
         >
           {displayExpenses.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <ResponsiveContainer width="100%" height={140}>
-                <RechartsPieChart>
-                  <Pie
-                    data={displayExpenses}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={30}
-                    outerRadius={55}
-                    fill="#8884d8"
-                    dataKey="amount"
-                  >
-                    {displayExpenses.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
-                </RechartsPieChart>
-              </ResponsiveContainer>
+              <PieContainer>
+                <ResponsiveContainer width="90%" height="100%">
+                  <RechartsPieChart>
+                    <Pie
+                      data={displayExpenses}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={30}
+                      outerRadius={55}
+                      fill="#8884d8"
+                      dataKey="amount"
+                    >
+                      {displayExpenses.map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+              </PieContainer>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs px-2">
                 {displayExpenses.map((item, index) => (
                   <div key={item.category} className="flex items-center gap-1.5 truncate">
@@ -551,21 +577,23 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
           onRemove={onRemove}
         >
           {attendanceData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={attendanceData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
-                <Tooltip formatter={(value) => `${value}%`} />
-                <Line
-                  type="monotone"
-                  dataKey="rate"
-                  stroke="hsl(var(--primary))"
-                  strokeWidth={2}
-                  dot={{ fill: 'hsl(var(--primary))', r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <ChartContainer>
+              <ResponsiveContainer width="95%" height="100%">
+                <LineChart data={attendanceData} margin={{ top: 20, bottom: 30, left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+                  <Tooltip formatter={(value) => `${value}%`} />
+                  <Line
+                    type="monotone"
+                    dataKey="rate"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={{ fill: 'hsl(var(--primary))', r: 4 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartContainer>
           ) : (
             <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">
               데이터가 없습니다
@@ -611,10 +639,6 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
             <div className="flex items-center justify-between text-xs pt-2">
               <span className="text-muted-foreground">미작성</span>
               <span className="font-medium text-yellow-600">{lessonLogs.pending}건</span>
-            </div>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-muted-foreground">평균 평점</span>
-              <span className="font-medium text-green-600">⭐ {lessonLogs.avgRating}</span>
             </div>
           </div>
         </WidgetWrapper>
@@ -781,21 +805,23 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
           onRemove={onRemove}
         >
           {expenseTrend.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <AreaChart data={expenseTrend}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}만`} />
-                <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
-                <Area
-                  type="monotone"
-                  dataKey="expense"
-                  stroke="#ef4444"
-                  fill="#ef4444"
-                  fillOpacity={0.2}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <ChartContainer>
+              <ResponsiveContainer width="95%" height="100%">
+                <AreaChart data={expenseTrend} margin={{ top: 20, bottom: 30, left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis tickFormatter={(value) => `${Math.round(value / 10000)}만`} />
+                  <Tooltip formatter={(value: number) => `₩${value.toLocaleString()}`} />
+                  <Area
+                    type="monotone"
+                    dataKey="expense"
+                    stroke="#ef4444"
+                    fill="#ef4444"
+                    fillOpacity={0.2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </ChartContainer>
           ) : (
             <div className="flex items-center justify-center h-[250px] text-muted-foreground text-sm">
               데이터가 없습니다

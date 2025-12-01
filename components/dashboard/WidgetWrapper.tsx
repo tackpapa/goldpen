@@ -28,7 +28,7 @@ export function WidgetWrapper({
   isDragging,
 }: WidgetWrapperProps) {
   return (
-    <Card className={cn('group relative', isDragging && 'opacity-50', className)}>
+    <Card className={cn('group relative h-full flex flex-col', isDragging && 'opacity-50', className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-3 flex-1">
           {/* Icon */}
@@ -62,7 +62,7 @@ export function WidgetWrapper({
           )}
         </div>
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="flex-1 flex flex-col">{children}</CardContent>
     </Card>
   )
 }
