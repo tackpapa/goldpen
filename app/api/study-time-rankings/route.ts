@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     // Fetch daily rankings
     const { data: dailyData } = await db
       .from('study_time_records')
-      .select('student_id, student_name, total_minutes, students:students!inner(id, school)')
+      .select('student_id, student_name, total_minutes')
       .eq('org_id', orgId)
       .eq('date', today)
       .order('total_minutes', { ascending: false })
@@ -26,19 +26,19 @@ export async function GET(request: Request) {
 
     const { data: weeklyRaw } = await db
       .from('study_time_records')
-      .select('student_id, student_name, total_minutes, students:students!inner(id, school)')
+      .select('student_id, student_name, total_minutes')
       .eq('org_id', orgId)
       .gte('date', weekStartStr)
       .lte('date', today)
 
     // Aggregate weekly data
-    const weeklyMap = new Map<string, { student_name: string; total_minutes: number; student_school?: string | null }>()
+    const weeklyMap = new Map<string, { student_name: string; total_minutes: number }>()
     weeklyRaw?.forEach((r: any) => {
       const existing = weeklyMap.get(r.student_id)
       if (existing) {
         existing.total_minutes += r.total_minutes
       } else {
-        weeklyMap.set(r.student_id, { student_name: r.student_name, total_minutes: r.total_minutes, student_school: r.students?.school })
+        weeklyMap.set(r.student_id, { student_name: r.student_name, total_minutes: r.total_minutes })
       }
     })
     const weeklyData = Array.from(weeklyMap.entries())
@@ -53,19 +53,19 @@ export async function GET(request: Request) {
 
     const { data: monthlyRaw } = await db
       .from('study_time_records')
-      .select('student_id, student_name, total_minutes, students:students!inner(id, school)')
+      .select('student_id, student_name, total_minutes')
       .eq('org_id', orgId)
       .gte('date', monthStartStr)
       .lte('date', today)
 
     // Aggregate monthly data
-    const monthlyMap = new Map<string, { student_name: string; total_minutes: number; student_school?: string | null }>()
+    const monthlyMap = new Map<string, { student_name: string; total_minutes: number }>()
     monthlyRaw?.forEach((r: any) => {
       const existing = monthlyMap.get(r.student_id)
       if (existing) {
         existing.total_minutes += r.total_minutes
       } else {
-        monthlyMap.set(r.student_id, { student_name: r.student_name, total_minutes: r.total_minutes, student_school: r.students?.school })
+        monthlyMap.set(r.student_id, { student_name: r.student_name, total_minutes: r.total_minutes })
       }
     })
     const monthlyData = Array.from(monthlyMap.entries())
@@ -74,12 +74,30 @@ export async function GET(request: Request) {
       .slice(0, 10)
 
     // Format rankings
+    // 학생 학교 정보 보강용 조회
+    const studentIds = new Set<string>()
+    ;(dailyData || []).forEach((r: any) => studentIds.add(r.student_id))
+    weeklyData.forEach((r: any) => studentIds.add(r.student_id))
+    monthlyData.forEach((r: any) => studentIds.add(r.student_id))
+
+    let studentSchools: Record<string, string | null> = {}
+    if (studentIds.size > 0) {
+      const { data: students } = await db
+        .from('students')
+        .select('id, school')
+        .eq('org_id', orgId)
+        .in('id', Array.from(studentIds))
+      if (students) {
+        studentSchools = Object.fromEntries(students.map((s: any) => [s.id, s.school ?? null]))
+      }
+    }
+
     const formatRankings = (data: any[], periodType: string, period: string) =>
       data?.map((r: any, idx: number) => ({
         student_id: r.student_id,
         student_name: r.student_name,
         surname: r.student_name ? `${r.student_name.charAt(0)}**` : '**',
-        student_school: r.students?.school || r.student_school || null,
+        student_school: studentSchools[r.student_id] ?? null,
         total_minutes: r.total_minutes,
         rank: idx + 1,
         period_type: periodType,
