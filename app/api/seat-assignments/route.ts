@@ -4,12 +4,13 @@ import { ZodError } from 'zod'
 import * as z from 'zod'
 
 export const runtime = 'edge'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const LATE_GRACE_MINUTES = Number(process.env.NEXT_PUBLIC_ATTENDANCE_LATE_GRACE ?? '10')
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+// Cloudflare Pages에서는 런타임에 process.env를 읽어야 함
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const LATE_GRACE_MINUTES = Number(process.env.NEXT_PUBLIC_ATTENDANCE_LATE_GRACE ?? '10')
 
 // Schema for assigning a student to a seat
 const assignSeatSchema = z.object({
@@ -496,23 +497,27 @@ export async function POST(request: Request) {
 // PUT: 좌석 상태 업데이트 (등원/하원)
 export async function PUT(request: Request) {
   try {
-    const isDev = process.env.NODE_ENV !== 'production'
+    // Cloudflare Pages 런타임에서 환경 변수 읽기
+    const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+    const _supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
     const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+
     const { searchParams } = new URL(request.url)
     const serviceParam = searchParams.get('service')
     // orgSlug 파라미터 지원 (프로덕션 livescreen용)
     const orgSlug = searchParams.get('orgSlug')
     const orgParam = searchParams.get('orgId')
     // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
+    const allowService = serviceParam === '1' || !!orgSlug
 
     let supabase: any = await createAuthenticatedClient(request)
     let { data: { user }, error: authError } = await supabase.auth.getUser()
 
     let orgId: string | null = null
 
-    if ((!user || authError) && allowService && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+    // orgSlug가 있고 서비스 키가 있으면 서비스 모드로 진입 (프로덕션 대시보드 지원)
+    if (allowService && _supabaseUrl && _supabaseServiceKey) {
+      supabase = createClient(_supabaseUrl, _supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
 
       // orgSlug로 org_id 조회 (프로덕션 지원)
       if (orgSlug) {
@@ -530,10 +535,8 @@ export async function PUT(request: Request) {
       } else {
         orgId = orgParam || demoOrgId
       }
-    } else {
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
+    } else if (user && !authError) {
+      // 인증된 사용자
       const { data: userProfile, error: profileError } = await supabase
         .from('users')
         .select('org_id')
@@ -541,8 +544,8 @@ export async function PUT(request: Request) {
         .single()
 
       if (profileError || !userProfile) {
-        if (supabaseServiceKey) {
-          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+        if (_supabaseUrl && _supabaseServiceKey) {
+          supabase = createClient(_supabaseUrl, _supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
           orgId = demoOrgId
         } else {
           return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
@@ -550,6 +553,10 @@ export async function PUT(request: Request) {
       } else {
         orgId = userProfile.org_id
       }
+    } else {
+      // 인증 없고 서비스 모드도 아님
+      console.error('[SeatAssignments PUT] No auth and no service mode. orgSlug:', orgSlug, 'serviceKey exists:', !!_supabaseServiceKey)
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
     if (!orgId) return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
