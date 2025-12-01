@@ -49,50 +49,7 @@ export function DraggableWidget({ widget, onRemove, currentTime, data }: Draggab
     'announcements',
   ]
 
-  const isFullType = fullTypes.includes(widget.type)
-
-  // 데이터가 비어 있으면 강제로 컴팩트 높이(row-span-1)로 축소
-  const isEmptyData = (() => {
-    if (!data) return true
-    switch (widget.type) {
-      case 'students-grade-distribution':
-        return data.gradeDistribution.length === 0
-      case 'consultations-conversion':
-        return data.conversionData.length === 0
-      case 'classes-capacity':
-        return data.classCapacity.length === 0
-      case 'exams-recent':
-        return data.recentExams.length === 0
-      case 'homework-submission':
-        return data.homeworkSubmission.length === 0
-      case 'billing-revenue-trend':
-        return data.revenueData.length === 0
-      case 'billing-expense-category':
-        return data.expenseCategory.length === 0
-      case 'attendance-weekly':
-        return data.attendanceData.length === 0
-      case 'attendance-alerts':
-        return data.attendanceAlerts.length === 0
-      case 'lessons-recent':
-        return data.recentLessons.length === 0
-      case 'schedule-today':
-        return data.todayClasses.length === 0
-      case 'rooms-usage':
-        return data.roomUsage.length === 0
-      case 'seats-realtime':
-        return data.seatStatus.total === 0
-      case 'expenses-trend':
-        return data.expenseTrend.length === 0
-      case 'recent-activities':
-        return data.recentActivities.length === 0
-      case 'announcements':
-        return data.announcements.length === 0
-      default:
-        return false
-    }
-  })()
-
-  const isFull = isFullType && !isEmptyData
+  const isFull = fullTypes.includes(widget.type)
   const rowSpanClass = isFull ? 'row-span-2' : 'row-span-1'
 
   return (
