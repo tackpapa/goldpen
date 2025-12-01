@@ -370,7 +370,7 @@ export async function GET(request: Request) {
     // Get all seat assignments with student info
     const { data: assignments, error: assignmentsError } = await supabase
       .from('seat_assignments')
-      .select('*, students(id, name, grade, student_code, seatsremainingtime)')
+      .select('*, students(id, name, grade, student_code, seatsremainingtime, school)')
       .eq('org_id', orgId)
       .order('seat_number', { ascending: true })
 
@@ -387,6 +387,7 @@ export async function GET(request: Request) {
         studentName: a.students?.name || null,
         studentGrade: a.students?.grade || null,
         studentCode: a.students?.student_code || null,
+        studentSchool: a.students?.school || null,
         status: a.status,
         checkInTime: a.check_in_time,
         sessionStartTime: a.session_start_time,

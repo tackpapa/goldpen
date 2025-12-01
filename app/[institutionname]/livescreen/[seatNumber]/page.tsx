@@ -95,6 +95,7 @@ export default function LiveScreenPage({ params }: PageProps) {
   // State - fetch from seat_assignments
   const [studentId, setStudentId] = useState<string | null>(null)
   const [studentName, setStudentName] = useState<string>('')
+  const [studentSchool, setStudentSchool] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [assignmentError, setAssignmentError] = useState<string | null>(null)
   const [orgId, setOrgId] = useState<string | null>(null)
@@ -118,11 +119,13 @@ export default function LiveScreenPage({ params }: PageProps) {
           if (assignment && assignment.studentId) {
             setStudentId(assignment.studentId)
             setStudentName(assignment.studentName || '학생')
+            setStudentSchool(assignment.studentSchool || '')
             setOrgId(assignment.orgId || null)
             setAssignmentError(null)
           } else {
             setStudentId(null)
             setStudentName('')
+            setStudentSchool('')
             setOrgId(null)
             setAssignmentError('이 좌석에 배정된 학생이 없습니다. 좌석 배정 후 사용하세요.')
           }
@@ -851,7 +854,7 @@ export default function LiveScreenPage({ params }: PageProps) {
                       <CardTitle className={`text-base md:text-lg truncate ${
                         theme === 'dark' ? 'text-[#c9d1d9]' : ''
                       }`}>
-                        {studentName} 님
+                        {studentName} {studentSchool ? `(${studentSchool}) ` : ''}님
                       </CardTitle>
                     </div>
                   </div>
