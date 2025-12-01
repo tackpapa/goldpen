@@ -11,12 +11,23 @@ export async function GET(
     const supabase = createClient()
     const slug = params.slug
 
-    // slug 컬럼이 없을 수 있으므로 name/id 기준으로 조회
-    const { data: organization, error } = await supabase
+    // slug 컬럼으로 먼저 조회, 없으면 name/id로 폴백
+    let { data: organization, error } = await supabase
       .from('organizations')
       .select('id, name, logo_url')
-      .or(`name.eq.${slug},id.eq.${slug}`)
-      .single()
+      .eq('slug', slug)
+      .maybeSingle()
+
+    // slug로 못 찾으면 name/id로 폴백 (레거시 호환)
+    if (!organization) {
+      const fallbackResult = await supabase
+        .from('organizations')
+        .select('id, name, logo_url')
+        .or(`name.eq.${slug},id.eq.${slug}`)
+        .maybeSingle()
+      organization = fallbackResult.data
+      error = fallbackResult.error
+    }
 
     if (error || !organization) {
       return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
