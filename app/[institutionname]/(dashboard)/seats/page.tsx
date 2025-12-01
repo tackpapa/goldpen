@@ -1115,11 +1115,6 @@ export default function SeatsPage() {
       const today = new Date().toISOString().split('T')[0]
       const supabase = createClient()
 
-        org_id: orgId,
-        student_id: callStudentInfo.studentId,
-        seat_number: callStudentInfo.seatNumber,
-      })
-
       const { data, error } = await supabase
         .from('call_records')
         .insert({
