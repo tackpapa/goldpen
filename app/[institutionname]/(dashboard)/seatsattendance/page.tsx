@@ -561,12 +561,18 @@ export default function AttendancePage() {
         const todayWeekday = dayNames[today.getDay()]
         const todaySchedule = schedules.find((s) => s.day_of_week === todayWeekday)
 
-        // 등원 시간 없으면 예정 시간 경과 여부로 결석/예정 판단
+        // 등원 시간 확인
         const firstCheckIn = logs.find((l) => l.in)?.in
         const now = new Date()
         const nowMinutes = now.getHours() * 60 + now.getMinutes()
 
+        // commute 일정이 없는 경우: 등원 기록으로만 판단
         if (!todaySchedule?.start_time) {
+          // 등원 기록이 있으면 출석
+          if (firstCheckIn) {
+            return <Badge variant="default" className="bg-green-100 text-green-700">출석</Badge>
+          }
+          // 등원 기록이 없으면 - 표시 (일정이 없으므로 결석/예정 판단 불가)
           return <Badge variant="outline" className="text-gray-600">-</Badge>
         }
 
