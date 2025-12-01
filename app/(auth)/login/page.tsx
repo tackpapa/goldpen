@@ -79,7 +79,7 @@ export default function LoginPage() {
       <CardHeader className="space-y-1">
         <div className="flex items-center justify-center mb-4">
           <img
-            src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+            src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png"
             alt="GoldPen"
             className="h-12"
           />

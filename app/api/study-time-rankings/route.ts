@@ -1,78 +1,17 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+export const revalidate = 0
 
 export async function GET(request: Request) {
   try {
-    const isDev = process.env.NODE_ENV !== 'production'
-    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-    const { searchParams } = new URL(request.url)
-    const serviceParam = searchParams.get('service')
-    // orgSlug 파라미터 지원 (프로덕션 livescreen용)
-    const orgSlug = searchParams.get('orgSlug')
-    const orgParam = searchParams.get('orgId')
-    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
-
-    let supabase: any = await createAuthenticatedClient(request)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    let orgId: string | null = null
-
-    if ((!user || authError) && allowService && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-
-      // orgSlug로 org_id 조회 (프로덕션 지원)
-      if (orgSlug) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', orgSlug)
-          .single()
-
-        if (orgError || !org) {
-          console.error('[StudyTimeRankings GET] Organization not found for slug:', orgSlug)
-          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-        }
-        orgId = org.id
-      } else {
-        orgId = orgParam || demoOrgId
-      }
-    } else {
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!userProfile) {
-        if (supabaseServiceKey) {
-          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = orgParam || demoOrgId
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = userProfile.org_id
-      }
-    }
-
-    if (!orgId) {
-      return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const today = new Date().toISOString().split('T')[0]
 
     // Fetch daily rankings
-    const { data: dailyData } = await supabase
+    const { data: dailyData } = await db
       .from('study_time_records')
       .select('student_id, student_name, total_minutes')
       .eq('org_id', orgId)
@@ -85,7 +24,7 @@ export async function GET(request: Request) {
     weekStart.setDate(weekStart.getDate() - 7)
     const weekStartStr = weekStart.toISOString().split('T')[0]
 
-    const { data: weeklyRaw } = await supabase
+    const { data: weeklyRaw } = await db
       .from('study_time_records')
       .select('student_id, student_name, total_minutes')
       .eq('org_id', orgId)
@@ -112,7 +51,7 @@ export async function GET(request: Request) {
     monthStart.setDate(monthStart.getDate() - 30)
     const monthStartStr = monthStart.toISOString().split('T')[0]
 
-    const { data: monthlyRaw } = await supabase
+    const { data: monthlyRaw } = await db
       .from('study_time_records')
       .select('student_id, student_name, total_minutes')
       .eq('org_id', orgId)
@@ -154,7 +93,14 @@ export async function GET(request: Request) {
       }
     })
   } catch (error: any) {
-    console.error('[StudyTimeRankings GET] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[StudyTimeRankings GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }

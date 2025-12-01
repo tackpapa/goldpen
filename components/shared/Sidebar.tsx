@@ -214,12 +214,22 @@ export function Sidebar() {
 
   // Load organization settings
   useEffect(() => {
-    const loadOrganizationSettings = () => {
-      const name = localStorage.getItem('organization_name')
-      const logo = localStorage.getItem('organization_logo')
+    const currentSlug = window.location.pathname.split('/').filter(Boolean)[0] || ''
 
-      if (name) setOrganizationName(name)
-      if (logo) setOrganizationLogo(logo)
+    const loadOrganizationSettings = () => {
+      // localStorage에서 저장된 slug와 현재 slug가 일치하는 경우에만 캐시 사용
+      const savedSlug = localStorage.getItem('organization_slug')
+      if (savedSlug === currentSlug) {
+        const name = localStorage.getItem('organization_name')
+        const logo = localStorage.getItem('organization_logo')
+
+        if (name) setOrganizationName(name)
+        if (logo) setOrganizationLogo(logo)
+      } else {
+        // slug가 다르면 캐시 초기화
+        setOrganizationName('')
+        setOrganizationLogo('')
+      }
     }
 
     loadOrganizationSettings()
@@ -227,17 +237,29 @@ export function Sidebar() {
     // 서버에서 최신 org 설정을 가져와 서명 URL을 반영
     const fetchOrg = async () => {
       try {
-        const slug = window.location.pathname.split('/').filter(Boolean)[0] || 'goldpen'
+        const slug = currentSlug || 'goldpen'
         const res = await fetch(`/api/settings?slug=${slug}`, { credentials: 'include' })
         const data = await res.json() as { organization?: { name?: string; logo_url?: string } }
         if (res.ok && data.organization) {
+          // 현재 slug 저장
+          localStorage.setItem('organization_slug', slug)
+
           if (data.organization.name) {
             setOrganizationName(data.organization.name)
             localStorage.setItem('organization_name', data.organization.name)
+          } else {
+            // 기관명이 없으면 빈 값으로 설정
+            setOrganizationName('')
+            localStorage.removeItem('organization_name')
           }
+
           if (data.organization.logo_url) {
             setOrganizationLogo(data.organization.logo_url)
             localStorage.setItem('organization_logo', data.organization.logo_url)
+          } else {
+            // 로고가 없으면 빈 값으로 설정 (placeholder 표시)
+            setOrganizationLogo('')
+            localStorage.removeItem('organization_logo')
           }
         }
       } catch (e) {

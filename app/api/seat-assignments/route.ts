@@ -321,14 +321,12 @@ async function recordAttendanceLog(orgId: string, studentId: string, status: 'ch
 // GET: 좌석 배정 목록 조회
 export async function GET(request: Request) {
   try {
-    const isDev = process.env.NODE_ENV !== 'production'
-    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
     const { searchParams } = new URL(request.url)
     const serviceParam = searchParams.get('service')
     // orgSlug 파라미터 지원 (프로덕션 livescreen용)
     const orgSlug = searchParams.get('orgSlug')
     // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
+    const allowService = serviceParam === '1' || !!orgSlug
 
     let supabase: any = await createAuthenticatedClient(request)
     let { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -350,13 +348,11 @@ export async function GET(request: Request) {
         return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
       }
       orgId = org.id
-    } else if ((!user || authError) && allowService && supabaseServiceKey) {
+    } else if ((!user || authError) && allowService && supabaseServiceKey && orgParam) {
+      // orgParam이 명시적으로 제공된 경우에만 서비스 모드 허용 (데모 org 폴백 없음)
       supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      orgId = orgParam || demoOrgId
-    } else {
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
+      orgId = orgParam
+    } else if (!authError && user) {
       const { data: userProfile, error: profileError } = await supabase
         .from('users')
         .select('org_id')
@@ -364,14 +360,11 @@ export async function GET(request: Request) {
         .single()
 
       if (profileError || !userProfile) {
-        if (supabaseServiceKey) {
-          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = orgParam || demoOrgId
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
+        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
       }
-      orgId = orgId || userProfile?.org_id
+      orgId = userProfile.org_id
+    } else {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
     if (!orgId) return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
@@ -531,7 +524,6 @@ export async function PUT(request: Request) {
     // Cloudflare Pages 런타임에서 환경 변수 읽기
     const _supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
     const _supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
 
     const { searchParams } = new URL(request.url)
     const serviceParam = searchParams.get('service')
@@ -547,25 +539,25 @@ export async function PUT(request: Request) {
     let orgId: string | null = null
 
     // orgSlug가 있고 서비스 키가 있으면 서비스 모드로 진입 (프로덕션 대시보드 지원)
-    if (allowService && _supabaseUrl && _supabaseServiceKey) {
+    if (orgSlug && _supabaseUrl && _supabaseServiceKey) {
       supabase = createClient(_supabaseUrl, _supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
 
       // orgSlug로 org_id 조회 (프로덕션 지원)
-      if (orgSlug) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', orgSlug)
-          .single()
+      const { data: org, error: orgError } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('slug', orgSlug)
+        .single()
 
-        if (orgError || !org) {
-          console.error('[SeatAssignments PUT] Organization not found for slug:', orgSlug)
-          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-        }
-        orgId = org.id
-      } else {
-        orgId = orgParam || demoOrgId
+      if (orgError || !org) {
+        console.error('[SeatAssignments PUT] Organization not found for slug:', orgSlug)
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
       }
+      orgId = org.id
+    } else if (allowService && _supabaseUrl && _supabaseServiceKey && orgParam) {
+      // orgParam이 명시적으로 제공된 경우에만 서비스 모드 허용 (데모 org 폴백 없음)
+      supabase = createClient(_supabaseUrl, _supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+      orgId = orgParam
     } else if (user && !authError) {
       // 인증된 사용자
       const { data: userProfile, error: profileError } = await supabase
@@ -575,15 +567,9 @@ export async function PUT(request: Request) {
         .single()
 
       if (profileError || !userProfile) {
-        if (_supabaseUrl && _supabaseServiceKey) {
-          supabase = createClient(_supabaseUrl, _supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = demoOrgId
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = userProfile.org_id
+        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
       }
+      orgId = userProfile.org_id
     } else {
       // 인증 없고 서비스 모드도 아님
       console.error('[SeatAssignments PUT] No auth and no service mode. orgSlug:', orgSlug, 'serviceKey exists:', !!_supabaseServiceKey)

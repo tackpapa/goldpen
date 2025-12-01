@@ -1,49 +1,52 @@
-import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
-export const runtime = 'edge'
-
-import { createClient } from '@/lib/supabase/client-edge'
-import { createClient as createAdminClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { NextRequest, NextResponse } from 'next/server'
+
+export const runtime = 'edge'
 
 // GET - 학생 파일 목록 조회
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: studentId } = await params
-  const supabase = createClient()
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-  const admin = supabaseUrl && serviceKey
-    ? createAdminClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-    : null
+  try {
+    const { id: studentId } = await params
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-  const { data, error } = await supabase
-    .from('student_files')
-    .select('*')
-    .eq('student_id', studentId)
-    .order('uploaded_at', { ascending: false })
+    const { data, error } = await db
+      .from('student_files')
+      .select('*')
+      .eq('student_id', studentId)
+      .eq('org_id', orgId)
+      .order('uploaded_at', { ascending: false })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+
+    // Generate signed URLs for each file
+    const filesWithUrls = await Promise.all(
+      (data || []).map(async (file: any) => {
+        const { data: urlData } = await db.storage
+          .from('student-files')
+          .createSignedUrl(file.storage_path, 3600)
+
+        return {
+          ...file,
+          url: urlData?.signedUrl || null
+        }
+      })
+    )
+
+    return NextResponse.json({ files: filesWithUrls })
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return NextResponse.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+    return NextResponse.json({ error: 'Failed to get files' }, { status: 500 })
   }
-
-  // Generate signed URLs for each file
-  const filesWithUrls = await Promise.all(
-    data.map(async (file) => {
-      const signer = admin || supabase
-      const { data: urlData } = await signer.storage
-        .from('student-files')
-        .createSignedUrl(file.storage_path, 3600)
-
-      return {
-        ...file,
-        url: urlData?.signedUrl || null
-      }
-    })
-  )
-
-  return NextResponse.json({ files: filesWithUrls })
 }
 
 // POST - 파일 업로드
@@ -51,32 +54,16 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: studentId } = await params
-  const supabase = createClient()
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-  const admin = supabaseUrl && serviceKey
-    ? createAdminClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-    : null
-  const client = admin || supabase
-
   try {
+    const { id: studentId } = await params
+    const { db, orgId } = await getSupabaseWithOrg(request)
+
     const formData = await request.formData()
     const file = formData.get('file') as File
-    let orgId = (formData.get('org_id') as string) || ''
-    if (!orgId) {
-      // 폴백: 학생으로부터 org_id 조회
-      const { data: studentOrg } = await supabase
-        .from('students')
-        .select('org_id')
-        .eq('id', studentId)
-        .maybeSingle()
-      orgId = studentOrg?.org_id || ''
-    }
 
-    if (!file || !orgId) {
+    if (!file) {
       return NextResponse.json(
-        { error: 'File and org_id are required' },
+        { error: 'File is required' },
         { status: 400 }
       )
     }
@@ -87,7 +74,7 @@ export async function POST(
     const storagePath = `${orgId}/${studentId}/${timestamp}.${ext}`
 
     // Upload to Supabase Storage
-    const { error: uploadError } = await client.storage
+    const { error: uploadError } = await db.storage
       .from('student-files')
       .upload(storagePath, file, {
         contentType: file.type,
@@ -99,7 +86,7 @@ export async function POST(
     }
 
     // Save metadata to database
-    const { data, error: dbError } = await client
+    const { data, error: dbError } = await db
       .from('student_files')
       .insert({
         org_id: orgId,
@@ -114,19 +101,25 @@ export async function POST(
 
     if (dbError) {
       // Rollback - delete uploaded file
-      await client.storage.from('student-files').remove([storagePath])
+      await db.storage.from('student-files').remove([storagePath])
       return NextResponse.json({ error: dbError.message }, { status: 500 })
     }
 
     // Get signed URL
-    const { data: urlData } = await client.storage
+    const { data: urlData } = await db.storage
       .from('student-files')
       .createSignedUrl(storagePath, 3600)
 
     return NextResponse.json({
       file: { ...data, url: urlData?.signedUrl }
     })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return NextResponse.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     return NextResponse.json(
       { error: 'Failed to upload file' },
       { status: 500 }
@@ -139,10 +132,10 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id: studentId } = await params
-  const supabase = createClient()
-
   try {
+    const { id: studentId } = await params
+    const { db, orgId } = await getSupabaseWithOrg(request)
+
     const { fileId } = await request.json() as { fileId: string }
 
     if (!fileId) {
@@ -150,11 +143,12 @@ export async function DELETE(
     }
 
     // Get file info
-    const { data: file, error: fetchError } = await supabase
+    const { data: file, error: fetchError } = await db
       .from('student_files')
       .select('storage_path')
       .eq('id', fileId)
       .eq('student_id', studentId)
+      .eq('org_id', orgId)
       .single()
 
     if (fetchError || !file) {
@@ -162,7 +156,7 @@ export async function DELETE(
     }
 
     // Delete from storage
-    const { error: storageError } = await supabase.storage
+    const { error: storageError } = await db.storage
       .from('student-files')
       .remove([file.storage_path])
 
@@ -171,17 +165,24 @@ export async function DELETE(
     }
 
     // Delete from database
-    const { error: dbError } = await supabase
+    const { error: dbError } = await db
       .from('student_files')
       .delete()
       .eq('id', fileId)
+      .eq('org_id', orgId)
 
     if (dbError) {
       return NextResponse.json({ error: dbError.message }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return NextResponse.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     return NextResponse.json(
       { error: 'Failed to delete file' },
       { status: 500 }

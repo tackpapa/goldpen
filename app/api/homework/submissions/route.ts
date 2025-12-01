@@ -1,18 +1,10 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { ZodError } from 'zod'
 import * as z from 'zod'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 // 개별 제출 스키마
 const singleSubmissionSchema = z.object({
@@ -32,30 +24,8 @@ const bulkSubmissionSchema = z.object({
 // POST: 제출 기록 생성/업데이트
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !userProfile) {
-        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      }
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
     const body = await request.json() as Record<string, unknown>
 
     // 전체 제출인지 개별 제출인지 확인
@@ -172,6 +142,12 @@ export async function POST(request: Request) {
       })
     }
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }
@@ -184,30 +160,7 @@ export async function POST(request: Request) {
 // GET: 특정 과제의 제출 현황 조회
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !userProfile) {
-        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      }
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
+    const { db } = await getSupabaseWithOrg(request)
 
     const url = new URL(request.url)
     const homeworkId = url.searchParams.get('homework_id')
@@ -229,6 +182,12 @@ export async function GET(request: Request) {
 
     return Response.json({ submissions })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Submissions GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }

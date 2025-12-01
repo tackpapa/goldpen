@@ -1,18 +1,10 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { ZodError } from 'zod'
 import * as z from 'zod'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 const createLessonSchema = z.object({
   class_id: z.string().uuid('반 ID가 올바르지 않습니다').optional(),
@@ -48,54 +40,8 @@ const parseDurationHours = (lessonTime?: string | null) => {
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { searchParams } = new URL(request.url)
-    const orgParam = searchParams.get('org_id') || searchParams.get('orgId')
-    const orgSlug = searchParams.get('orgSlug')
-    const e2eNoAuth = request.headers.get('x-e2e-no-auth') === '1' || process.env.E2E_NO_AUTH === '1'
-
-    let orgId: string | null = null
-    let db = service || supabase
-
-    // orgSlug가 제공된 경우 (프로덕션 대시보드) - organizations 테이블에서 org_id 조회
-    if (orgSlug && service) {
-      const { data: org, error: orgError } = await service
-        .from('organizations')
-        .select('id')
-        .eq('slug', orgSlug)
-        .single()
-
-      if (orgError || !org) {
-        console.error('[Lessons GET] Organization not found for slug:', orgSlug)
-        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-      }
-      orgId = org.id
-      db = service
-    } else {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user' || e2eNoAuth)) {
-        orgId = orgParam || demoOrg
-      } else if (!authError && user) {
-        const { data: userProfile, error: profileError } = await supabase
-          .from('users')
-          .select('org_id')
-          .eq('id', user.id)
-          .single()
-        if (profileError || !userProfile) {
-          if (service) {
-            orgId = orgParam || demoOrg
-          } else {
-            return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-          }
-        } else {
-          orgId = userProfile.org_id
-        }
-      } else {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-    }
 
     const class_id = searchParams.get('class_id')
     const lesson_date = searchParams.get('lesson_date')
@@ -308,6 +254,12 @@ export async function GET(request: Request) {
       count: finalLessons.length,
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Lessons GET] Unexpected error:', error)
     return Response.json({ lessons: [], scheduledClasses: [], monthlyProgressData: [], comprehensionTrendData: [], error: '서버 오류가 발생했습니다', details: error.message })
   }
@@ -315,28 +267,13 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId, user } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createLessonSchema.parse(body)
 
     const payload = {
-      org_id: userProfile.org_id,
+      org_id: orgId,
       lesson_date: validated.lesson_date,
       title: validated.title,
       content: validated.content || validated.title,
@@ -354,7 +291,7 @@ export async function POST(request: Request) {
       lesson_time: validated.lesson_time || '',
     }
 
-    const { data: lesson, error: createError, status: supaStatus } = await supabase
+    const { data: lesson, error: createError, status: supaStatus } = await db
       .from('lessons')
       .insert(payload)
       .select()
@@ -368,10 +305,10 @@ export async function POST(request: Request) {
 
     // 1) 직전 과제 제출 여부 기록 (이전 과제에 대한 제출 확인)
     if (validated.homework_submissions?.length && validated.class_id) {
-      const { data: prevHomework } = await supabase
+      const { data: prevHomework } = await db
         .from('homework')
         .select('id')
-        .eq('org_id', userProfile.org_id)
+        .eq('org_id', orgId)
         .eq('class_id', validated.class_id)
         .order('assigned_date', { ascending: false })
         .order('created_at', { ascending: false })
@@ -381,13 +318,13 @@ export async function POST(request: Request) {
       if (prevHomework?.id) {
         const submissions = validated.homework_submissions.filter((s) => s.submitted)
         if (submissions.length > 0) {
-          const { error: subError } = await supabase
+          const { error: subError } = await db
             .from('homework_submissions')
             .insert(
               submissions.map((s) => ({
                 homework_id: prevHomework.id,
                 student_id: s.student_id,
-                org_id: userProfile.org_id,
+                org_id: orgId,
                 status: 'submitted',
               }))
             )
@@ -402,10 +339,10 @@ export async function POST(request: Request) {
     let homeworkRecord: any = null
     if (validated.homework_assigned) {
       const dueDate = new Date(`${validated.lesson_date}T23:59:59Z`)
-      const { data: hw, error: hwError } = await supabase
+      const { data: hw, error: hwError } = await db
         .from('homework')
         .insert({
-          org_id: userProfile.org_id,
+          org_id: orgId,
           class_id: validated.class_id || null,
           teacher_id: validated.teacher_id || null,
           title: `${validated.class_name || '수업'} 과제`,
@@ -422,13 +359,13 @@ export async function POST(request: Request) {
         homeworkRecord = hw
         const submissions = (validated.homework_submissions || []).filter((s) => s.submitted)
         if (submissions.length > 0) {
-          const { error: subError } = await supabase
+          const { error: subError } = await db
             .from('homework_submissions')
             .insert(
               submissions.map((s) => ({
                 homework_id: hw.id,
                 student_id: s.student_id,
-                org_id: userProfile.org_id,
+                org_id: orgId,
                 status: 'submitted',
               }))
             )
@@ -442,10 +379,10 @@ export async function POST(request: Request) {
     // 3) 수업 크레딧 차감 (해당 반의 학생들에게 수업 시간만큼 차감)
     const durationHours = parseDurationHours(validated.lesson_time)
     if (validated.class_id && durationHours > 0) {
-      const { data: enrollments, error: enrollError } = await supabase
+      const { data: enrollments, error: enrollError } = await db
         .from('class_enrollments')
         .select('student_id, status')
-        .eq('org_id', userProfile.org_id)
+        .eq('org_id', orgId)
         .eq('class_id', validated.class_id)
 
       if (enrollError) {
@@ -454,10 +391,10 @@ export async function POST(request: Request) {
         for (const enrollment of enrollments) {
           if (enrollment.status && enrollment.status !== 'active') continue
 
-          const { data: studentRow, error: studentError } = await supabase
+          const { data: studentRow, error: studentError } = await db
             .from('students')
             .select('credit')
-            .eq('org_id', userProfile.org_id)
+            .eq('org_id', orgId)
             .eq('id', enrollment.student_id)
             .single()
 
@@ -467,10 +404,10 @@ export async function POST(request: Request) {
           }
 
           const nextCredit = (studentRow.credit ?? 0) - durationHours
-          const { error: updateError } = await supabase
+          const { error: updateError } = await db
             .from('students')
             .update({ credit: nextCredit })
-            .eq('org_id', userProfile.org_id)
+            .eq('org_id', orgId)
             .eq('id', enrollment.student_id)
 
           if (updateError) {
@@ -482,6 +419,12 @@ export async function POST(request: Request) {
 
     return Response.json({ lesson, homework: homeworkRecord, message: '수업이 생성되었습니다' }, { status: 201 })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }

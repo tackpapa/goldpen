@@ -1,18 +1,10 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { ZodError } from 'zod'
 import * as z from 'zod'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 const createScheduleSchema = z.object({
   class_id: z.string().uuid(),
@@ -43,27 +35,7 @@ const deleteScheduleSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { searchParams } = new URL(request.url)
     const day_of_week = searchParams.get('day_of_week')
@@ -160,6 +132,13 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Schedules GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
@@ -167,30 +146,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-    let role: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-      role = 'owner'
-    } else if (!authError && user) {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-      if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      orgId = userProfile.org_id
-      role = userProfile.role
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    // 권한 확인 (owner, manager만 스케줄 생성 가능)
+    if (role && !['owner', 'manager', 'service_role'].includes(role)) {
+      return Response.json({ error: '스케줄을 생성할 권한이 없습니다' }, { status: 403 })
     }
-
-    const db = service || supabase
 
     const body = await request.json()
     const validated = createScheduleSchema.parse(body)
@@ -211,6 +172,12 @@ export async function POST(request: Request) {
 
     return Response.json({ schedule, message: '스케줄이 생성되었습니다' }, { status: 201 })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }
@@ -222,27 +189,12 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    // 권한 확인 (owner, manager만 스케줄 수정 가능)
+    if (role && !['owner', 'manager', 'service_role'].includes(role)) {
+      return Response.json({ error: '스케줄을 수정할 권한이 없습니다' }, { status: 403 })
     }
-
-    const db = service || supabase
 
     const body = await request.json()
     const validated = updateScheduleSchema.parse(body)
@@ -283,6 +235,12 @@ export async function PATCH(request: Request) {
 
     return Response.json({ schedule: updated, message: '스케줄이 수정되었습니다' })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }
@@ -294,27 +252,12 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-000000000000'
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    // 권한 확인 (owner, manager만 스케줄 삭제 가능)
+    if (role && !['owner', 'manager', 'service_role'].includes(role)) {
+      return Response.json({ error: '스케줄을 삭제할 권한이 없습니다' }, { status: 403 })
     }
-
-    const db = service || supabase
 
     const body = await request.json()
     const { id } = deleteScheduleSchema.parse(body)
@@ -332,6 +275,12 @@ export async function DELETE(request: Request) {
 
     return Response.json({ message: '스케줄이 삭제되었습니다' })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }

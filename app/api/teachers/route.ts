@@ -1,18 +1,10 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { ZodError } from 'zod'
 import * as z from 'zod'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 // teachers 테이블 스키마
 const baseTeacherSchema = z.object({
@@ -37,49 +29,10 @@ const updateTeacherSchema = baseTeacherSchema.partial()
  */
 export async function GET(request: Request) {
   try {
-    let supabase
-    try {
-      supabase = await createAuthenticatedClient(request)
-    } catch (err: any) {
-      console.error('[Teachers GET] Supabase client init failed', err)
-      return Response.json({ error: 'Supabase 환경변수 누락', details: err?.message }, { status: 500 })
-    }
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { searchParams } = new URL(request.url)
-    const orgParam = searchParams.get('org_id') || searchParams.get('orgId')
-    const e2eNoAuth = request.headers.get('x-e2e-no-auth') === '1' || process.env.E2E_NO_AUTH === '1'
+    const search = searchParams.get('search')
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const db = service || supabase
-
-    // 1. org 결정 (E2E/서비스 키 폴백)
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user' || e2eNoAuth)) {
-      orgId = orgParam || demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await db
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !userProfile) {
-        if (service) {
-          orgId = orgParam || demoOrg
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = userProfile.org_id
-      }
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    // 3. 쿼리 파라미터 파싱
-    const search = searchParams.get('search') // 이름 검색
-
-    // 4. 교사 목록 조회 (teachers 테이블 → 없으면 users.role=teacher 폴백)
     let teachers: any[] | null = null
 
     const buildTeachersFallback = async () => {
@@ -122,7 +75,6 @@ export async function GET(request: Request) {
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
 
-    // 검색 필터 적용
     if (search) {
       query = query.ilike('name', `%${search}%`)
     }
@@ -130,7 +82,6 @@ export async function GET(request: Request) {
     const { data: teacherData, error: teachersError } = await query
 
     if (teachersError) {
-      // 테이블 미존재 또는 기타 오류 시 users.role=teacher 폴백
       console.warn('[Teachers GET] fallback to users due to error:', teachersError)
       const fb = await buildTeachersFallback()
       if (fb.error) {
@@ -146,6 +97,12 @@ export async function GET(request: Request) {
       count: teachers?.length || 0
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Teachers GET] Unexpected error:', error)
     return Response.json(
       { error: '서버 오류가 발생했습니다', details: error.message },
@@ -161,48 +118,24 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
+    const { db, orgId, user, role } = await getSupabaseWithOrg(request)
 
-    // 1. 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json(
-        { error: '인증이 필요합니다' },
-        { status: 401 }
-      )
-    }
-
-    // 2. 사용자 프로필 조회 (org_id 확인)
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json(
-        { error: '사용자 프로필을 찾을 수 없습니다' },
-        { status: 404 }
-      )
-    }
-
-    // 3. 권한 확인 (owner만 교사 추가 가능)
-    if (userProfile.role !== 'owner') {
+    // 권한 확인 (owner만 교사 추가 가능)
+    if (role !== 'owner') {
       return Response.json(
         { error: '교사를 추가할 권한이 없습니다 (owner만 가능)' },
         { status: 403 }
       )
     }
 
-    // 4. 요청 데이터 파싱 및 검증
     const body = await request.json()
     const validated = createTeacherSchema.parse(body)
 
-    // 5. 이메일 중복 확인 (org 내부)
-    const { data: existingTeacher } = await supabase
+    // 이메일 중복 확인 (org 내부)
+    const { data: existingTeacher } = await db
       .from('teachers')
       .select('id')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .eq('email', validated.email)
       .limit(1)
       .maybeSingle()
@@ -214,12 +147,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: teacher, error: createError } = await supabase
+    const { data: teacher, error: createError } = await db
       .from('teachers')
       .insert({
         ...validated,
-        org_id: userProfile.org_id,
-        user_id: user.id, // owner creating for now; ideally we would create a user first
+        org_id: orgId,
+        user_id: user?.id,
       })
       .select('*')
       .single()
@@ -237,14 +170,18 @@ export async function POST(request: Request) {
       { status: 201 }
     )
   } catch (error: any) {
-    // Zod 검증 오류
     if (error instanceof ZodError) {
       return Response.json(
         { error: '입력 데이터가 유효하지 않습니다', details: error.errors },
         { status: 400 }
       )
     }
-
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Teachers POST] Unexpected error:', error)
     return Response.json(
       { error: '서버 오류가 발생했습니다', details: error.message },

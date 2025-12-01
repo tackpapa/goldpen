@@ -1,70 +1,17 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 /**
  * GET /api/teachers/[id]/modal
  * 상세 모달용 데이터 (users.role='teacher', 담당 클래스/학생 집계)
  */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
-
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { id: teacherId } = await params
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-
-    // 서비스/데모 Fallback 우선 처리
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !profile) {
-        orgId = demoOrg
-      } else {
-        orgId = profile.org_id
-      }
-    } else if (service) {
-      orgId = demoOrg
-    } else {
-      return Response.json({ error: '인증 필요' }, { status: 401 })
-    }
-
-    const db = service || supabase
-
-    // 최종 orgId 결정 실패 시에도 데모 org 사용
-    if (!orgId) {
-      orgId = demoOrg
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id, role')
-      .eq('id', user.id)
-      .single()
-      if (profileError || !profile) {
-        orgId = demoOrg
-      } else {
-        orgId = profile.org_id
-      }
 
     // 1) 교사 기본 정보
     const { data: teacher, error: teacherError } = await db
@@ -140,6 +87,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       students: students || [],
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Teachers modal] unexpected', error)
     return Response.json({ error: '서버 오류', details: error.message }, { status: 500 })
   }

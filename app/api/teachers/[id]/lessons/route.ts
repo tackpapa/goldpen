@@ -1,16 +1,8 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 /**
  * GET /api/teachers/[id]/lessons?limit=30&offset=0
@@ -21,40 +13,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { id: teacherId } = await params
 
-    // Query params 파싱
     const url = new URL(request.url)
     const limit = parseInt(url.searchParams.get('limit') || '30')
     const offset = parseInt(url.searchParams.get('offset') || '0')
 
-    // 1. 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !userProfile) {
-        orgId = demoOrg
-      } else {
-        orgId = userProfile.org_id
-      }
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
-
-    // 3. 강사 정보 확인 (같은 org인지)
+    // 강사 정보 확인 (같은 org인지)
     const { data: teacher, error: teacherError } = await db
       .from('teachers')
       .select('id')
@@ -127,11 +93,14 @@ export async function GET(
       }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Lessons API] Unexpected error:', error)
-    return Response.json(
-      { error: '서버 오류가 발생했습니다', details: error.message },
-      { status: 500 }
-    )
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 

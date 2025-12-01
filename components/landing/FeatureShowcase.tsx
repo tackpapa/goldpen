@@ -633,7 +633,7 @@ export function FeatureShowcase() {
             핵심 기능 살펴보기
           </h2>
           <p className="text-lg text-muted-foreground flex items-center justify-center gap-1">
-            <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png" alt="GoldPen" className="h-6 inline-block" />이 제공하는 10가지 핵심 기능을 확인해보세요
+            <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png" alt="GoldPen" className="h-6 inline-block" />이 제공하는 10가지 핵심 기능을 확인해보세요
           </p>
         </div>
 

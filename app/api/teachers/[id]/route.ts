@@ -1,18 +1,10 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { ZodError } from 'zod'
 import * as z from 'zod'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 const updateTeacherSchema = z.object({
   name: z.string().min(1, '이름은 필수입니다').optional(),
@@ -37,51 +29,10 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
     const { id: teacherId } = await params
 
-    // 1. 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-    let role: string | null = null
-
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-      role = 'owner'
-    } else if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError || !userProfile) {
-        if (service) {
-          orgId = demoOrg
-          role = 'owner'
-        } else {
-          return Response.json(
-            { error: '사용자 프로필을 찾을 수 없습니다' },
-            { status: 404 }
-          )
-        }
-      } else {
-        orgId = userProfile.org_id
-        role = userProfile.role
-      }
-    } else {
-      return Response.json(
-        { error: '인증이 필요합니다' },
-        { status: 401 }
-      )
-    }
-
-    const db = service || supabase
-
-    // 3. 권한 확인 (owner, manager만 수정 가능)
+    // 권한 확인 (owner, manager만 수정 가능)
     if (!['owner', 'manager'].includes(role || '')) {
       return Response.json(
         { error: '교사 정보를 수정할 권한이 없습니다' },
@@ -89,11 +40,9 @@ export async function PUT(
       )
     }
 
-    // 4. 요청 데이터 파싱 및 검증
     const body = await request.json()
     const validated = updateTeacherSchema.parse(body)
 
-    // 5. 교사 정보 수정 (같은 org_id 확인) + legacy fallback
     const { data: teacher, error: updateError } = await db
       .from('teachers')
       .update(validated)
@@ -104,45 +53,29 @@ export async function PUT(
 
     if (updateError) {
       console.error('[Teachers PUT] Error:', updateError)
-
-      // 이메일 중복 에러 처리
       if (updateError.code === '23505' && updateError.message.includes('teachers_org_id_email_key')) {
-        return Response.json(
-          { error: '이미 사용 중인 이메일입니다' },
-          { status: 400 }
-        )
+        return Response.json({ error: '이미 사용 중인 이메일입니다' }, { status: 400 })
       }
-
-      return Response.json(
-        { error: '교사 정보 수정 실패', details: updateError.message },
-        { status: 500 }
-      )
+      return Response.json({ error: '교사 정보 수정 실패', details: updateError.message }, { status: 500 })
     }
 
     if (!teacher) {
-      return Response.json(
-        { error: '교사를 찾을 수 없습니다' },
-        { status: 404 }
-      )
+      return Response.json({ error: '교사를 찾을 수 없습니다' }, { status: 404 })
     }
 
-    return Response.json({
-      teacher,
-      message: '교사 정보가 수정되었습니다'
-    })
+    return Response.json({ teacher, message: '교사 정보가 수정되었습니다' })
   } catch (error: any) {
     if (error instanceof ZodError) {
-      return Response.json(
-        { error: '입력 데이터가 유효하지 않습니다', details: error.errors },
-        { status: 400 }
-      )
+      return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }
-
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Teachers PUT] Unexpected error:', error)
-    return Response.json(
-      { error: '서버 오류가 발생했습니다', details: error.message },
-      { status: 500 }
-    )
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 
@@ -155,59 +88,14 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
     const { id: teacherId } = await params
 
-    // 1. 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-    let role: string | null = null
-
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-      role = 'owner'
-    } else if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError || !userProfile) {
-        if (service) {
-          orgId = demoOrg
-          role = 'owner'
-        } else {
-          return Response.json(
-            { error: '사용자 프로필을 찾을 수 없습니다' },
-            { status: 404 }
-          )
-        }
-      } else {
-        orgId = userProfile.org_id
-        role = userProfile.role
-      }
-    } else {
-      return Response.json(
-        { error: '인증이 필요합니다' },
-        { status: 401 }
-      )
-    }
-
-    const db = service || supabase
-
-    // 3. 권한 확인 (owner만 삭제 가능)
+    // 권한 확인 (owner만 삭제 가능)
     if (role !== 'owner') {
-      return Response.json(
-        { error: '교사를 삭제할 권한이 없습니다 (오너만 가능)' },
-        { status: 403 }
-      )
+      return Response.json({ error: '교사를 삭제할 권한이 없습니다 (오너만 가능)' }, { status: 403 })
     }
 
-    // 4. 교사 삭제 (같은 org_id 확인) + legacy fallback
     const { error: deleteError } = await db
       .from('teachers')
       .delete()
@@ -216,20 +104,18 @@ export async function DELETE(
 
     if (deleteError) {
       console.error('[Teachers DELETE] Error:', deleteError)
-      return Response.json(
-        { error: '교사 삭제 실패', details: deleteError.message },
-        { status: 500 }
-      )
+      return Response.json({ error: '교사 삭제 실패', details: deleteError.message }, { status: 500 })
     }
 
-    return Response.json({
-      message: '교사가 삭제되었습니다'
-    })
+    return Response.json({ message: '교사가 삭제되었습니다' })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Teachers DELETE] Unexpected error:', error)
-    return Response.json(
-      { error: '서버 오류가 발생했습니다', details: error.message },
-      { status: 500 }
-    )
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }

@@ -1,5 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -22,62 +21,9 @@ export async function GET(
 ) {
   try {
     const { id } = params
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-    // 1) 기본: 인증된 사용자 클라이언트
-    const supabase = await createAuthenticatedClient(request)
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-    const serviceClient = supabaseUrl && serviceKey
-      ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-      : null
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-    let adminSupabase = supabase
-    let orgId: string | null = null
-
-    if (serviceClient && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      adminSupabase = serviceClient
-      user = { id: 'service-role', email: 'service-role@goldpen' } as any
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !profile) {
-        // 서비스 키로 학생의 org를 조회해본다
-        if (serviceClient) {
-          const { data: studentOrg } = await serviceClient
-            .from('students')
-            .select('org_id')
-            .eq('id', id)
-            .maybeSingle()
-          if (!studentOrg) return Response.json({ error: '프로필 없음' }, { status: 404 })
-          adminSupabase = serviceClient
-          orgId = studentOrg.org_id
-        } else {
-          return Response.json({ error: '프로필 없음' }, { status: 404 })
-        }
-      } else {
-        orgId = profile.org_id
-      }
-    } else {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    if (!orgId && serviceClient) {
-      const { data: studentOrg } = await serviceClient
-        .from('students')
-        .select('org_id')
-        .eq('id', id)
-        .maybeSingle()
-      orgId = studentOrg?.org_id ?? demoOrg
-      adminSupabase = serviceClient
-    }
-
-    const { data: student, error: studentError } = await adminSupabase
+    const { data: student, error: studentError } = await db
       .from('students')
       .select('*')
       .eq('id', id)
@@ -88,7 +34,7 @@ export async function GET(
       return Response.json({ error: '학생을 찾을 수 없습니다' }, { status: 404 })
     }
 
-    const { data: enrollments, error: enrollError } = await adminSupabase
+    const { data: enrollments, error: enrollError } = await db
       .from('class_enrollments')
       .select('id, class_id, student_id, student_name, status')
       .eq('student_id', id)
@@ -102,7 +48,7 @@ export async function GET(
     const classIds = (enrollments || []).map((e: { class_id: string }) => e.class_id)
 
     const { data: classes } = classIds.length
-      ? await adminSupabase
+      ? await db
           .from('classes')
           .select('id, name, subject, teacher_name, room')
           .in('id', classIds)
@@ -110,7 +56,7 @@ export async function GET(
       : { data: [] as any[] }
 
     const { data: lessons } = classIds.length
-      ? await adminSupabase
+      ? await db
           .from('lessons')
           .select('id, class_id, lesson_date, lesson_time, teacher_name, subject, class_name, created_at, org_id')
           .in('class_id', classIds)
@@ -153,7 +99,7 @@ export async function GET(
     })
 
     // 기관 체류 로그 (등원/하원) -> attendance_logs
-    const { data: attendanceLogs } = await adminSupabase
+    const { data: attendanceLogs } = await db
       .from('attendance_logs')
       .select('id, check_in_time, check_out_time, duration_minutes')
       .eq('student_id', id)
@@ -189,7 +135,7 @@ export async function GET(
       })
 
     // 등하원 일정 (commute_schedules)
-    const { data: commuteSchedules } = await adminSupabase
+    const { data: commuteSchedules } = await db
       .from('commute_schedules')
       .select('id, created_at, updated_at, weekday, check_in_time, check_out_time, notes')
       .eq('student_id', id)
@@ -198,15 +144,13 @@ export async function GET(
 
     // Payments
     // 결제 내역은 org 격리만 검사하고 서비스 롤로 조회 (RLS 영향 방지)
-    const { data: payments } = serviceClient
-      ? await serviceClient
+    const { data: payments } = await db
         .from('payment_records')
         .select('id, org_id, student_id, student_name, amount, payment_date, payment_method, status, notes, revenue_category_name, created_at, granted_credits_hours, granted_pass_type, granted_pass_amount')
         .eq('org_id', student.org_id)
         .eq('student_id', id)
         .order('payment_date', { ascending: false })
         .order('created_at', { ascending: false })
-      : { data: [] }
 
     interface CommuteSchedule {
       id: string
@@ -229,7 +173,7 @@ export async function GET(
     }))
 
     // Branches (지점 목록)
-    const { data: branches } = await adminSupabase
+    const { data: branches } = await db
       .from('branches')
       .select('id, name, status')
       .eq('org_id', orgId)
@@ -280,6 +224,12 @@ export async function GET(
       branches: branches || [],
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Student modal] unexpected', error)
     return Response.json({ error: 'Internal server error', details: error.message }, { status: 500 })
   }

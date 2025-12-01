@@ -28,7 +28,10 @@ export async function GET(request: Request) {
     if (authError || !authData.user || !authData.session) {
       console.error('[Demo Login] Auth error:', authError)
       // 로그인 실패 시 로그인 페이지로 리다이렉트
-      return Response.redirect(new URL('/login?error=demo_failed', request.url))
+      return new Response(null, {
+        status: 302,
+        headers: { 'Location': new URL('/login?error=demo_failed', request.url).toString() }
+      })
     }
 
     // 2. 사용자 프로필 조회
@@ -40,7 +43,10 @@ export async function GET(request: Request) {
 
     if (userError || !userProfile) {
       console.error('[Demo Login] User profile error:', userError)
-      return Response.redirect(new URL('/login?error=user_not_found', request.url))
+      return new Response(null, {
+        status: 302,
+        headers: { 'Location': new URL('/login?error=user_not_found', request.url).toString() }
+      })
     }
 
     // 3. 기관 정보 조회 (slug 확인용)
@@ -52,7 +58,10 @@ export async function GET(request: Request) {
 
     if (orgError || !org) {
       console.error('[Demo Login] Org error:', orgError)
-      return Response.redirect(new URL('/login?error=org_not_found', request.url))
+      return new Response(null, {
+        status: 302,
+        headers: { 'Location': new URL('/login?error=org_not_found', request.url).toString() }
+      })
     }
 
     // 4. Supabase SSR 호환 쿠키 생성
@@ -75,7 +84,10 @@ export async function GET(request: Request) {
     const cookie = `${cookieName}=${sessionPayload}; Path=/; Max-Age=${THIRTY_DAYS}; HttpOnly; SameSite=Lax${secureFlag}`
 
     // 5. 대시보드로 리다이렉트 (org.slug 사용)
+    // 세션 토큰을 URL 파라미터로 전달하여 클라이언트에서 세션 설정 가능하게 함
     const dashboardUrl = new URL(`/${org.slug}/overview`, request.url)
+    dashboardUrl.searchParams.set('demo_token', authData.session.access_token)
+    dashboardUrl.searchParams.set('demo_refresh', authData.session.refresh_token)
 
     return new Response(null, {
       status: 302,
@@ -87,6 +99,9 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error('[Demo Login] Unexpected error:', error)
-    return Response.redirect(new URL('/login?error=unexpected', request.url))
+    return new Response(null, {
+      status: 302,
+      headers: { 'Location': new URL('/login?error=unexpected', request.url).toString() }
+    })
   }
 }

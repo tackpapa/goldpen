@@ -88,6 +88,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 초기 세션 확인
   useEffect(() => {
     const initAuth = async () => {
+      // 데모 로그인 토큰 확인 (URL 파라미터에서)
+      if (typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search)
+        const demoToken = urlParams.get('demo_token')
+        const demoRefresh = urlParams.get('demo_refresh')
+
+        if (demoToken && demoRefresh) {
+          console.log('[Auth] Demo tokens found in URL, setting session...')
+          try {
+            const { createClient } = await import('@/lib/supabase/client')
+            const supabase = createClient()
+            const { error } = await supabase.auth.setSession({
+              access_token: demoToken,
+              refresh_token: demoRefresh,
+            })
+
+            if (error) {
+              console.error('[Auth] Failed to set demo session:', error)
+            } else {
+              console.log('[Auth] Demo session set successfully')
+              setAccessToken(demoToken)
+            }
+
+            // URL에서 토큰 파라미터 제거 (히스토리 정리)
+            const newUrl = new URL(window.location.href)
+            newUrl.searchParams.delete('demo_token')
+            newUrl.searchParams.delete('demo_refresh')
+            window.history.replaceState({}, '', newUrl.toString())
+          } catch (err) {
+            console.error('[Auth] Error setting demo session:', err)
+          }
+        }
+      }
+
       await refreshSession()
       setIsLoading(false)
     }

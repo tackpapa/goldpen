@@ -1,5 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { createAttendanceSchema } from '@/lib/validations/attendance'
 import { ZodError } from 'zod'
 import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
@@ -8,60 +7,12 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-const demoOrgId = process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
 export async function GET(request: Request) {
   try {
+    // getSupabaseWithOrg로 인증 + org_id 처리 통합
+    const { db: supabase, orgId, user } = await getSupabaseWithOrg(request)
+
     const { searchParams } = new URL(request.url)
-    const isDev = process.env.NODE_ENV !== 'production'
-    const serviceParam = searchParams.get('service')
-    // orgSlug 파라미터 지원 (프로덕션 대시보드용)
-    const orgSlug = searchParams.get('orgSlug')
-    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
-
-    let supabase = await createAuthenticatedClient(request)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    // 서비스 롤 폴백 (개발 및 프로덕션 지원)
-    if ((!user || authError) && allowService) {
-      if (!supabaseUrl || !supabaseServiceKey) {
-        return Response.json({ error: '서비스 키 누락' }, { status: 500 })
-      }
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-      user = { id: 'service-role' } as any
-    }
-
-    if (!user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-
-    let orgId: string | null = null
-    let userProfile: any = null
-    if (user.id === 'service-role') {
-      // orgSlug로 org_id 조회 (프로덕션 지원)
-      if (orgSlug && supabaseServiceKey) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', orgSlug)
-          .single()
-
-        if (orgError || !org) {
-          console.error('[Attendance GET] Organization not found for slug:', orgSlug)
-          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-        }
-        orgId = org.id
-      } else {
-        orgId = searchParams.get('org_id') || searchParams.get('orgId') || demoOrgId
-      }
-      if (orgId) userProfile = { org_id: orgId }
-    } else {
-      const { data: profile } = await supabase.from('users').select('org_id').eq('id', user.id).maybeSingle()
-      orgId = profile?.org_id || null
-      userProfile = profile
-    }
-    if (!orgId) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
 
     const student_id = searchParams.get('student_id')
     const class_id = searchParams.get('class_id')
@@ -96,7 +47,7 @@ export async function GET(request: Request) {
 
     // 공통 필터를 함수로 묶어 count/데이터 양쪽에 동일 적용
     const withFilters = (qb: any) => {
-      let q = qb.eq('org_id', userProfile.org_id)
+      let q = qb.eq('org_id', orgId)
       if (student_id) q = q.eq('student_id', student_id)
       if (class_id) q = q.eq('class_id', class_id)
       if (date) q = q.eq('date', date)
@@ -137,7 +88,7 @@ export async function GET(request: Request) {
         .from('students')
         .select('id, name')
         .in('id', missingStudentIds)
-        .eq('org_id', userProfile.org_id)
+        .eq('org_id', orgId)
 
       const map = new Map((studentRows || []).map((s: any) => [s.id, s.name]))
       attendance = (attendance || []).map((a: any) => {
@@ -156,7 +107,7 @@ export async function GET(request: Request) {
     const { data: todayRows } = await supabase
       .from('attendance')
       .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .eq('date', selectedDateStr)
       .order('updated_at', { ascending: false })
 
@@ -170,8 +121,8 @@ export async function GET(request: Request) {
     .from('class_enrollments')
     .select('class_id, student_id, students!inner(id, name), classes!inner(id, name, teacher_name, schedule, org_id)')
     .eq('status', 'active')
-    .eq('org_id', userProfile.org_id)
-    .eq('classes.org_id', userProfile.org_id)
+    .eq('org_id', orgId)
+    .eq('classes.org_id', orgId)
 
     const scheduleMap: Record<string, { start_time: string | null; end_time: string | null; teacher_name: string | null }> = {}
     const korDayMap: Record<string, string> = {
@@ -279,8 +230,8 @@ export async function GET(request: Request) {
       total: totalCount ?? null,
       hasMore,
       todayStudents,
-      weeklyStats: await buildWeeklyStats(supabase, userProfile.org_id, weekStartStr, selectedDateStr), // 선택 주간
-      studentRates: await buildStudentRates(supabase, userProfile.org_id, monthStartStr, selectedDateStr), // 선택 월간
+      weeklyStats: await buildWeeklyStats(supabase, orgId, weekStartStr, selectedDateStr), // 선택 주간
+      studentRates: await buildStudentRates(supabase, orgId, monthStartStr, selectedDateStr), // 선택 월간
       nextOffset: offset + (attendance?.length || 0),
       selectedDate: selectedDateStr,
     }, {
@@ -429,19 +380,15 @@ async function ensureAbsencesForDate(
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-
-    const { data: userProfile } = await supabase.from('users').select('org_id').eq('id', user.id).single()
-    if (!userProfile) return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+    // getSupabaseWithOrg로 인증 + org_id 처리 통합
+    const { db: supabase, orgId, user } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createAttendanceSchema.parse(body)
 
     const { data: attendanceData, error: createError } = await supabase
       .from('attendance')
-      .insert({ ...validated, org_id: userProfile.org_id })
+      .insert({ ...validated, org_id: orgId })
       .select()
       .single()
 
@@ -455,9 +402,9 @@ export async function POST(request: Request) {
 
     // 활동 로그 기록 (await 필요 - Edge Runtime에서 fire-and-forget이 작동하지 않음)
     await logActivity({
-      orgId: userProfile.org_id,
-      userId: user.id,
-      userName: user.email?.split('@')[0] || '사용자',
+      orgId,
+      userId: user?.id || 'anonymous',
+      userName: user?.email?.split('@')[0] || '사용자',
       userRole: null,
       actionType: 'create',
       entityType: 'attendance',
@@ -471,6 +418,12 @@ export async function POST(request: Request) {
   } catch (error: any) {
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
+    }
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
     }
     console.error('[Attendance POST] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })

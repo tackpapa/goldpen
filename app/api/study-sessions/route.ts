@@ -1,18 +1,13 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 // GET - Fetch study sessions for a student
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { searchParams } = new URL(request.url)
     const studentId = searchParams.get('studentId')
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0]
@@ -21,10 +16,11 @@ export async function GET(request: Request) {
       return Response.json({ error: 'studentId가 필요합니다' }, { status: 400 })
     }
 
-    const { data: sessions, error } = await supabase
+    const { data: sessions, error } = await db
       .from('study_sessions')
       .select('*')
       .eq('student_id', studentId)
+      .eq('org_id', orgId)
       .eq('date', date)
       .order('start_time', { ascending: false })
 
@@ -35,30 +31,22 @@ export async function GET(request: Request) {
 
     return Response.json({ sessions: sessions || [] })
   } catch (error: any) {
-    console.error('[StudySessions GET] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[StudySessions GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 
 // POST - Start or update a study session
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     interface StudySessionBody {
       studentId: string
@@ -89,10 +77,10 @@ export async function POST(request: Request) {
 
     if (action === 'start') {
       // Start a new session
-      const { data: session, error } = await supabase
+      const { data: session, error } = await db
         .from('study_sessions')
         .insert({
-          org_id: userProfile.org_id,
+          org_id: orgId,
           student_id: studentId,
           subject_id: subjectId,
           subject_name: subjectName,
@@ -118,7 +106,7 @@ export async function POST(request: Request) {
       }
 
       // Update session with end time and duration
-      const { data: session, error } = await supabase
+      const { data: session, error } = await db
         .from('study_sessions')
         .update({
           end_time: now.toISOString(),
@@ -126,6 +114,7 @@ export async function POST(request: Request) {
           status: 'completed',
         })
         .eq('id', sessionId)
+        .eq('org_id', orgId)
         .select()
         .single()
 
@@ -135,18 +124,25 @@ export async function POST(request: Request) {
       }
 
       // Update daily_study_stats
-      await updateDailyStats(supabase, userProfile.org_id, studentId, subjectId || null, subjectName, today, durationSeconds || 0, timeSlot)
+      await updateDailyStats(db, orgId, studentId, subjectId || null, subjectName, today, durationSeconds || 0, timeSlot)
 
       // Update study_time_records for ranking
-      await updateStudyTimeRecords(supabase, userProfile.org_id, studentId, today, durationSeconds || 0, timeSlot)
+      await updateStudyTimeRecords(db, orgId, studentId, today, durationSeconds || 0, timeSlot)
 
       return Response.json({ session })
     }
 
     return Response.json({ error: '잘못된 action입니다' }, { status: 400 })
   } catch (error: any) {
-    console.error('[StudySessions POST] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[StudySessions POST] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 
@@ -166,6 +162,7 @@ async function updateDailyStats(
     .from('daily_study_stats')
     .select('*')
     .eq('student_id', studentId)
+    .eq('org_id', orgId)
     .eq('subject_name', subjectName)
     .eq('date', date)
     .single()
@@ -219,6 +216,7 @@ async function updateStudyTimeRecords(
     .from('students')
     .select('name')
     .eq('id', studentId)
+    .eq('org_id', orgId)
     .single()
 
   const studentName = student?.name || '학생'
@@ -233,6 +231,7 @@ async function updateStudyTimeRecords(
     .from('study_time_records')
     .select('*')
     .eq('student_id', studentId)
+    .eq('org_id', orgId)
     .eq('date', date)
     .single()
 

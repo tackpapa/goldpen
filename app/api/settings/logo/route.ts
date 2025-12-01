@@ -1,4 +1,3 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 import { createClient } from '@supabase/supabase-js'
 import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
@@ -10,7 +9,6 @@ const BUCKET = 'org-files'
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
     const { orgId } = await getSupabaseWithOrg(request)
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL

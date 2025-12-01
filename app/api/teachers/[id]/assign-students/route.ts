@@ -1,16 +1,8 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 /**
  * POST /api/teachers/[id]/assign-students
@@ -19,46 +11,14 @@ const getServiceClient = () => {
  * 데이터 저장: students.teacher_id 컬럼 사용.
  */
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-
   try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const teacherId = params.id
     const { studentIds } = await request.json() as { studentIds: string[] }
 
     if (!Array.isArray(studentIds)) {
       return Response.json({ error: 'studentIds 배열이 필요합니다' }, { status: 400 })
     }
-
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-
-    // 인증
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !profile) {
-        if (service) {
-          orgId = demoOrg
-        } else {
-          return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = profile.org_id
-      }
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
 
     // 교사 존재/동일 org 확인 (teachers 테이블 기준)
     const { data: teacher, error: teacherError } = await db
@@ -95,6 +55,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     return Response.json({ ok: true, studentIds })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[assign-students] unexpected', error)
     return Response.json({ error: '서버 오류', details: error.message }, { status: 500 })
   }

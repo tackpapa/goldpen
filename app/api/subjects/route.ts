@@ -1,80 +1,28 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const getServiceClient = () => {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !key) return null
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 export async function GET(request: Request) {
   try {
-    const isDev = process.env.NODE_ENV !== 'production'
-    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { searchParams } = new URL(request.url)
-    const serviceParam = searchParams.get('service')
-    const orgSlug = searchParams.get('orgSlug')
-    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug
-
-    let supabase: any
-    let orgId: string | null = null
-    const orgParam = searchParams.get('orgId')
-
-    if (allowService && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-
-      // orgSlug로 org_id 조회 (프로덕션 지원)
-      if (orgSlug) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', orgSlug)
-          .single()
-
-        if (orgError || !org) {
-          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-        }
-        orgId = org.id
-      } else {
-        orgId = orgParam || (isDev ? demoOrgId : null)
-      }
-    } else {
-      supabase = await createAuthenticatedClient(request)
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!userProfile) {
-        if (supabaseServiceKey) {
-          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = orgParam || demoOrgId
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = userProfile.org_id
-      }
-    }
-
     const studentId = searchParams.get('studentId')
 
     if (!studentId) {
       return Response.json({ error: 'studentId가 필요합니다' }, { status: 400 })
     }
 
-    if (!orgId) {
-      return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
-    }
-
-    const { data: subjects, error } = await supabase
+    const { data: subjects, error } = await db
       .from('subjects')
       .select('*')
       .eq('student_id', studentId)
@@ -89,68 +37,21 @@ export async function GET(request: Request) {
 
     return Response.json({ subjects: subjects || [] })
   } catch (error: any) {
-    console.error('[Subjects GET] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[Subjects GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const isDev = process.env.NODE_ENV !== 'production'
-    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-    const { searchParams } = new URL(request.url)
-    const serviceParam = searchParams.get('service')
-    const orgSlug = searchParams.get('orgSlug')
-    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug
-
-    let supabase: any
-    let orgId: string | null = null
-    const orgParam = searchParams.get('orgId')
-
-    if (allowService && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-
-      // orgSlug로 org_id 조회 (프로덕션 지원)
-      if (orgSlug) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', orgSlug)
-          .single()
-
-        if (orgError || !org) {
-          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-        }
-        orgId = org.id
-      } else {
-        orgId = orgParam || (isDev ? demoOrgId : null)
-      }
-    } else {
-      supabase = await createAuthenticatedClient(request)
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!userProfile) {
-        if (supabaseServiceKey) {
-          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = orgParam || demoOrgId
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = userProfile.org_id
-      }
-    }
-
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const body = await request.json() as { studentId: string; name: string; color?: string; order?: number }
     const { studentId, name, color, order } = body
 
@@ -158,11 +59,7 @@ export async function POST(request: Request) {
       return Response.json({ error: 'studentId와 name이 필요합니다' }, { status: 400 })
     }
 
-    if (!orgId) {
-      return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
-    }
-
-    const { data: subject, error } = await supabase
+    const { data: subject, error } = await db
       .from('subjects')
       .insert({
         org_id: orgId,
@@ -182,42 +79,76 @@ export async function POST(request: Request) {
 
     return Response.json({ subject })
   } catch (error: any) {
-    console.error('[Subjects POST] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[Subjects POST] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
+  }
+}
+
+export async function PUT(request: Request) {
+  try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
+    const { searchParams } = new URL(request.url)
+    const subjectId = searchParams.get('id')
+    const body = await request.json() as { name?: string; color?: string; order?: number }
+
+    if (!subjectId) {
+      return Response.json({ error: 'id가 필요합니다' }, { status: 400 })
+    }
+
+    const updateData: any = {}
+    if (body.name) updateData.name = body.name
+    if (body.color) updateData.color = body.color
+    if (typeof body.order === 'number') updateData.order = body.order
+
+    const { data: subject, error } = await db
+      .from('subjects')
+      .update(updateData)
+      .eq('id', subjectId)
+      .eq('org_id', orgId)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('[Subjects PUT] Error:', error)
+      return Response.json({ error: '과목 수정 실패' }, { status: 500 })
+    }
+
+    return Response.json({ subject })
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[Subjects PUT] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 
 export async function DELETE(request: Request) {
   try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { searchParams } = new URL(request.url)
-    const serviceParam = searchParams.get('service')
-    const orgSlug = searchParams.get('orgSlug')
-    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug
-
-    let supabase: any
-
-    if (allowService && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-    } else {
-      supabase = await createAuthenticatedClient(request)
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-    }
-
     const subjectId = searchParams.get('id')
 
     if (!subjectId) {
       return Response.json({ error: 'id가 필요합니다' }, { status: 400 })
     }
 
-    const { error } = await supabase
+    const { error } = await db
       .from('subjects')
       .update({ is_active: false })
       .eq('id', subjectId)
+      .eq('org_id', orgId)
 
     if (error) {
       console.error('[Subjects DELETE] Error:', error)
@@ -226,7 +157,14 @@ export async function DELETE(request: Request) {
 
     return Response.json({ success: true })
   } catch (error: any) {
-    console.error('[Subjects DELETE] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[Subjects DELETE] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }

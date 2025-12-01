@@ -1,18 +1,9 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
 import { ZodError, z } from 'zod'
 import { getSupabaseWithOrg } from '../_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 const roomSchema = z.object({
   id: z.string().optional(),
@@ -53,6 +44,13 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Rooms GET] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error?.message || error }, { status: 500 })
   }
@@ -88,6 +86,10 @@ export async function POST(request: Request) {
     if (error?.message === 'AUTH_REQUIRED') {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Rooms POST] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error?.message || error }, { status: 500 })
   }
@@ -123,6 +125,10 @@ export async function PATCH(request: Request) {
     if (error?.message === 'AUTH_REQUIRED') {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Rooms PATCH] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error?.message || error }, { status: 500 })
   }
@@ -149,6 +155,10 @@ export async function DELETE(request: Request) {
     if (error?.message === 'AUTH_REQUIRED') {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Rooms DELETE] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error?.message || error }, { status: 500 })
   }

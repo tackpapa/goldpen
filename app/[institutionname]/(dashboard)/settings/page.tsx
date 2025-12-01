@@ -1506,7 +1506,7 @@ export default function SettingsPage() {
                   <Label htmlFor="org-name">기관명 (지점명)</Label>
                   <Input
                     id="org-name"
-                    value={organization.name}
+                    value={organization.name || ''}
                     onChange={(e) =>
                       setOrganization({ ...organization, name: e.target.value })
                     }
@@ -1530,7 +1530,7 @@ export default function SettingsPage() {
                   <Label htmlFor="org-phone">전화번호</Label>
                   <Input
                     id="org-phone"
-                    value={organization.phone}
+                    value={organization.phone || ''}
                     onChange={(e) =>
                       setOrganization({ ...organization, phone: e.target.value })
                     }
@@ -1541,7 +1541,7 @@ export default function SettingsPage() {
                   <Input
                     id="org-email"
                     type="email"
-                    value={organization.email}
+                    value={organization.email || ''}
                     onChange={(e) =>
                       setOrganization({ ...organization, email: e.target.value })
                     }
@@ -1553,7 +1553,7 @@ export default function SettingsPage() {
                 <Label htmlFor="org-address">주소</Label>
                 <Input
                   id="org-address"
-                  value={organization.address}
+                  value={organization.address || ''}
                   onChange={(e) =>
                     setOrganization({ ...organization, address: e.target.value })
                   }

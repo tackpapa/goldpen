@@ -1,69 +1,13 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+export const revalidate = 0
 
 export async function GET(request: Request) {
   try {
-    const isDev = process.env.NODE_ENV !== 'production'
-    const demoOrgId = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { searchParams } = new URL(request.url)
-    const serviceParam = searchParams.get('service')
-    // orgSlug 파라미터 지원 (프로덕션 livescreen용)
-    const orgSlug = searchParams.get('orgSlug')
-    const orgParam = searchParams.get('orgId')
-    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
-    const allowService = serviceParam === '1' || !!orgSlug || (isDev && serviceParam === null)
-
-    let supabase: any = await createAuthenticatedClient(request)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    let orgId: string | null = null
-
-    if ((!user || authError) && allowService && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-
-      // orgSlug로 org_id 조회 (프로덕션 지원)
-      if (orgSlug) {
-        const { data: org, error: orgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', orgSlug)
-          .single()
-
-        if (orgError || !org) {
-          console.error('[DailyStudyStats GET] Organization not found for slug:', orgSlug)
-          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-        }
-        orgId = org.id
-      } else {
-        orgId = orgParam || demoOrgId
-      }
-    } else {
-      if (authError || !user) {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!userProfile) {
-        if (supabaseServiceKey) {
-          supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
-          orgId = orgParam || demoOrgId
-        } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-        }
-      } else {
-        orgId = userProfile.org_id
-      }
-    }
 
     const studentId = searchParams.get('studentId')
     const date = searchParams.get('date')
@@ -75,11 +19,7 @@ export async function GET(request: Request) {
       return Response.json({ error: 'studentId가 필요합니다' }, { status: 400 })
     }
 
-    if (!orgId) {
-      return Response.json({ error: 'orgId가 필요합니다' }, { status: 400 })
-    }
-
-    let query = supabase
+    let query = db
       .from('daily_study_stats')
       .select('*')
       .eq('student_id', studentId)
@@ -108,29 +48,21 @@ export async function GET(request: Request) {
 
     return Response.json({ stats: stats || [] })
   } catch (error: any) {
-    console.error('[DailyStudyStats GET] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[DailyStudyStats GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     interface DailyStudyStatsBody {
       studentId: string
@@ -148,7 +80,7 @@ export async function POST(request: Request) {
     const { studentId, subjectId, subjectName, subjectColor, date, totalSeconds, sessionCount, morningSeconds, afternoonSeconds, nightSeconds } = body
 
     // Upsert - update if exists, insert if not
-    const { data: existing } = await supabase
+    const { data: existing } = await db
       .from('daily_study_stats')
       .select('id')
       .eq('student_id', studentId)
@@ -157,7 +89,7 @@ export async function POST(request: Request) {
       .single()
 
     if (existing) {
-      const { data: stat, error } = await supabase
+      const { data: stat, error } = await db
         .from('daily_study_stats')
         .update({
           total_seconds: totalSeconds,
@@ -168,7 +100,7 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('id', existing.id)
-        .eq('org_id', userProfile.org_id)
+        .eq('org_id', orgId)
         .select()
         .single()
 
@@ -178,10 +110,10 @@ export async function POST(request: Request) {
       }
       return Response.json({ stat })
     } else {
-      const { data: stat, error } = await supabase
+      const { data: stat, error } = await db
         .from('daily_study_stats')
         .insert({
-          org_id: userProfile.org_id,
+          org_id: orgId,
           student_id: studentId,
           subject_id: subjectId,
           subject_name: subjectName,
@@ -203,7 +135,14 @@ export async function POST(request: Request) {
       return Response.json({ stat })
     }
   } catch (error: any) {
-    console.error('[DailyStudyStats POST] Error:', error)
-    return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    console.error('[DailyStudyStats POST] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }

@@ -1,16 +1,6 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { NextResponse } from 'next/server'
 import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
-
-function getServiceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
-}
 
 export const runtime = 'edge'
 
@@ -21,30 +11,9 @@ export async function PUT(
 ) {
   try {
     const { id } = await params
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-
-    if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !profile) return NextResponse.json({ error: '프로필 없음' }, { status: 404 })
-      orgId = profile.org_id
-    } else if (service) {
-      orgId = demoOrg
-    } else {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const { db, orgId, user } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
-    const db = service || supabase
 
     // 학생 정보 업데이트
     const { data: student, error } = await db
@@ -79,7 +48,13 @@ export async function PUT(
     })
 
     return NextResponse.json({ student })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return NextResponse.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('Unexpected error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -95,29 +70,7 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-
-    if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
-      const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !profile) return NextResponse.json({ error: '프로필 없음' }, { status: 404 })
-      orgId = profile.org_id
-    } else if (service) {
-      orgId = demoOrg
-    } else {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const db = service || supabase
+    const { db, orgId, user } = await getSupabaseWithOrg(request)
 
     // 삭제 전 학생 정보 조회 (로그용)
     const { data: studentToDelete } = await db
@@ -156,7 +109,13 @@ export async function DELETE(
     }
 
     return NextResponse.json({ success: true })
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return NextResponse.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('Unexpected error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },

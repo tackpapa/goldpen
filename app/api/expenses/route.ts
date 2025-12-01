@@ -1,8 +1,6 @@
 import { ZodError } from 'zod'
 import * as z from 'zod'
 import { getSupabaseWithOrg } from '@/app/api/_utils/org'
-import { createClient } from '@supabase/supabase-js'
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -87,6 +85,13 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Expenses GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
@@ -94,88 +99,14 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const serviceUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    const demoOrg = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    // 서비스키 허용: 로컬/데모에서 인증 없이도 작성 가능
-    if ((authError || !user) && serviceUrl && serviceKey) {
-      const admin = createClient(serviceUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-      const body = await request.json()
-      const validated = createExpenseSchema.parse(body)
-
-      // category name -> category_id 매핑
-      let categoryId: string | null = null
-      const { data: catRow } = await admin
-        .from('expense_categories')
-        .select('id')
-        .eq('name', validated.category)
-        .maybeSingle()
-      if (catRow?.id) {
-        categoryId = catRow.id
-      } else {
-        const { data: newCat } = await admin
-          .from('expense_categories')
-          .insert({ name: validated.category })
-          .select('id')
-          .single()
-        categoryId = newCat?.id || null
-      }
-
-      const { data: expense, error: createError } = await admin
-        .from('expenses')
-        .insert({
-          org_id: demoOrg,
-          category_id: categoryId,
-          amount: validated.amount,
-          expense_date: validated.expense_date,
-          description: validated.description,
-          notes: validated.notes ?? null,
-        })
-        .select()
-        .single()
-
-      if (createError) {
-        console.error('[Expenses POST] svc Error:', createError)
-        return Response.json({ error: '지출 생성 실패', details: createError.message }, { status: 500 })
-      }
-      const mapped = {
-        id: expense.id,
-        created_at: expense.created_at,
-        org_id: expense.org_id,
-        category_id: expense.category_id || validated.category,
-        category_name: validated.category,
-        amount: expense.amount,
-        expense_date: expense.expense_date,
-        is_recurring: false,
-        notes: expense.notes || undefined,
-      }
-      return Response.json({ expense: mapped, message: '지출이 생성되었습니다' }, { status: 201 })
-    }
-
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createExpenseSchema.parse(body)
 
     // category name -> category_id 매핑
     let categoryId: string | null = null
-    const { data: catRow } = await supabase
+    const { data: catRow } = await db
       .from('expense_categories')
       .select('id')
       .eq('name', validated.category)
@@ -183,7 +114,7 @@ export async function POST(request: Request) {
     if (catRow?.id) {
       categoryId = catRow.id
     } else {
-      const { data: newCat } = await supabase
+      const { data: newCat } = await db
         .from('expense_categories')
         .insert({ name: validated.category })
         .select('id')
@@ -191,10 +122,10 @@ export async function POST(request: Request) {
       categoryId = newCat?.id || null
     }
 
-    const { data: expense, error: createError } = await supabase
+    const { data: expense, error: createError } = await db
       .from('expenses')
       .insert({
-        org_id: userProfile.org_id,
+        org_id: orgId,
         category_id: categoryId,
         amount: validated.amount,
         expense_date: validated.expense_date,
@@ -225,6 +156,12 @@ export async function POST(request: Request) {
   } catch (error: any) {
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
+    }
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
     }
 
     console.error('[Expenses POST] Unexpected error:', error)

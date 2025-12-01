@@ -1,4 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { ZodError } from 'zod'
 import * as z from 'zod'
 import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
@@ -25,31 +25,16 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId, user } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = updateExamSchema.parse(body)
 
-    const { data: exam, error: updateError } = await supabase
+    const { data: exam, error: updateError } = await db
       .from('exams')
       .update(validated)
       .eq('id', params.id)
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .select()
       .single()
 
@@ -63,23 +48,31 @@ export async function PUT(
     }
 
     // 활동 로그 기록
-    await logActivity({
-      orgId: userProfile.org_id,
-      userId: user.id,
-      userName: user.email?.split('@')[0] || '사용자',
-      userRole: null,
-      actionType: 'update',
-      entityType: 'exam',
-      entityId: exam.id,
-      entityName: exam.title,
-      description: actionDescriptions.exam.update(exam.title || '이름 없음'),
-      request,
-    })
+    if (user) {
+      await logActivity({
+        orgId,
+        userId: user.id,
+        userName: user.email?.split('@')[0] || '사용자',
+        userRole: null,
+        actionType: 'update',
+        entityType: 'exam',
+        entityId: exam.id,
+        entityName: exam.title,
+        description: actionDescriptions.exam.update(exam.title || '이름 없음'),
+        request,
+      })
+    }
 
     return Response.json({ exam, message: '시험이 수정되었습니다' })
   } catch (error: any) {
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
+    }
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
     }
 
     console.error('[Exams PUT] Unexpected error:', error)
@@ -92,40 +85,25 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
+    const { db, orgId, user, role } = await getSupabaseWithOrg(request)
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
-
-    if (!['owner', 'manager', 'teacher'].includes(userProfile.role)) {
+    if (!['owner', 'manager', 'teacher'].includes(role || '')) {
       return Response.json({ error: '시험을 삭제할 권한이 없습니다' }, { status: 403 })
     }
 
     // 삭제 전 시험 정보 조회 (로그용)
-    const { data: examToDelete } = await supabase
+    const { data: examToDelete } = await db
       .from('exams')
       .select('id, title')
       .eq('id', params.id)
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .single()
 
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await db
       .from('exams')
       .delete()
       .eq('id', params.id)
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
 
     if (deleteError) {
       console.error('[Exams DELETE] Error:', deleteError)
@@ -133,12 +111,12 @@ export async function DELETE(
     }
 
     // 활동 로그 기록
-    if (examToDelete) {
+    if (examToDelete && user) {
       await logActivity({
-        orgId: userProfile.org_id,
+        orgId,
         userId: user.id,
         userName: user.email?.split('@')[0] || '사용자',
-        userRole: userProfile.role,
+        userRole: role,
         actionType: 'delete',
         entityType: 'exam',
         entityId: params.id,
@@ -150,6 +128,13 @@ export async function DELETE(
 
     return Response.json({ message: '시험이 삭제되었습니다' })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Exams DELETE] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }

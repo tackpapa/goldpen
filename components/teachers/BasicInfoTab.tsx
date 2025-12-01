@@ -99,7 +99,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="name">이름</Label>
               <Input
                 id="name"
-                value={localTeacher.name}
+                value={localTeacher.name || ''}
                 onChange={(e) => handleFieldChange('name', e.target.value)}
               />
             </div>
@@ -108,7 +108,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               <Label htmlFor="phone">전화번호</Label>
               <Input
                 id="phone"
-                value={localTeacher.phone}
+                value={localTeacher.phone || ''}
                 onChange={(e) => handlePhoneChange(e.target.value)}
                 placeholder="01012345678"
               />
@@ -119,7 +119,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               <Input
                 id="email"
                 type="email"
-                value={localTeacher.email}
+                value={localTeacher.email || ''}
                 onChange={(e) => handleFieldChange('email', e.target.value)}
               />
             </div>
@@ -129,7 +129,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               <Input
                 id="hire_date"
                 type="date"
-                value={localTeacher.hire_date}
+                value={localTeacher.hire_date || ''}
                 onChange={(e) => handleFieldChange('hire_date', e.target.value)}
               />
             </div>
@@ -137,7 +137,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
             <div>
               <Label htmlFor="status">상태</Label>
               <Select
-                value={localTeacher.status}
+                value={localTeacher.status || 'active'}
                 onValueChange={(value: 'active' | 'inactive') => handleFieldChange('status', value)}
               >
                 <SelectTrigger id="status">
@@ -201,7 +201,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
             <div>
               <Label htmlFor="employment_type">고용 형태</Label>
               <Select
-                value={localTeacher.employment_type}
+                value={localTeacher.employment_type || 'full_time'}
                 onValueChange={(value: 'full_time' | 'part_time' | 'contract') =>
                   handleFieldChange('employment_type', value)
                 }
@@ -220,7 +220,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
             <div>
               <Label htmlFor="salary_type">급여 유형</Label>
               <Select
-                value={localTeacher.salary_type}
+                value={localTeacher.salary_type || 'monthly'}
                 onValueChange={(value: 'monthly' | 'hourly') =>
                   handleFieldChange('salary_type', value)
                 }
@@ -240,7 +240,7 @@ export function BasicInfoTab({ teacher, onUpdate }: BasicInfoTabProps) {
               <Input
                 id="salary_amount"
                 type="number"
-                value={localTeacher.salary_amount}
+                value={localTeacher.salary_amount ?? ''}
                 onChange={(e) => handleFieldChange('salary_amount', Number(e.target.value))}
                 placeholder="3000000"
               />

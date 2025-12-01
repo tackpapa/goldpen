@@ -1,5 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -13,49 +12,6 @@ type SchedulePayload = {
   check_in_time?: string | null
   check_out_time?: string | null
   notes?: string | null
-}
-
-async function getAdminClient(request: Request, studentId: string) {
-  const supabase = await createAuthenticatedClient(request)
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceClient = supabaseUrl && serviceKey
-    ? createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } })
-    : null
-  const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-  let { data: { user }, error: authError } = await supabase.auth.getUser()
-  let adminSupabase = supabase
-  let orgId: string | null = null
-
-  if (serviceClient && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-    adminSupabase = serviceClient
-    orgId = demoOrg
-  } else if (!authError && user) {
-    const { data: profile } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .maybeSingle()
-    orgId = profile?.org_id ?? null
-    if (!orgId && serviceClient) {
-      adminSupabase = serviceClient
-    }
-  }
-
-  if (!orgId && serviceClient) {
-    const { data: studentOrg } = await serviceClient
-      .from('students')
-      .select('org_id')
-      .eq('id', studentId)
-      .maybeSingle()
-    orgId = studentOrg?.org_id ?? demoOrg
-    adminSupabase = serviceClient
-  }
-
-  if (!orgId) throw new Error('org not found')
-
-  return { adminSupabase, orgId }
 }
 
 function mapDbToDto(row: any) {
@@ -74,9 +30,9 @@ function mapDbToDto(row: any) {
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const { id } = params
-    const { adminSupabase, orgId } = await getAdminClient(request, id)
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-    const { data, error } = await adminSupabase
+    const { data, error } = await db
       .from('commute_schedules')
       .select('*')
       .eq('org_id', orgId)
@@ -87,6 +43,12 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
     return Response.json({ schedules: (data || []).map(mapDbToDto) })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[commute-schedules][GET]', error)
     return Response.json({ error: error.message || 'failed' }, { status: 500 })
   }
@@ -100,9 +62,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
 
     const { id } = params
-    const { adminSupabase, orgId } = await getAdminClient(request, id)
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-    const { data, error } = await adminSupabase
+    const { data, error } = await db
       .from('commute_schedules')
       .upsert({
         org_id: orgId,
@@ -119,6 +81,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     return Response.json({ schedule: mapDbToDto(data) })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[commute-schedules][PATCH]', error)
     return Response.json({ error: error.message || 'failed' }, { status: 500 })
   }
@@ -133,9 +101,9 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
     }
 
     const { id } = params
-    const { adminSupabase, orgId } = await getAdminClient(request, id)
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
-    const { error } = await adminSupabase
+    const { error } = await db
       .from('commute_schedules')
       .delete()
       .eq('org_id', orgId)
@@ -146,6 +114,12 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
 
     return Response.json({ success: true })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[commute-schedules][DELETE]', error)
     return Response.json({ error: error.message || 'failed' }, { status: 500 })
   }

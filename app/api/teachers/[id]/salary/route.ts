@@ -1,16 +1,8 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
 
 /**
  * GET /api/teachers/[id]/salary?month=2025-01
@@ -21,40 +13,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
+    const { db, orgId } = await getSupabaseWithOrg(request)
     const { id: teacherId } = await params
 
-    // Query params 파싱
     const url = new URL(request.url)
-    const monthParam = url.searchParams.get('month') // YYYY-MM 형식
+    const monthParam = url.searchParams.get('month')
     const targetDate = monthParam ? new Date(`${monthParam}-01`) : new Date()
 
-    // 1. 인증 확인
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id, role')
-        .eq('id', user.id)
-        .single()
-      if (profileError || !userProfile) {
-        orgId = demoOrg
-      } else {
-        orgId = userProfile.org_id
-      }
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
-
-    // 3. 강사 정보 조회
+    // 강사 정보 조회
     const { data: teacher, error: teacherError } = await db
       .from('teachers')
       .select('*')
@@ -73,7 +39,7 @@ export async function GET(
     // 5. 급여 계산 (타입별 분기)
     if (teacher.salary_type === 'hourly') {
       // 시급제: lessons 테이블에서 수업일지 조회
-      const { data: lessons, error: lessonsError } = await supabase
+      const { data: lessons, error: lessonsError } = await db
         .from('lessons')
         .select('*')
         .eq('teacher_id', teacherId)
@@ -158,11 +124,14 @@ export async function GET(
       return Response.json({ error: '알 수 없는 급여 유형입니다' }, { status: 400 })
     }
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Salary API] Unexpected error:', error)
-    return Response.json(
-      { error: '서버 오류가 발생했습니다', details: error.message },
-      { status: 500 }
-    )
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }
 }
 

@@ -1,5 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -11,22 +10,7 @@ export const revalidate = 0
  */
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-
-    const { data: { user } } = await supabase.auth.getUser()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-    const db = service || supabase
-
-    let orgId = demoOrg
-    if (user) {
-      const { data: profile } = await db
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      orgId = profile?.org_id || demoOrg
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { data: teachers, error: teacherError } = await db
       .from('teachers')
@@ -156,6 +140,12 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[teachers/overview] Unexpected', error)
     return Response.json({ error: '서버 오류', details: error.message }, { status: 500 })
   }

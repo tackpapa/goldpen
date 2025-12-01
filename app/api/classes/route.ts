@@ -1,19 +1,7 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { createClassSchema } from '@/lib/validations/class'
 import { ZodError } from 'zod'
 import { logActivity, actionDescriptions } from '@/app/api/_utils/activity-log'
-
-// 서비스 롤 클라이언트 (RLS 무시, 인증 실패 시 Fallback)
-function getServiceClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-
-  return createClient(url, key, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
-}
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
@@ -65,28 +53,7 @@ async function syncSchedules({
  */
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    let orgId: string | null = null
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    if (user && user.id !== 'service-role' && user.id !== 'e2e-user') {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-      orgId = userProfile?.org_id ?? demoOrg
-    } else if (service) {
-      // 인증 실패 시 서비스 롤로 데모 org 조회
-      orgId = demoOrg
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
@@ -147,6 +114,12 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Classes GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
   }
@@ -158,28 +131,14 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (!userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId, user } = await getSupabaseWithOrg(request)
 
     const body = await request.json()
     const validated = createClassSchema.parse(body)
 
     let teacher_name: string | null = null
     if (validated.teacher_id) {
-      const { data: teacherRow } = await supabase
+      const { data: teacherRow } = await db
         .from('teachers')
         .select('name')
         .eq('id', validated.teacher_id)
@@ -189,12 +148,12 @@ export async function POST(request: Request) {
 
     const payload = {
       ...validated,
-      org_id: userProfile.org_id,
+      org_id: orgId,
       teacher_name: teacher_name ?? null,
       current_students: 0,
     }
 
-    const { data: classData, error: createError } = await supabase
+    const { data: classData, error: createError } = await db
       .from('classes')
       .insert(payload)
       .select()
@@ -207,8 +166,8 @@ export async function POST(request: Request) {
 
     // sync schedules table
     await syncSchedules({
-      supabase,
-      orgId: userProfile.org_id,
+      supabase: db,
+      orgId,
       classId: classData.id,
       schedule: validated.schedule || [],
       roomName: validated.room,
@@ -216,9 +175,9 @@ export async function POST(request: Request) {
 
     // 활동 로그 기록
     await logActivity({
-      orgId: userProfile.org_id,
-      userId: user.id,
-      userName: user.email?.split('@')[0] || '사용자',
+      orgId,
+      userId: user?.id || null,
+      userName: user?.email?.split('@')[0] || '사용자',
       userRole: null,
       actionType: 'create',
       entityType: 'class',
@@ -230,6 +189,12 @@ export async function POST(request: Request) {
 
     return Response.json({ class: classData, message: '반이 생성되었습니다' }, { status: 201 })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json({ error: '입력 데이터가 유효하지 않습니다', details: error.errors }, { status: 400 })
     }

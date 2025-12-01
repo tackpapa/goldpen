@@ -35,45 +35,44 @@ export async function GET(request: Request) {
   try {
     const supabase = await createAuthenticatedClient(request)
     const service = getServiceClient()
-    const anon = getAnonClient()
-    const demoOrg =
-      process.env.NEXT_PUBLIC_DEMO_ORG_ID ||
-      process.env.DEMO_ORG_ID ||
-      'dddd0000-0000-0000-0000-000000000000'
     const { searchParams } = new URL(request.url)
     const slug = searchParams.get('slug')
 
-    // 인증 실패 시에도 서비스 키가 있으면 데모 org로 조회 허용
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     let orgId: string | null = null
     let db: any = service || supabase
 
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-      db = service
+    // slug가 제공된 경우 (프로덕션 대시보드 지원)
+    if (slug && service) {
+      const { data: orgBySlug } = await service
+        .from('organizations')
+        .select('id')
+        .eq('slug', slug)
+        .maybeSingle()
+      if (orgBySlug?.id) {
+        orgId = orgBySlug.id
+        db = service
+      } else {
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+      }
     } else if (!authError && user) {
+      // 인증된 사용자
       const { data: userProfile } = await supabase
         .from('users')
         .select('org_id')
         .eq('id', user.id)
         .single()
-      orgId = userProfile?.org_id ?? demoOrg
-    } else if (anon) {
-      orgId = demoOrg
-      db = anon
+      if (!userProfile?.org_id) {
+        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = userProfile.org_id
     } else {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    // slug가 주어지면 slug 우선으로 org 결정
-    if (slug) {
-      const { data: orgBySlug } = await db
-        .from('organizations')
-        .select('id')
-        .eq('slug', slug)
-        .maybeSingle()
-      if (orgBySlug?.id) orgId = orgBySlug.id
+    if (!orgId) {
+      return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
     }
 
     // ensure org_settings row exists for this org
@@ -157,42 +156,46 @@ export async function PUT(request: Request) {
   try {
     const supabase = await createAuthenticatedClient(request)
     const service = getServiceClient()
-    const anon = getAnonClient()
-    const demoOrg =
-      process.env.NEXT_PUBLIC_DEMO_ORG_ID ||
-      process.env.DEMO_ORG_ID ||
-      'dddd0000-0000-0000-0000-000000000000'
+    const { searchParams } = new URL(request.url)
+    const slug = searchParams.get('slug')
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     let orgId: string | null = null
     let role: string | null = null
     let db: any = service || supabase
 
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-      role = 'owner'
-      db = service
+    // slug가 제공된 경우 (프로덕션 대시보드 지원)
+    if (slug && service) {
+      const { data: orgBySlug } = await service
+        .from('organizations')
+        .select('id')
+        .eq('slug', slug)
+        .maybeSingle()
+      if (orgBySlug?.id) {
+        orgId = orgBySlug.id
+        role = 'owner' // slug로 접근한 경우 owner 권한 부여
+        db = service
+      } else {
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+      }
     } else if (!authError && user) {
+      // 인증된 사용자
       const { data: userProfile, error: profileError } = await supabase
         .from('users')
         .select('org_id, role')
         .eq('id', user.id)
         .single()
       if (profileError || !userProfile) {
-        orgId = demoOrg
-        role = 'owner'
-      } else {
-        orgId = userProfile.org_id
-        role = userProfile.role
+        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
       }
-    } else if (anon) {
-      orgId = demoOrg
-      role = 'owner'
-      db = anon
+      orgId = userProfile.org_id
+      role = userProfile.role
     } else {
-      if (!service) return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      orgId = demoOrg
-      role = 'owner'
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+
+    if (!orgId) {
+      return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
     }
 
     // Only owner and manager can update settings (테스트 모드에서는 허용)
@@ -202,18 +205,6 @@ export async function PUT(request: Request) {
 
     const body = await request.json()
     const validated = updateSettingsSchema.parse(body)
-
-    // slug가 있으면 해당 org로 업데이트
-    const { searchParams } = new URL(request.url)
-    const slug = searchParams.get('slug')
-    if (slug) {
-      const { data: orgBySlug } = await db
-        .from('organizations')
-        .select('id')
-        .eq('slug', slug)
-        .maybeSingle()
-      if (orgBySlug?.id) orgId = orgBySlug.id
-    }
 
     try {
       await db.rpc('ensure_org_settings', { org: orgId })

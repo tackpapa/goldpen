@@ -157,7 +157,7 @@ export default function LandingPage() {
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center">
             <img
-              src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+              src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png"
               alt="GoldPen"
               className="h-10"
             />
@@ -290,7 +290,7 @@ export default function LandingPage() {
         <div className="container">
           <div className="text-center mb-16">
             <h2 className="text-3xl font-bold sm:text-4xl flex items-center justify-center gap-2">
-              왜 <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png" alt="GoldPen" className="h-8 sm:h-10 inline-block" />인가요?
+              왜 <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png" alt="GoldPen" className="h-8 sm:h-10 inline-block" />인가요?
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
               단순한 관리 도구를 넘어, 운영 효율을 혁신합니다
@@ -471,7 +471,7 @@ export default function LandingPage() {
             <div>
               <Link href="/" className="flex items-center mb-4">
                 <img
-                  src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png"
+                  src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png"
                   alt="GoldPen"
                   className="h-10"
                 />
@@ -515,7 +515,7 @@ export default function LandingPage() {
 
           <div className="mt-12 pt-8 border-t flex flex-col sm:flex-row justify-between items-center gap-4">
             <p className="text-sm text-muted-foreground flex items-center gap-2">
-              © 2024 <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/logos/goldpen.png" alt="GoldPen" className="h-5 inline-block" />. All rights reserved.
+              © 2024 <img src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png" alt="GoldPen" className="h-5 inline-block" />. All rights reserved.
             </p>
             <div className="flex items-center gap-4">
               <a href="#" className="text-muted-foreground hover:text-foreground transition-colors">

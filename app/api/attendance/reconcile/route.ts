@@ -1,42 +1,14 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
 const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
-
-function parseTimeToMinutes(time: string | null) {
-  if (!time) return null
-  const [h, m, s] = time.split(':').map(Number)
-  return (h || 0) * 60 + (m || 0) + (s ? s / 60 : 0)
-}
 
 export async function POST(request: Request) {
   try {
-    if (!supabaseUrl || !supabaseServiceKey) {
-      return Response.json({ error: 'Supabase credentials missing' }, { status: 500 })
-    }
-
-    const supabase = await createAuthenticatedClient(request)
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !profile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     const { searchParams } = new URL(request.url)
     // 기본: 어제 날짜를 결석 처리 (자정 이후에 호출될 것을 가정)
@@ -53,13 +25,11 @@ export async function POST(request: Request) {
 
     const targetDay = dayMap[targetDate.getDay()]
 
-    const service = createClient(supabaseUrl, supabaseServiceKey)
-
     // 1) 오늘 해당 요일 수업 스케줄 조회
-    const { data: schedules, error: scheduleError } = await service
+    const { data: schedules, error: scheduleError } = await db
       .from('schedules')
       .select('id, class_id, day_of_week, end_time')
-      .eq('org_id', profile.org_id)
+      .eq('org_id', orgId)
       .eq('day_of_week', targetDay)
 
     if (scheduleError) {
@@ -76,12 +46,12 @@ export async function POST(request: Request) {
     }
 
     // 2) 수업 등록 학생 목록
-  const { data: enrollments, error: enrollError } = await service
-    .from('class_enrollments')
-    .select('class_id, student_id')
-    .in('class_id', classIds)
-    .eq('org_id', profile.org_id)
-    .eq('status', 'active')
+    const { data: enrollments, error: enrollError } = await db
+      .from('class_enrollments')
+      .select('class_id, student_id')
+      .in('class_id', classIds)
+      .eq('org_id', orgId)
+      .eq('status', 'active')
 
     if (enrollError) {
       return Response.json({ error: '수강 학생 조회 실패', details: enrollError.message }, { status: 500 })
@@ -102,10 +72,10 @@ export async function POST(request: Request) {
         continue
       }
 
-      const { data: existing, error: existingError } = await service
+      const { data: existing, error: existingError } = await db
         .from('attendance')
         .select('id, status')
-        .eq('org_id', profile.org_id)
+        .eq('org_id', orgId)
         .eq('class_id', classId)
         .eq('student_id', studentId)
         .eq('date', dateStr)
@@ -122,10 +92,10 @@ export async function POST(request: Request) {
         continue
       }
 
-      const { error: insertError } = await service
+      const { error: insertError } = await db
         .from('attendance')
         .insert({
-          org_id: profile.org_id,
+          org_id: orgId,
           class_id: classId,
           student_id: studentId,
           date: dateStr,
@@ -142,6 +112,13 @@ export async function POST(request: Request) {
 
     return Response.json({ inserted, skipped, date: dateStr })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Attendance Reconcile] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }

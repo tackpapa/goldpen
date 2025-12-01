@@ -1,43 +1,12 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const getServiceClient = () => {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) return null
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-}
-
 export async function GET(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-    const service = getServiceClient()
-    const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-
-      if (profileError || !userProfile) {
-        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      }
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const db = service || supabase
+    const { db, orgId } = await getSupabaseWithOrg(request)
 
     // Parallel queries for better performance
     const [
@@ -124,8 +93,8 @@ export async function GET(request: Request) {
     const todayLessons = todayLessonsResult.count || 0
     const upcomingHomework = upcomingHomeworkResult.count || 0
 
-    const pendingBillingAmount = pendingBillingResult.data?.reduce((sum: any, item: any) => sum + (item.amount || 0), 0) || 0
-    const monthlyExpensesAmount = monthlyExpensesResult.data?.reduce((sum: any, item: any) => sum + (item.amount || 0), 0) || 0
+    const pendingBillingAmount = pendingBillingResult.data?.reduce((sum: number, item: any) => sum + (item.amount || 0), 0) || 0
+    const monthlyExpensesAmount = monthlyExpensesResult.data?.reduce((sum: number, item: any) => sum + (item.amount || 0), 0) || 0
 
     const recentAttendanceData = recentAttendanceResult.data || []
     const attendanceRate = recentAttendanceData.length > 0
@@ -166,6 +135,13 @@ export async function GET(request: Request) {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+
     console.error('[Overview GET] Unexpected error:', error)
     return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
   }

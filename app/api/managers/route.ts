@@ -1,4 +1,4 @@
-import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { getSupabaseWithOrg } from '@/app/api/_utils/org'
 import { createClient } from '@supabase/supabase-js'
 import { ZodError } from 'zod'
 import * as z from 'zod'
@@ -6,9 +6,6 @@ import * as z from 'zod'
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const getServiceClient = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
@@ -31,7 +28,6 @@ const baseManagerSchema = z.object({
 })
 
 const createManagerSchema = baseManagerSchema
-const updateManagerSchema = baseManagerSchema.partial()
 
 /**
  * GET /api/managers
@@ -39,59 +35,13 @@ const updateManagerSchema = baseManagerSchema.partial()
  */
 export async function GET(request: Request) {
   try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
+
     const { searchParams } = new URL(request.url)
-    const orgSlug = searchParams.get('orgSlug')
-
-    let supabase: any = await createAuthenticatedClient(request)
-    let { data: { user }, error: authError } = await supabase.auth.getUser()
-
-    let orgId: string | null = null
-
-    // orgSlug 서비스 모드 지원 (401 방지)
-    if (orgSlug && supabaseServiceKey) {
-      supabase = createClient(supabaseUrl, supabaseServiceKey, {
-        auth: { autoRefreshToken: false, persistSession: false }
-      })
-
-      const { data: org, error: orgError } = await supabase
-        .from('organizations')
-        .select('id')
-        .eq('slug', orgSlug)
-        .single()
-
-      if (orgError || !org) {
-        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
-      }
-      orgId = org.id
-    } else if (user && !authError) {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
-        .single()
-
-      if (!userProfile) {
-        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-      }
-      orgId = userProfile.org_id
-    } else {
-      // 서비스 키 폴백
-      const service = getServiceClient()
-      const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
-      const orgParam = searchParams.get('org_id') || searchParams.get('orgId')
-
-      if (service) {
-        supabase = service
-        orgId = orgParam || demoOrg
-      } else {
-        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-      }
-    }
-
     const search = searchParams.get('search')
 
     // 매니저 목록 조회 (users 테이블 role='manager')
-    let query = supabase
+    let query = db
       .from('users')
       .select('id, org_id, name, email, phone, role, status, created_at, updated_at')
       .eq('org_id', orgId)
@@ -132,6 +82,12 @@ export async function GET(request: Request) {
       count: formattedManagers.length
     })
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     console.error('[Managers GET] Unexpected error:', error)
     return Response.json(
       { error: '서버 오류가 발생했습니다', details: error.message },
@@ -147,25 +103,10 @@ export async function GET(request: Request) {
  */
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
-
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
-    }
-
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id, role')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
-    }
+    const { db, orgId, role } = await getSupabaseWithOrg(request)
 
     // 권한 확인 (owner만 매니저 추가 가능)
-    if (userProfile.role !== 'owner') {
+    if (role !== 'owner') {
       return Response.json({ error: '매니저를 추가할 권한이 없습니다 (owner만 가능)' }, { status: 403 })
     }
 
@@ -173,10 +114,10 @@ export async function POST(request: Request) {
     const validated = createManagerSchema.parse(body)
 
     // 이메일 중복 확인 (org 내부)
-    const { data: existingUser } = await supabase
+    const { data: existingUser } = await db
       .from('users')
       .select('id')
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .eq('email', validated.email)
       .limit(1)
       .maybeSingle()
@@ -201,7 +142,7 @@ export async function POST(request: Request) {
       email_confirm: true,
       user_metadata: {
         name: validated.name,
-        org_id: userProfile.org_id,
+        org_id: orgId,
         role: 'manager'
       }
     })
@@ -226,7 +167,7 @@ export async function POST(request: Request) {
         email: validated.email,
         name: validated.name,
         phone: validated.phone,
-        org_id: userProfile.org_id,
+        org_id: orgId,
         role: 'manager',
         status: validated.status || 'active'
       })
@@ -257,6 +198,12 @@ export async function POST(request: Request) {
       { status: 201 }
     )
   } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
     if (error instanceof ZodError) {
       return Response.json(
         { error: '입력 데이터가 유효하지 않습니다', details: error.errors },
