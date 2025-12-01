@@ -8,6 +8,7 @@ import { ColumnDef } from '@tanstack/react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useAuth } from '@/contexts/auth-context'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -184,32 +185,22 @@ export default function AttendancePage() {
       }
       const schedules = data.schedules || []
       if (!schedules || schedules.length === 0) {
-        // 더미 일정 생성 (월~금 16:00~21:00, 토 10:00~14:00)
-        const dummy = [
-          'monday','tuesday','wednesday','thursday','friday'
-        ].map((w) => ({ weekday: weekdayKo[w as keyof typeof weekdayKo], check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정' }))
-        dummy.push({ weekday: weekdayKo.saturday, check_in_time: '10:00', check_out_time: '14:00', notes: '더미 일정' })
-        setCommuteSchedules(dummy)
+        // 일정이 없으면 빈 배열 설정 (더미 데이터 사용 금지)
+        setCommuteSchedules([])
       } else {
         // API 응답 필드명 매핑: day_of_week -> weekday, start_time -> check_in_time, end_time -> check_out_time
         const localized = (schedules as any[]).map((s) => ({
           ...s,
           weekday: weekdayKo[(s.day_of_week as keyof typeof weekdayKo)] || s.day_of_week || s.weekday,
-          check_in_time: s.start_time || s.check_in_time,
-          check_out_time: s.end_time || s.check_out_time,
+          check_in_time: s.start_time ?? s.check_in_time ?? null,
+          check_out_time: s.end_time ?? s.check_out_time ?? null,
         }))
         setCommuteSchedules(localized)
       }
     } catch (e: any) {
       setScheduleError(e?.message || '네트워크 오류')
-      setCommuteSchedules([
-        { weekday: weekdayKo.monday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
-        { weekday: weekdayKo.tuesday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
-        { weekday: weekdayKo.wednesday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
-        { weekday: weekdayKo.thursday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
-        { weekday: weekdayKo.friday, check_in_time: '16:00', check_out_time: '21:00', notes: '더미 일정 (오프라인)' },
-        { weekday: weekdayKo.saturday, check_in_time: '10:00', check_out_time: '14:00', notes: '더미 일정 (오프라인)' },
-      ])
+      // 오류 시 빈 배열 설정 (더미 데이터 사용 금지)
+      setCommuteSchedules([])
     } finally {
       setScheduleLoading(false)
     }
@@ -434,21 +425,10 @@ export default function AttendancePage() {
     return () => observer.disconnect()
   }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel, selectedDate])
 
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null)
-
-  // Get user role from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const role = localStorage.getItem('userRole')
-      setUserRole(role)
-      // In real app, get teacher ID from auth context
-      // For demo, assume t1 is the logged-in teacher
-      if (role === 'teacher') {
-        setCurrentTeacherId('t1')
-      }
-    }
-  }, [])
+  // Auth Context에서 사용자 권한 및 정보 가져오기
+  const { user } = useAuth()
+  const userRole = user?.role ?? null
+  const currentTeacherId = user?.role === 'teacher' ? user?.id ?? null : null
 
   const statusMap = {
     scheduled: { label: '수업예정', variant: 'outline' as const, icon: Clock, color: 'text-gray-600' },
@@ -543,15 +523,6 @@ export default function AttendancePage() {
     return undefined
   }
 
-  const getAttendanceTimes = (studentId?: string | null) => {
-    if (!studentId) return { checkIn: null, checkOut: null }
-    const att = attendanceByStudent[studentId]
-    return {
-      checkIn: (att as any)?.check_in_time || null,
-      checkOut: (att as any)?.check_out_time || null,
-    }
-  }
-
   const todayColumns: ColumnDef<TodayStudent>[] = [
     {
       accessorKey: 'student_name',
@@ -624,9 +595,8 @@ export default function AttendancePage() {
       header: '등원 시간',
       cell: ({ row }) => {
         const logs = dailyLogsByStudent[row.original.student_id] || []
-        const seat = getSeatInfo(row.original.student_id, row.original.student_name)
-        const fallback = formatTime(getAttendanceTimes(row.original.student_id).checkIn || seat?.checkInTime || seat?.sessionStartTime)
-        if (logs.length === 0) return <span>{fallback}</span>
+        // fallback 제거 - 선택된 날짜의 로그만 표시
+        if (logs.length === 0) return <span>-</span>
         return (
           <div className="flex flex-col gap-0.5">
             {logs.map((l, idx) => (
@@ -641,11 +611,8 @@ export default function AttendancePage() {
       header: '하원 시간',
       cell: ({ row }) => {
         const logs = dailyLogsByStudent[row.original.student_id] || []
-        const seat = getSeatInfo(row.original.student_id, row.original.student_name)
-        const times = getAttendanceTimes(row.original.student_id)
-        const fallbackIsOut = Boolean(times.checkOut) || seat?.status === 'checked_out'
-        const fallbackTime = times.checkOut || seat?.updatedAt || seat?.sessionStartTime
-        if (logs.length === 0) return <span>{fallbackIsOut ? formatTime(fallbackTime) : '-'}</span>
+        // fallback 제거 - 선택된 날짜의 로그만 표시
+        if (logs.length === 0) return <span>-</span>
         return (
           <div className="flex flex-col gap-0.5">
             {logs.map((l, idx) => (

@@ -78,8 +78,8 @@ export function AttendanceScheduleTab({
 
     setSchedules(optimistic)
     void persistSchedule(day, {
-      start_time: field === 'start_time' ? value : getScheduleForDay(day)?.start_time || '',
-      end_time: field === 'end_time' ? value : getScheduleForDay(day)?.end_time || '',
+      start_time: field === 'start_time' ? value : getScheduleForDay(day)?.start_time ?? null,
+      end_time: field === 'end_time' ? value : getScheduleForDay(day)?.end_time ?? null,
     })
   }
 
@@ -105,8 +105,8 @@ export function AttendanceScheduleTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           weekday: day,
-          check_in_time: times.start_time ?? '',
-          check_out_time: times.end_time ?? '',
+          check_in_time: times.start_time ?? null,
+          check_out_time: times.end_time ?? null,
         }),
         credentials: 'include',
       })

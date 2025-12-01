@@ -1,45 +1,43 @@
 'use client'
 
-import { useState, useEffect } from 'react'
 import type { Student, PaymentRecord } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { Clock, Calendar, CreditCard, TrendingUp } from 'lucide-react'
+import { Clock, Calendar, CreditCard } from 'lucide-react'
+
+interface ClassCredit {
+  id: string
+  student_id: string
+  total_hours: number
+  remaining_hours: number
+  used_hours: number
+  status: 'active' | 'expired' | 'exhausted'
+  expiry_date?: string
+}
+
+interface StudyRoomPass {
+  id: string
+  student_id: string
+  pass_type: 'hours' | 'days'
+  total_amount: number
+  remaining_amount: number
+  status: 'active' | 'expired' | 'paused'
+  start_date: string
+  expiry_date: string
+}
 
 interface HistoryTabProps {
   student: Student
+  credits?: ClassCredit[]
+  passes?: StudyRoomPass[]
+  payments?: PaymentRecord[]
 }
 
-export function HistoryTab({ student }: HistoryTabProps) {
-  const [credits, setCredits] = useState<any[]>([])
-  const [passes, setPasses] = useState<any[]>([])
-  const [payments, setPayments] = useState<PaymentRecord[]>([])
-
-  useEffect(() => {
-    // Load class credits
-    const storedCredits = localStorage.getItem('class_credits')
-    if (storedCredits) {
-      const all = JSON.parse(storedCredits) as any[]
-      setCredits(all.filter(c => c.student_id === student.id))
-    }
-
-    // Load study room passes
-    const storedPasses = localStorage.getItem('study_room_passes')
-    if (storedPasses) {
-      const all = JSON.parse(storedPasses) as any[]
-      setPasses(all.filter(p => p.student_id === student.id))
-    }
-
-    // Load payment records
-    const storedPayments = localStorage.getItem('payment_records')
-    if (storedPayments) {
-      const all = JSON.parse(storedPayments) as PaymentRecord[]
-      setPayments(all.filter(p => p.student_id === student.id).sort((a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      ))
-    }
-  }, [student.id])
+export function HistoryTab({ student, credits = [], passes = [], payments = [] }: HistoryTabProps) {
+  // 결제일 기준 내림차순 정렬
+  const sortedPayments = [...payments].sort((a, b) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
 
   const totalCredits = credits.reduce((sum, c) => sum + c.remaining_hours, 0)
   const activePasses = passes.filter(p => p.status === 'active')
@@ -140,14 +138,14 @@ export function HistoryTab({ student }: HistoryTabProps) {
       )}
 
       {/* 결제 내역 */}
-      {payments.length > 0 && (
+      {sortedPayments.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>결제 내역</CardTitle>
             <CardDescription>최근 결제 기록</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {payments.map(payment => (
+            {sortedPayments.map(payment => (
               <div key={payment.id} className="p-3 border rounded-lg">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -183,7 +181,7 @@ export function HistoryTab({ student }: HistoryTabProps) {
         </Card>
       )}
 
-      {credits.length === 0 && passes.length === 0 && payments.length === 0 && (
+      {credits.length === 0 && passes.length === 0 && sortedPayments.length === 0 && (
         <Card>
           <CardContent className="text-center py-8 text-muted-foreground">
             아직 내역이 없습니다.

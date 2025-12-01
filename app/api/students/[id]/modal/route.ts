@@ -223,9 +223,9 @@ export async function GET(
       updated_at: row.updated_at,
       student_id: id,
       day_of_week: row.weekday,
-      start_time: row.check_in_time || '',
-      end_time: row.check_out_time || '',
-      notes: row.notes || undefined,
+      start_time: row.check_in_time ?? null,
+      end_time: row.check_out_time ?? null,
+      notes: row.notes ?? null,
     }))
 
     // Branches (지점 목록)

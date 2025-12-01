@@ -65,9 +65,9 @@ function mapDbToDto(row: any) {
     updated_at: row.updated_at,
     student_id: row.student_id,
     day_of_week: row.weekday as Weekday,
-    start_time: row.check_in_time || '',
-    end_time: row.check_out_time || '',
-    notes: row.notes || undefined,
+    start_time: row.check_in_time ?? null,
+    end_time: row.check_out_time ?? null,
+    notes: row.notes ?? null,
   }
 }
 

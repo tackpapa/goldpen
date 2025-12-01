@@ -14,6 +14,7 @@ export const runtime = 'edge'
 import { useState, useEffect } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useAuth } from '@/contexts/auth-context'
 import { useExams, useClasses, useTeachers } from '@/lib/swr'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -104,7 +105,10 @@ export default function ExamsPage() {
   const [selectedExam, setSelectedExam] = useState<Exam | null>(null)
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
   const [selectedClass, setSelectedClass] = useState<string>('all')
-  const [userRole, setUserRole] = useState<string>('teacher')
+
+  // Auth Context에서 사용자 권한 가져오기
+  const { user } = useAuth()
+  const userRole = user?.role ?? 'teacher'
   const [isScoresDialogOpen, setIsScoresDialogOpen] = useState(false)
   const [isStatsDialogOpen, setIsStatsDialogOpen] = useState(false)
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false)
@@ -138,10 +142,6 @@ export default function ExamsPage() {
     total_score: 100,
   })
 
-  useEffect(() => {
-    const role = localStorage.getItem('userRole') || 'teacher'
-    setUserRole(role)
-  }, [])
 
   // 설정에서 템플릿 로드
   useEffect(() => {

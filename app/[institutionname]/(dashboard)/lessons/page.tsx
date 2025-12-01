@@ -45,6 +45,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useAuth } from '@/contexts/auth-context'
 
 interface StudentAttendance {
   student_id: string
@@ -106,16 +107,10 @@ export default function LessonsPage() {
   const [allSubmitted, setAllSubmitted] = useState(true)
   const [isHomeworkExpanded, setIsHomeworkExpanded] = useState(false)
 
-  // 실제 사용자 권한 및 정보 가져오기
-  const [userRole, setUserRole] = useState<string>('teacher')
-  const [currentTeacherId, setCurrentTeacherId] = useState<string>('')
-
-  useEffect(() => {
-    const role = localStorage.getItem('userRole') || 'teacher'
-    const teacherId = localStorage.getItem('teacherId') || ''
-    setUserRole(role)
-    setCurrentTeacherId(teacherId)
-  }, [])
+  // Auth Context에서 사용자 권한 및 정보 가져오기
+  const { user } = useAuth()
+  const userRole = user?.role ?? 'teacher'
+  const currentTeacherId = user?.id ?? ''
 
   // API에서 데이터 가져오기
   useEffect(() => {

@@ -8,6 +8,7 @@ import { ColumnDef } from '@tanstack/react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { usePageAccess } from '@/hooks/use-page-access'
+import { useAuth } from '@/contexts/auth-context'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { DataTable } from '@/components/ui/data-table'
@@ -295,21 +296,11 @@ export default function AttendancePage() {
   }, [hasMore, isLoadingMore, page, fetchAttendancePage, toast, historySentinel, selectedDate])
 
   const [selectedClass, setSelectedClass] = useState<string>('all')
-  const [userRole, setUserRole] = useState<string | null>(null)
-  const [currentTeacherId, setCurrentTeacherId] = useState<string | null>(null)
 
-  // Get user role from localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const role = localStorage.getItem('userRole')
-      setUserRole(role)
-      // In real app, get teacher ID from auth context
-      // For demo, assume t1 is the logged-in teacher
-      if (role === 'teacher') {
-        setCurrentTeacherId('t1')
-      }
-    }
-  }, [])
+  // Auth Context에서 사용자 권한 및 정보 가져오기
+  const { user } = useAuth()
+  const userRole = user?.role ?? null
+  const currentTeacherId = user?.role === 'teacher' ? user?.id ?? null : null
 
   const statusMap = {
     scheduled: { label: '수업예정', variant: 'outline' as const, icon: Calendar, color: 'text-gray-600' },

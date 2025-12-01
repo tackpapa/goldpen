@@ -37,18 +37,7 @@ import { createClient } from '@/lib/supabase/client'
 import { StudentPlannerModal } from '@/components/seats/StudentPlannerModal'
 import { GRADE_OPTIONS } from '@/lib/constants/grades'
 
-// LiveScreen State Types
-interface LiveScreenState {
-  student_id: string
-  seat_number: number
-  date: string
-  sleep_count: number
-  is_out: boolean
-  timer_running: boolean
-  current_sleep_id?: string
-  current_outing_id?: string
-}
-
+// Realtime record types (from Supabase)
 interface SleepRecord {
   id: string
   created_at: string
@@ -120,73 +109,7 @@ interface LocalStudent {
   school: string
 }
 
-// Initialize seats with some mock data
-// Helper function to get live screen state from localStorage
-const getLiveScreenState = (studentId: string, seatNumber: number): LiveScreenState | null => {
-  if (typeof window === 'undefined') return null
-
-  const today = new Date().toISOString().split('T')[0]
-  const key = `livescreen-state-${studentId}-${seatNumber}`
-  const data = localStorage.getItem(key)
-
-  if (!data) return null
-
-  try {
-    const state = JSON.parse(data) as LiveScreenState
-    // Only return state if it's from today
-    if (state.date === today) {
-      return state
-    }
-  } catch {
-    return null
-  }
-
-  return null
-}
-
-// Helper function to get current sleep record
-const getCurrentSleepRecord = (studentId: string, seatNumber: number): SleepRecord | null => {
-  if (typeof window === 'undefined') return null
-
-  const today = new Date().toISOString().split('T')[0]
-  const key = `sleep-records-${studentId}-${seatNumber}`
-  const data = localStorage.getItem(key)
-
-  if (!data) return null
-
-  try {
-    const records = JSON.parse(data) as SleepRecord[]
-    // Find the most recent sleeping record for today
-    const currentSleep = records.find(
-      r => r.date === today && r.status === 'sleeping'
-    )
-    return currentSleep || null
-  } catch {
-    return null
-  }
-}
-
-// Helper function to get current outing record
-const getCurrentOutingRecord = (studentId: string, seatNumber: number): OutingRecord | null => {
-  if (typeof window === 'undefined') return null
-
-  const today = new Date().toISOString().split('T')[0]
-  const key = `outing-records-${studentId}-${seatNumber}`
-  const data = localStorage.getItem(key)
-
-  if (!data) return null
-
-  try {
-    const records = JSON.parse(data) as OutingRecord[]
-    // Find the most recent outing record for today
-    const currentOuting = records.find(
-      r => r.date === today && r.status === 'out'
-    )
-    return currentOuting || null
-  } catch {
-    return null
-  }
-}
+// Initialize seats with mock data - sleep/outing status now loaded via Supabase Realtime
 
 // Sleep Status Component - shows remaining time for sleeping students
 function SleepStatus({
