@@ -154,6 +154,9 @@ export default function AttendancePage() {
     setTodayAttendance([])
   }, [selectedDate])
 
+  // 요일 순서 정의 (월~일)
+  const weekdayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] as const
+
   const weekdayKo = {
     monday: '월요일',
     tuesday: '화요일',
@@ -1020,7 +1023,27 @@ export default function AttendancePage() {
               {(commuteSchedules || []).length === 0 && (
                 <p className="text-sm text-muted-foreground">등록된 일정이 없습니다.</p>
               )}
-              {(commuteSchedules || []).map((sch) => (
+              {/* 요일 순서대로 정렬 (월~일) */}
+              {(commuteSchedules || [])
+                .slice()
+                .sort((a, b) => {
+                  // weekday가 한글인 경우와 영어인 경우 모두 처리
+                  const weekdayToIndex = (wd: string) => {
+                    // 영어 weekday
+                    const engIndex = weekdayOrder.indexOf(wd as typeof weekdayOrder[number])
+                    if (engIndex !== -1) return engIndex
+                    // 한글 weekday
+                    const koToEng: Record<string, string> = {
+                      '월요일': 'monday', '화요일': 'tuesday', '수요일': 'wednesday',
+                      '목요일': 'thursday', '금요일': 'friday', '토요일': 'saturday', '일요일': 'sunday'
+                    }
+                    const eng = koToEng[wd]
+                    if (eng) return weekdayOrder.indexOf(eng as typeof weekdayOrder[number])
+                    return 99
+                  }
+                  return weekdayToIndex(a.weekday) - weekdayToIndex(b.weekday)
+                })
+                .map((sch) => (
                 <div key={sch.id || sch.weekday} className="flex items-center justify-between rounded border px-3 py-2 text-sm">
                   <span className="font-medium capitalize">{sch.weekday}</span>
                   <div className="flex items-center gap-3 text-right">
