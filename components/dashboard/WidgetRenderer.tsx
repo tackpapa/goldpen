@@ -172,9 +172,16 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
         >
           {gradeDistribution.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={gradeDistribution}>
+              <BarChart data={gradeDistribution} margin={{ bottom: 20 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="grade" />
+                <XAxis
+                  dataKey="grade"
+                  interval={0}
+                  tick={{ fontSize: 11 }}
+                  angle={-35}
+                  textAnchor="end"
+                  height={50}
+                />
                 <YAxis />
                 <Tooltip />
                 <Bar dataKey="students" fill="hsl(var(--primary))" />

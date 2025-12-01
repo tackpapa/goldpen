@@ -1,41 +1,107 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// org_id 캐시 (메모리 - 1분 TTL)
+const orgIdCache = new Map<string, { id: string; timestamp: number }>()
+const CACHE_TTL = 60 * 1000 // 1분
+
+async function getOrgIdFromSlug(slug: string, supabaseUrl: string, supabaseKey: string): Promise<string | null> {
+  // 캐시 확인
+  const cached = orgIdCache.get(slug)
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.id
+  }
+
+  try {
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: { get: () => undefined, set: () => undefined, remove: () => undefined },
+    })
+
+    const { data, error } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('slug', slug)
+      .maybeSingle()
+
+    if (error || !data) return null
+
+    // 캐시 저장
+    orgIdCache.set(slug, { id: data.id, timestamp: Date.now() })
+    return data.id
+  } catch {
+    return null
+  }
+}
+
+function extractOrgSlug(request: NextRequest): string | null {
+  // 1. URL 쿼리 파라미터에서 orgSlug 추출
+  const orgSlugParam = request.nextUrl.searchParams.get('orgSlug')
+  if (orgSlugParam) return orgSlugParam
+
+  // 2. Referer 헤더에서 기관 slug 추출 (예: /goldpen/students → goldpen)
+  const referer = request.headers.get('referer')
+  if (referer) {
+    try {
+      const refererUrl = new URL(referer)
+      const pathSegments = refererUrl.pathname.split('/').filter(Boolean)
+      const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite', 'livescreen', 'liveattendance']
+      if (pathSegments.length > 0 && !systemPaths.includes(pathSegments[0])) {
+        return pathSegments[0]
+      }
+    } catch {
+      // URL 파싱 실패 시 무시
+    }
+  }
+
+  return null
+}
+
 export async function middleware(request: NextRequest) {
-  // 1) 기관 slug 검증: 첫 세그먼트가 org slug여야 하고, DB organizations.slug에 존재해야 함
   const pathSegments = request.nextUrl.pathname.split('/').filter(Boolean)
   const isApiRequest = request.nextUrl.pathname.startsWith('/api/')
+
+  // Supabase 환경변수
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseKey = supabaseServiceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  // ========================================
+  // API 요청: org_id 주입 (핵심 로직)
+  // ========================================
+  if (isApiRequest && supabaseUrl && supabaseServiceKey) {
+    const orgSlug = extractOrgSlug(request)
+
+    if (orgSlug) {
+      const orgId = await getOrgIdFromSlug(orgSlug, supabaseUrl, supabaseServiceKey)
+
+      if (orgId) {
+        // 새 헤더에 x-org-id 추가
+        const requestHeaders = new Headers(request.headers)
+        requestHeaders.set('x-org-id', orgId)
+        requestHeaders.set('x-org-slug', orgSlug)
+
+        return NextResponse.next({
+          request: {
+            headers: requestHeaders,
+          },
+        })
+      }
+    }
+  }
 
   // 시스템 경로는 slug 검증 제외
   const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite']
   const firstSegment = pathSegments[0]
 
+  // ========================================
+  // 페이지 요청: 기관 slug 검증
+  // ========================================
   if (pathSegments.length >= 1 && !isApiRequest && !systemPaths.includes(firstSegment)) {
     const slug = firstSegment
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     if (supabaseUrl && supabaseKey) {
-      try {
-        const supabase = createServerClient(supabaseUrl, supabaseKey, {
-          cookies: {
-            get: () => undefined,
-            set: () => undefined,
-            remove: () => undefined,
-          },
-        })
-
-        const { data, error } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('slug', slug)
-          .maybeSingle()
-
-        if (error || !data) {
-          return NextResponse.rewrite(new URL('/404', request.url))
-        }
-      } catch {
-        // DB 확인 실패 시 404로 막아 안전 우선
+      const orgId = await getOrgIdFromSlug(slug, supabaseUrl, supabaseKey)
+      if (!orgId) {
         return NextResponse.rewrite(new URL('/404', request.url))
       }
     }
@@ -59,9 +125,7 @@ export async function middleware(request: NextRequest) {
   })
 
   // Supabase 환경변수가 설정되지 않았거나 placeholder인 경우 인증 체크 건너뛰기
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
+  // (supabaseUrl, supabaseKey는 위에서 이미 선언됨)
   if (!supabaseUrl || !supabaseKey ||
       supabaseUrl === 'your-supabase-url' ||
       supabaseKey === 'your-supabase-anon-key' ||

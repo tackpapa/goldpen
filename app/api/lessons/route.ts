@@ -53,31 +53,49 @@ export async function GET(request: Request) {
     const demoOrg = process.env.DEMO_ORG_ID || process.env.NEXT_PUBLIC_DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
     const { searchParams } = new URL(request.url)
     const orgParam = searchParams.get('org_id') || searchParams.get('orgId')
+    const orgSlug = searchParams.get('orgSlug')
     const e2eNoAuth = request.headers.get('x-e2e-no-auth') === '1' || process.env.E2E_NO_AUTH === '1'
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
     let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user' || e2eNoAuth)) {
-      orgId = orgParam || demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile, error: profileError } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
+    let db = service || supabase
+
+    // orgSlug가 제공된 경우 (프로덕션 대시보드) - organizations 테이블에서 org_id 조회
+    if (orgSlug && service) {
+      const { data: org, error: orgError } = await service
+        .from('organizations')
+        .select('id')
+        .eq('slug', orgSlug)
         .single()
-      if (profileError || !userProfile) {
-        if (service) {
-          orgId = orgParam || demoOrg
+
+      if (orgError || !org) {
+        console.error('[Lessons GET] Organization not found for slug:', orgSlug)
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = org.id
+      db = service
+    } else {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user' || e2eNoAuth)) {
+        orgId = orgParam || demoOrg
+      } else if (!authError && user) {
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .select('org_id')
+          .eq('id', user.id)
+          .single()
+        if (profileError || !userProfile) {
+          if (service) {
+            orgId = orgParam || demoOrg
+          } else {
+            return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+          }
         } else {
-          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+          orgId = userProfile.org_id
         }
       } else {
-        orgId = userProfile.org_id
+        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
       }
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
-    const db = service || supabase
 
     const class_id = searchParams.get('class_id')
     const lesson_date = searchParams.get('lesson_date')

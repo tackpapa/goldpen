@@ -30,14 +30,57 @@ const DEMO_ORG_ID =
   'dddd0000-0000-0000-0000-000000000000'
 
 /**
+ * 미들웨어에서 주입된 x-org-id 헤더를 읽어서 org_id를 반환한다.
+ * 미들웨어에서 orgSlug → org_id 변환을 처리하므로, API에서는 이 함수만 호출하면 된다.
+ */
+export function getOrgIdFromHeader(request: Request): string | null {
+  return request.headers.get('x-org-id')
+}
+
+/**
+ * 미들웨어에서 주입된 x-org-slug 헤더를 읽어서 org slug를 반환한다.
+ */
+export function getOrgSlugFromHeader(request: Request): string | null {
+  return request.headers.get('x-org-slug')
+}
+
+/**
  * 인증 + org_id 확보를 공통 처리한다.
- * - E2E_NO_AUTH / service-role / e2e-user: demoOrg + service client 반환
- * - 인증 사용자: users.org_id 조회, 실패 시 demoOrg(서비스키 있는 경우)
+ *
+ * 우선순위:
+ * 1. 미들웨어에서 주입된 x-org-id 헤더 (프로덕션 환경)
+ * 2. orgSlug 쿼리 파라미터 (레거시 호환)
+ * 3. 인증된 사용자의 org_id
+ * 4. 데모/E2E 폴백
  */
 export async function getSupabaseWithOrg(request: Request): Promise<OrgContext> {
   const supabase = await createAuthenticatedClient(request)
   const service = getServiceClient()
   const anon = getAnonClient()
+
+  // 1. 미들웨어에서 주입된 x-org-id 헤더 확인 (최우선)
+  const headerOrgId = getOrgIdFromHeader(request)
+  if (headerOrgId && service) {
+    // 인증 정보는 별도로 확인
+    const { data: { user } } = await supabase.auth.getUser()
+    return { db: service, supabase, orgId: headerOrgId, user: user ?? null, role: 'owner' }
+  }
+
+  // 2. orgSlug 쿼리 파라미터 확인 (레거시 호환)
+  const url = new URL(request.url)
+  const orgSlug = url.searchParams.get('orgSlug')
+  if (orgSlug && service) {
+    const { data: org } = await service
+      .from('organizations')
+      .select('id')
+      .eq('slug', orgSlug)
+      .single()
+
+    if (org) {
+      const { data: { user } } = await supabase.auth.getUser()
+      return { db: service, supabase, orgId: org.id, user: user ?? null, role: 'owner' }
+    }
+  }
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 

@@ -3,7 +3,7 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -341,6 +341,14 @@ export default function SettingsPage() {
 
   // Page permissions state
   const [pagePermissions, setPagePermissions] = useState<Record<string, { manager: boolean; teacher: boolean }>>({})
+  // useRef로 최신 상태 추적 (race condition 방지)
+  const pagePermissionsRef = useRef(pagePermissions)
+  const permissionSaveTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+  // pagePermissions 변경 시 ref 동기화
+  useEffect(() => {
+    pagePermissionsRef.current = pagePermissions
+  }, [pagePermissions])
 
   // Service plan view state
   const [showPricingPlans, setShowPricingPlans] = useState(false)
@@ -413,8 +421,11 @@ export default function SettingsPage() {
       setBranches(branchesRes.branches || [])
       setRooms(roomsRes.rooms || [])
 
-      // permissions payload might come as array; normalize to record
-      setPagePermissions({})
+      // 페이지 권한 로드 (API에서 가져오기)
+      const pagePermRes = await fetchJson<{ permissions: Record<string, { manager: boolean; teacher: boolean }> }>(
+        withSlug(`${basePath}/page-permissions`)
+      ).catch(() => ({ permissions: {} }))
+      setPagePermissions(pagePermRes.permissions || {})
 
       // 즉시 수입/지출 카테고리, 계정, 사용량 로드
       const [rev, exp, acc] = await Promise.all([
@@ -897,30 +908,47 @@ export default function SettingsPage() {
     })
   }
 
-  // Page permission handlers
-  const handlePermissionChange = async (pageId: string, role: 'manager' | 'teacher', checked: boolean) => {
-    const next = {
-      ...pagePermissions,
-      [pageId]: {
-        ...(pagePermissions[pageId] || { manager: false, teacher: false }),
-        [role]: checked,
-      },
-    }
-    setPagePermissions(next)
+  // Page permission handlers - debounced save 함수
+  const savePermissionsToServer = useCallback(async () => {
     try {
-      const payload = Object.entries(next).map(([pid, val]) => ({
+      const currentPermissions = pagePermissionsRef.current
+      const payload = Object.entries(currentPermissions).map(([pid, val]) => ({
         page_id: pid,
         manager: val.manager,
         teacher: val.teacher,
       }))
-    await fetch(withSlug(`${basePath}/page-permissions`), {
+      await fetch(withSlug(`${basePath}/page-permissions`), {
         method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ permissions: payload }),
       })
     } catch (_) {}
+  }, [basePath, slug])
 
+  const handlePermissionChange = (pageId: string, role: 'manager' | 'teacher', checked: boolean) => {
+    // 1. UI 즉시 업데이트 (optimistic)
+    const next = {
+      ...pagePermissionsRef.current,
+      [pageId]: {
+        ...(pagePermissionsRef.current[pageId] || { manager: false, teacher: false }),
+        [role]: checked,
+      },
+    }
+    setPagePermissions(next)
+    pagePermissionsRef.current = next // ref도 즉시 업데이트
+
+    // 2. 기존 타이머 취소
+    if (permissionSaveTimerRef.current) {
+      clearTimeout(permissionSaveTimerRef.current)
+    }
+
+    // 3. 300ms 후 최신 상태로 API 호출 (debounce)
+    permissionSaveTimerRef.current = setTimeout(() => {
+      savePermissionsToServer()
+    }, 300)
+
+    // 4. 토스트 즉시 표시
     const roleName = role === 'manager' ? '매니저' : '강사'
     toast({
       title: '권한 설정 변경',

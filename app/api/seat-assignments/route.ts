@@ -416,21 +416,52 @@ export async function GET(request: Request) {
 // POST: 좌석에 학생 배정
 export async function POST(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
+    const { searchParams } = new URL(request.url)
+    const serviceParam = searchParams.get('service')
+    const orgSlug = searchParams.get('orgSlug')
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const allowService = serviceParam === '1' || !!orgSlug
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    let supabase: any = await createAuthenticatedClient(request)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    let orgId: string | null = null
+
+    // orgSlug가 있고 서비스 키가 있으면 서비스 모드로 진입 (프로덕션 liveattendance 지원)
+    if (allowService && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          console.error('[SeatAssignments POST] Organization not found for slug:', orgSlug)
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      }
+    } else if (!authError && user) {
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('org_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !userProfile) {
+        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = userProfile.org_id
+    } else {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+    if (!orgId) {
+      return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
     }
 
     const body = await request.json()
@@ -441,7 +472,7 @@ export async function POST(request: Request) {
       .from('students')
       .select('id, name')
       .eq('id', validated.studentId)
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .single()
 
     if (studentError || !student) {
@@ -450,7 +481,7 @@ export async function POST(request: Request) {
 
     // Upsert assignment (update if exists, insert if not)
     const upsertData: any = {
-      org_id: userProfile.org_id,
+      org_id: orgId,
       seat_number: validated.seatNumber,
       student_id: validated.studentId,
       status: 'checked_out',
@@ -698,21 +729,52 @@ export async function PUT(request: Request) {
 // DELETE: 좌석 배정 해제
 export async function DELETE(request: Request) {
   try {
-    const supabase = await createAuthenticatedClient(request)
+    const { searchParams } = new URL(request.url)
+    const serviceParam = searchParams.get('service')
+    const orgSlug = searchParams.get('orgSlug')
+    // service=1 또는 orgSlug가 있으면 서비스 모드 사용 (프로덕션에서도 허용)
+    const allowService = serviceParam === '1' || !!orgSlug
 
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    let supabase: any = await createAuthenticatedClient(request)
+    let { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    let orgId: string | null = null
+
+    // orgSlug가 있고 서비스 키가 있으면 서비스 모드로 진입 (프로덕션 liveattendance 지원)
+    if (allowService && supabaseServiceKey) {
+      supabase = createClient(supabaseUrl, supabaseServiceKey, { auth: { autoRefreshToken: false, persistSession: false } }) as any
+
+      // orgSlug로 org_id 조회 (프로덕션 지원)
+      if (orgSlug) {
+        const { data: org, error: orgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('slug', orgSlug)
+          .single()
+
+        if (orgError || !org) {
+          console.error('[SeatAssignments DELETE] Organization not found for slug:', orgSlug)
+          return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = org.id
+      }
+    } else if (!authError && user) {
+      const { data: userProfile, error: profileError } = await supabase
+        .from('users')
+        .select('org_id')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || !userProfile) {
+        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = userProfile.org_id
+    } else {
       return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
     }
 
-    const { data: userProfile, error: profileError } = await supabase
-      .from('users')
-      .select('org_id')
-      .eq('id', user.id)
-      .single()
-
-    if (profileError || !userProfile) {
-      return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+    if (!orgId) {
+      return Response.json({ error: 'org_id가 필요합니다' }, { status: 400 })
     }
 
     const body = await request.json()
@@ -721,7 +783,7 @@ export async function DELETE(request: Request) {
     const { error: deleteError } = await supabase
       .from('seat_assignments')
       .delete()
-      .eq('org_id', userProfile.org_id)
+      .eq('org_id', orgId)
       .eq('seat_number', validated.seatNumber)
 
     if (deleteError) {

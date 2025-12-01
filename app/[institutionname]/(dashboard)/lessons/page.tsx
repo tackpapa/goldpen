@@ -13,6 +13,7 @@ export const runtime = 'edge'
  */
 
 import { useState, useEffect, useMemo } from 'react'
+import { useParams } from 'next/navigation'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Button } from '@/components/ui/button'
@@ -78,6 +79,8 @@ const comprehensionMap = {
 export default function LessonsPage() {
   usePageAccess('lessons')
 
+  const params = useParams()
+  const institutionName = params.institutionname as string
   const { toast } = useToast()
   const [lessons, setLessons] = useState<LessonNote[]>([])
   const [scheduledClasses, setScheduledClasses] = useState<ScheduledClass[]>([])
@@ -117,7 +120,7 @@ export default function LessonsPage() {
     const fetchLessons = async () => {
       setIsLoading(true)
       try {
-        const response = await fetch('/api/lessons', { credentials: 'include' })
+        const response = await fetch(`/api/lessons?orgSlug=${institutionName}`, { credentials: 'include' })
         const data = await response.json() as {
           lessons?: LessonNote[]
           scheduledClasses?: ScheduledClass[]
@@ -139,8 +142,10 @@ export default function LessonsPage() {
         setIsLoading(false)
       }
     }
-    fetchLessons()
-  }, [toast])
+    if (institutionName) {
+      fetchLessons()
+    }
+  }, [toast, institutionName])
 
   // Calculate today's lessons based on selected date
   const todayLessonsList = lessons.filter((lesson) => lesson.lesson_date === selectedDate)
@@ -151,8 +156,8 @@ export default function LessonsPage() {
   // 수업일지는 자정 넘어서 작성하거나 다음날 작성하는 경우가 있으므로 요일/시간 필터 제거
   const filteredScheduledClasses = useMemo(() => {
     const list = scheduledClasses.filter((schedule) => {
-      // 강사는 본인 담당 반만, 원장/관리자/owner는 전체
-      const isAdmin = userRole === 'director' || userRole === 'admin' || userRole === 'owner'
+      // 강사는 본인 담당 반만, 원장/관리자/owner/super_admin은 전체
+      const isAdmin = userRole === 'owner' || userRole === 'manager' || userRole === 'super_admin'
       if (isAdmin) return true
 
       // 강사인 경우 본인 담당 반만
@@ -856,9 +861,11 @@ export default function LessonsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">전체 반</SelectItem>
-              <SelectItem value="class-1">수학 특강반</SelectItem>
-              <SelectItem value="class-2">영어 회화반</SelectItem>
-              <SelectItem value="class-3">국어 독해반</SelectItem>
+              {filteredScheduledClasses.map((cls) => (
+                <SelectItem key={cls.class_id ?? cls.id} value={cls.class_id ?? cls.id}>
+                  {cls.class_name}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button onClick={handleCreateLesson} className="w-full sm:w-auto">

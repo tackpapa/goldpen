@@ -1333,7 +1333,7 @@ export default function SeatsPage() {
       }
 
       try {
-        const response = await fetch('/api/seat-assignments', {
+        const response = await fetch(`/api/seat-assignments?orgSlug=${institutionName}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -1451,7 +1451,7 @@ export default function SeatsPage() {
             : seat
         ))
 
-        const assignResponse = await fetch('/api/seat-assignments', {
+        const assignResponse = await fetch(`/api/seat-assignments?orgSlug=${institutionName}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
@@ -1511,7 +1511,7 @@ export default function SeatsPage() {
     ))
 
     try {
-      const response = await fetch('/api/seat-assignments', {
+      const response = await fetch(`/api/seat-assignments?orgSlug=${institutionName}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

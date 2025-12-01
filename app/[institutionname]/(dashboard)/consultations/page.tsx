@@ -435,11 +435,22 @@ export default function ConsultationsPage() {
 
     // Optimistic: 즉시 UI 업데이트
     const previousConsultations = consultations
+    const previousWaitlists = waitlists
+
     setConsultations(
       consultations.map((c) =>
         c.id === id ? { ...c, status: newStatus, updated_at: new Date().toISOString() } : c
       )
     )
+
+    // 대기리스트에서 해당 상담 제거 (waitlist -> 다른 상태로 변경 시)
+    setWaitlists(
+      waitlists.map((wl) => ({
+        ...wl,
+        consultationIds: wl.consultationIds.filter((cId) => cId !== id)
+      }))
+    )
+
     toast({
       title: '상태 변경 완료',
       description: `상담 상태가 ${statusMap[newStatus].label}(으)로 변경되었습니다.`,
@@ -456,6 +467,7 @@ export default function ConsultationsPage() {
       if (!response.ok) {
         // 롤백
         setConsultations(previousConsultations)
+        setWaitlists(previousWaitlists)
         const error = await response.json() as { error?: string }
         toast({
           title: '상태 변경 실패',
@@ -466,6 +478,7 @@ export default function ConsultationsPage() {
     } catch (error) {
       // 롤백
       setConsultations(previousConsultations)
+      setWaitlists(previousWaitlists)
       toast({
         title: '오류 발생',
         description: '서버와 통신할 수 없습니다.',
@@ -1238,14 +1251,38 @@ export default function ConsultationsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>학생 이름</Label>
-                  <Input value={selectedConsultation.student_name} disabled />
+                  <Input
+                    value={selectedConsultation.student_name}
+                    onChange={(e) =>
+                      setSelectedConsultation({
+                        ...selectedConsultation,
+                        student_name: e.target.value,
+                      })
+                    }
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>학년</Label>
-                  <Input
-                    value={selectedConsultation.student_grade || '미입력'}
-                    disabled
-                  />
+                  <Select
+                    value={selectedConsultation.student_grade || ''}
+                    onValueChange={(value) =>
+                      setSelectedConsultation({
+                        ...selectedConsultation,
+                        student_grade: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="학년 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GRADE_OPTIONS.map((grade) => (
+                        <SelectItem key={grade.value} value={grade.value}>
+                          {grade.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 
@@ -1253,12 +1290,28 @@ export default function ConsultationsPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>학부모 이름</Label>
-                  <Input value={selectedConsultation.parent_name} disabled />
+                  <Input
+                    value={selectedConsultation.parent_name}
+                    onChange={(e) =>
+                      setSelectedConsultation({
+                        ...selectedConsultation,
+                        parent_name: e.target.value,
+                      })
+                    }
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>연락처</Label>
                   <div className="flex items-center gap-2">
-                    <Input value={selectedConsultation.parent_phone} disabled />
+                    <Input
+                      value={selectedConsultation.parent_phone}
+                      onChange={(e) =>
+                        setSelectedConsultation({
+                          ...selectedConsultation,
+                          parent_phone: e.target.value,
+                        })
+                      }
+                    />
                     <Button size="sm" variant="outline">
                       <Phone className="h-4 w-4" />
                     </Button>
@@ -1266,33 +1319,55 @@ export default function ConsultationsPage() {
                 </div>
               </div>
 
-              {selectedConsultation.parent_email && (
-                <div className="space-y-2">
-                  <Label>이메일</Label>
-                  <div className="flex items-center gap-2">
-                    <Input value={selectedConsultation.parent_email} disabled />
-                    <Button size="sm" variant="outline">
-                      <Mail className="h-4 w-4" />
-                    </Button>
-                  </div>
+              <div className="space-y-2">
+                <Label>이메일</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={selectedConsultation.parent_email || ''}
+                    onChange={(e) =>
+                      setSelectedConsultation({
+                        ...selectedConsultation,
+                        parent_email: e.target.value,
+                      })
+                    }
+                    placeholder="이메일 입력"
+                  />
+                  <Button size="sm" variant="outline">
+                    <Mail className="h-4 w-4" />
+                  </Button>
                 </div>
-              )}
+              </div>
 
               {/* Goals */}
-              {selectedConsultation.goals && (
-                <div className="space-y-2">
-                  <Label>학습 목표</Label>
-                  <Textarea value={selectedConsultation.goals} disabled rows={2} />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label>학습 목표</Label>
+                <Textarea
+                  value={selectedConsultation.goals || ''}
+                  onChange={(e) =>
+                    setSelectedConsultation({
+                      ...selectedConsultation,
+                      goals: e.target.value,
+                    })
+                  }
+                  rows={2}
+                  placeholder="학습 목표를 입력하세요"
+                />
+              </div>
 
               {/* Preferred Times */}
-              {selectedConsultation.preferred_times && (
-                <div className="space-y-2">
-                  <Label>희망 상담 시간</Label>
-                  <Input value={selectedConsultation.preferred_times} disabled />
-                </div>
-              )}
+              <div className="space-y-2">
+                <Label>희망 상담 시간</Label>
+                <Input
+                  value={selectedConsultation.preferred_times || ''}
+                  onChange={(e) =>
+                    setSelectedConsultation({
+                      ...selectedConsultation,
+                      preferred_times: e.target.value,
+                    })
+                  }
+                  placeholder="예: 평일 오후 2-4시, 주말 오전"
+                />
+              </div>
 
               {/* Status */}
               <div className="space-y-2">

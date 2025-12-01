@@ -21,13 +21,32 @@ export async function GET(request: Request) {
     const supabase = await createAuthenticatedClient(request)
     const service = getServiceClient()
 
+    const { searchParams } = new URL(request.url)
+    const orgSlug = searchParams.get('orgSlug')
+    const attendanceCode = searchParams.get('attendance_code') || searchParams.get('student_code') || undefined
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
 
     let orgId: string | null = null
+    let db = service || supabase
 
-    if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
+    // orgSlug가 제공된 경우 (프로덕션 livescreen/liveattendance 등) - organizations 테이블에서 org_id 조회
+    if (orgSlug && service) {
+      const { data: org, error: orgError } = await service
+        .from('organizations')
+        .select('id')
+        .eq('slug', orgSlug)
+        .single()
+
+      if (orgError || !org) {
+        console.error('[Students GET] Organization not found for slug:', orgSlug)
+        return Response.json({ error: '기관을 찾을 수 없습니다' }, { status: 404 })
+      }
+      orgId = org.id
+      db = service
+    } else if (!authError && user && user.id !== 'service-role' && user.id !== 'e2e-user') {
       const { data: profile, error: profileError } = await supabase
         .from('users')
         .select('org_id')
@@ -37,14 +56,10 @@ export async function GET(request: Request) {
       orgId = profile.org_id
     } else if (service) {
       orgId = demoOrg
+      db = service
     } else {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
-
-    const { searchParams } = new URL(request.url)
-    const attendanceCode = searchParams.get('attendance_code') || searchParams.get('student_code') || undefined
-
-    const db = service || supabase
 
     let query = db
       .from('students')

@@ -202,7 +202,7 @@ export default function LandingPage() {
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl lg:text-7xl">
               진짜 쉬운 거 써보세요
               <br />
-              <span className="text-blue-600">학원, 스까 운영엔 골드펜</span>
+              <span className="text-blue-600">학원, 스카 운영엔 골드펜</span>
             </h1>
             <p className="mt-6 text-lg text-muted-foreground md:text-xl max-w-2xl mx-auto">
               학원, 독서실, 공부방 운영에 필요한 모든 것.
@@ -524,6 +524,19 @@ export default function LandingPage() {
                 </svg>
               </a>
             </div>
+          </div>
+
+          {/* Company Information */}
+          <div className="mt-8 pt-6 border-t text-center">
+            <p className="text-xs text-muted-foreground">
+              서울특별시 강남구 논현동 262-1, 202호 버클리컨설팅
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              대표이사: 탁기영 | 사업자등록번호: 382-62-00633 | 통신판매업신고번호: 제 2023-서울강남-05555 호
+            </p>
+            <p className="text-xs text-muted-foreground mt-2">
+              Copyright © 2025. Berkeley Consulting. All rights reserved.
+            </p>
           </div>
         </div>
       </footer>

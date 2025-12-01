@@ -134,22 +134,47 @@ export async function GET(request: Request) {
     const service = getServiceClient()
     const demoOrg = process.env.NEXT_PUBLIC_DEMO_ORG_ID || process.env.DEMO_ORG_ID || 'dddd0000-0000-0000-0000-000000000000'
 
+    const { searchParams } = new URL(request.url)
+    const orgSlug = searchParams.get('orgSlug')
+
+    // 1. 미들웨어에서 주입된 x-org-id 헤더 확인 (최우선)
+    const headerOrgId = request.headers.get('x-org-id')
+
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     let orgId: string | null = null
-    if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
-      orgId = demoOrg
-    } else if (!authError && user) {
-      const { data: userProfile } = await supabase
-        .from('users')
-        .select('org_id')
-        .eq('id', user.id)
+
+    // 미들웨어 헤더 또는 orgSlug로 org_id 결정
+    if (headerOrgId && service) {
+      orgId = headerOrgId
+    } else if (orgSlug && service) {
+      // orgSlug로 org_id 조회
+      const { data: org } = await service
+        .from('organizations')
+        .select('id')
+        .eq('slug', orgSlug)
         .single()
-      if (!userProfile) {
-        return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+      if (org) {
+        orgId = org.id
       }
-      orgId = userProfile.org_id
-    } else {
-      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+
+    // org_id가 아직 없으면 기존 로직 (인증 기반)
+    if (!orgId) {
+      if (service && (authError || !user || user.id === 'service-role' || user.id === 'e2e-user')) {
+        orgId = demoOrg
+      } else if (!authError && user) {
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('org_id')
+          .eq('id', user.id)
+          .single()
+        if (!userProfile) {
+          return Response.json({ error: '사용자 프로필을 찾을 수 없습니다' }, { status: 404 })
+        }
+        orgId = userProfile.org_id
+      } else {
+        return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+      }
     }
 
     const db = service || supabase
@@ -228,16 +253,15 @@ export async function GET(request: Request) {
     const activeStudents = studentsActiveResult.count || 0
     const inactiveStudents = studentsInactiveResult.count || 0
 
-    // Grade distribution
-    const gradeDistribution: { grade: string; students: number }[] = []
+    // Grade distribution (학년순 정렬 적용)
     const gradeMap: Record<string, number> = {}
     students.forEach((s) => {
       const grade = s.grade || '기타'
       gradeMap[grade] = (gradeMap[grade] || 0) + 1
     })
-    Object.entries(gradeMap).forEach(([grade, count]) => {
-      gradeDistribution.push({ grade, students: count })
-    })
+    const gradeDistribution = Object.entries(gradeMap)
+      .map(([grade, count]) => ({ grade, students: count }))
+      .sort((a, b) => getGradeOrder(a.grade) - getGradeOrder(b.grade))
 
     // Student trend (monthly)
     const studentTrendData = generateMonthlyTrend(students, 'created_at', 6)
@@ -673,4 +697,36 @@ function getTimeAgo(dateStr: string) {
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}일 전`
   return `${Math.floor(days / 7)}주 전`
+}
+
+/**
+ * 학년 정렬을 위한 순서 값 반환
+ * 허용된 학년 enum: 초1~초6, 중1~중3, 고1~고3, 재수
+ */
+function getGradeOrder(grade: string): number {
+  const g = grade.trim()
+
+  // 초등학교: 초1~초6
+  const elemMatch = g.match(/^초(\d+)$/)
+  if (elemMatch) {
+    return 100 + parseInt(elemMatch[1], 10) // 101~106
+  }
+
+  // 중학교: 중1~중3
+  const midMatch = g.match(/^중(\d+)$/)
+  if (midMatch) {
+    return 200 + parseInt(midMatch[1], 10) // 201~203
+  }
+
+  // 고등학교: 고1~고3
+  const highMatch = g.match(/^고(\d+)$/)
+  if (highMatch) {
+    return 300 + parseInt(highMatch[1], 10) // 301~303
+  }
+
+  // 재수
+  if (g === '재수') return 400
+
+  // 미인식 패턴은 맨 뒤로
+  return 9999
 }
