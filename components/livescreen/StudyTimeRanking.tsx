@@ -94,12 +94,12 @@ export function StudyTimeRankingDisplay({
                 )}
               </div>
 
-              {/* Student Name */}
+              {/* Student Name + School (fallback) */}
               <div className="flex-1 min-w-0">
                 <p className={`font-semibold ${isMe ? 'text-primary' : ''}`}>
                   <span className="truncate inline-block max-w-full">
                     {ranking.surname}
-                    {ranking.student_school ? ` (${ranking.student_school})` : ''}
+                    {ranking.student_school ? ` ${ranking.student_school}` : ''}
                     {isMe && ' (나)'}
                   </span>
                 </p>

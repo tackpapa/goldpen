@@ -204,13 +204,6 @@ export default function AttendancePage() {
 
       const fetchedCount = data.attendance?.length || 0
       const serverHasMore = (data as any).hasMore
-        '[history] page',
-        pageToLoad,
-        'fetched',
-        fetchedCount,
-        'hasMore?',
-        serverHasMore ?? fetchedCount === HISTORY_PAGE_SIZE
-      )
 
       setAttendanceHistory((prev) => {
         const merged = pageToLoad === 0 ? data.attendance || [] : [...prev, ...(data.attendance || [])]
