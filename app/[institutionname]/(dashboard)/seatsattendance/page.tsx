@@ -786,47 +786,59 @@ export default function AttendancePage() {
     const nowMinutes = now.getHours() * 60 + now.getMinutes()
     const LATE_GRACE_MINUTES = 0 // 정확한 시간 기준 (유예 없음)
 
-    // 등하원 일정이 있는 학생만 대상
-    const studentsWithSchedule = assignedStudentIds.filter((id) => {
-      const schedules = allStudentSchedules[id] || []
-      return schedules.some((s) => s.day_of_week === todayWeekday && s.start_time)
-    })
-
     const presentSet = new Set<string>()
     const lateSet = new Set<string>()
     const absentSet = new Set<string>()
 
-    studentsWithSchedule.forEach((id) => {
+    // 모든 좌석 배정된 학생 대상으로 변경
+    assignedStudentIds.forEach((id) => {
       const schedules = allStudentSchedules[id] || []
       const todaySchedule = schedules.find((s) => s.day_of_week === todayWeekday)
-      if (!todaySchedule || !todaySchedule.start_time) return
-
-      // 예정 등원 시간 파싱 (HH:MM:SS 형식)
-      const [schH, schM] = todaySchedule.start_time.split(':').map(Number)
-      const scheduledMinutes = schH * 60 + schM
-
       const logs = dailyLogsByStudent[id] || []
       const firstCheckIn = logs.find((l) => l.in)?.in
 
-      if (firstCheckIn) {
-        // 등원함 - 지각 여부 판단
-        const checkInDate = new Date(firstCheckIn)
-        const checkInMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
-        if (checkInMinutes > scheduledMinutes + LATE_GRACE_MINUTES) {
-          lateSet.add(id)
+      // commute 일정이 있는 경우
+      if (todaySchedule?.start_time) {
+        const [schH, schM] = todaySchedule.start_time.split(':').map(Number)
+        const scheduledMinutes = schH * 60 + schM
+
+        if (firstCheckIn) {
+          // 등원함 - 지각 여부 판단
+          const checkInDate = new Date(firstCheckIn)
+          const checkInMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
+          if (checkInMinutes > scheduledMinutes + LATE_GRACE_MINUTES) {
+            lateSet.add(id)
+          } else {
+            presentSet.add(id)
+          }
         } else {
-          presentSet.add(id)
+          // 등원 안함 - 예정 시간 지났으면 결석
+          if (nowMinutes > scheduledMinutes + LATE_GRACE_MINUTES) {
+            absentSet.add(id)
+          }
+          // 아직 예정 시간 안 지났으면 아무것도 안함 (scheduled로 처리)
         }
       } else {
-        // 등원 안함 - 예정 시간 지났으면 결석
-        if (nowMinutes > scheduledMinutes + LATE_GRACE_MINUTES) {
-          absentSet.add(id)
+        // commute 일정이 없는 경우: 등원 기록이 있으면 출석으로 처리
+        if (firstCheckIn) {
+          presentSet.add(id)
         }
-        // 아직 예정 시간 안 지났으면 아무것도 안함 (scheduled로 처리)
+        // 등원 기록이 없으면 통계에서 제외 (일정이 없으므로 결석/예정 판단 불가)
       }
     })
 
-    const total = studentsWithSchedule.length
+    // total: commute 일정이 있는 학생 + 등원 기록이 있는 학생 (중복 제거)
+    const studentsWithSchedule = assignedStudentIds.filter((id) => {
+      const schedules = allStudentSchedules[id] || []
+      return schedules.some((s) => s.day_of_week === todayWeekday && s.start_time)
+    })
+    const studentsWithCheckIn = assignedStudentIds.filter((id) => {
+      const logs = dailyLogsByStudent[id] || []
+      return logs.some((l) => l.in)
+    })
+    const totalStudentsSet = new Set([...studentsWithSchedule, ...studentsWithCheckIn])
+    const total = totalStudentsSet.size
+
     const present = presentSet.size
     const late = lateSet.size
     const absent = absentSet.size
