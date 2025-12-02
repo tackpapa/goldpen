@@ -316,8 +316,11 @@ export default function UsersPage() {
 
       <div className="flex items-center justify-between space-x-2">
         <div className="text-sm text-muted-foreground">
-          전체 {totalCount}명 중 {(page - 1) * limit + 1}-
-          {Math.min(page * limit, totalCount)}명 표시
+          {totalCount > 0 ? (
+            <>전체 {totalCount}명 중 {(page - 1) * limit + 1}-{Math.min(page * limit, totalCount)}명 표시</>
+          ) : (
+            <>결과 없음</>
+          )}
         </div>
         <div className="space-x-2">
           <Button

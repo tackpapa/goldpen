@@ -245,7 +245,7 @@ export default function ExamsPage() {
                 <Button variant="outline" size="sm" onClick={() => handleViewStats(exam)}>
                   <BarChart3 className="mr-1 h-3 w-3" /> 통계 보기
                 </Button>
-                {(userRole === 'director' || userRole === 'admin') && (
+                {(userRole === 'owner') && (
                   <Button variant="outline" size="sm" onClick={() => handleSendNotification(exam)}>
                     <Send className="mr-1 h-3 w-3" /> 알림톡 보내기
                   </Button>

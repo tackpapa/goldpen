@@ -25,25 +25,25 @@ export function AdminHeader() {
 
   useEffect(() => {
     const loadUserInfo = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-
-      if (user) {
-        setUserEmail(user.email || '')
-
-        const { data: userData } = await supabase
-          .from('users')
-          .select('name')
-          .eq('id', user.id)
-          .single()
-
-        if (userData?.name) {
-          setUserName(userData.name)
+      // Get user info from /api/me
+      try {
+        const response = await fetch('/api/me', { credentials: 'include' })
+        if (response.ok) {
+          const data = await response.json() as { user?: { email?: string; name?: string } }
+          if (data.user) {
+            setUserEmail(data.user.email || '')
+            if (data.user.name) {
+              setUserName(data.user.name)
+            }
+          }
         }
+      } catch (error) {
+        console.error('Failed to load user info:', error)
       }
     }
 
     loadUserInfo()
-  }, [supabase])
+  }, [])
 
   const handleLogout = async () => {
     try {

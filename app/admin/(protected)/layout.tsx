@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { AdminHeader } from '@/components/admin/AdminHeader'
 
@@ -17,29 +16,34 @@ export default function AdminLayout({
 
   useEffect(() => {
     const checkAdminAccess = async () => {
-      const supabase = createClient()
+      try {
+        // Use /api/me to check user role
+        const response = await fetch('/api/me', { credentials: 'include' })
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
+        if (!response.ok) {
+          router.push('/login')
+          return
+        }
 
-      if (authError || !user) {
+        const data = await response.json() as { user?: { role?: string } }
+
+        if (!data.user) {
+          router.push('/login')
+          return
+        }
+
+        // Check if user has super_admin role
+        if (data.user.role !== 'super_admin') {
+          router.push('/admin')
+          return
+        }
+
+        setIsAuthorized(true)
+        setIsLoading(false)
+      } catch (error) {
+        console.error('Failed to check admin access:', error)
         router.push('/login')
-        return
       }
-
-      // Check if user has super_admin role
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      if (userError || !userData || userData.role !== 'super_admin') {
-        router.push('/admin')
-        return
-      }
-
-      setIsAuthorized(true)
-      setIsLoading(false)
     }
 
     checkAdminAccess()

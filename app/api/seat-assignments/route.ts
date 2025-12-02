@@ -79,27 +79,14 @@ async function upsertAttendanceForStudent(params: {
   const attendanceStatus =
     status === 'checked_in' && nowMinutes > startMinutes + LATE_GRACE_MINUTES ? 'late' : 'present'
 
-  // 기존 출결을 읽어서 체크인 시간을 보존 (중복 체크아웃 시 덮어쓰기 방지)
-  const { data: existingAttendance } = await supabase
-    .from('attendance')
-    .select('check_in_time')
-    .eq('org_id', orgId)
-    .eq('student_id', studentId)
-    .eq('class_id', target.class_id)
-    .eq('date', todayStr)
-    .maybeSingle()
-
+  // attendance 테이블에 출결 기록 (status만 - 시간 컬럼 없음)
   const payload: any = {
     org_id: orgId,
     student_id: studentId,
     class_id: target.class_id,
     date: todayStr,
     status: attendanceStatus,
-    check_in_time: existingAttendance?.check_in_time || null,
   }
-
-  if (status === 'checked_in') payload.check_in_time = now.toISOString()
-  if (status === 'checked_out') payload.check_out_time = now.toISOString()
 
   const { error: attendanceError } = await supabase
     .from('attendance')

@@ -1523,7 +1523,7 @@ export default function LessonsPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="director_feedback">원장님 피드백</Label>
-                {userRole !== 'director' && userRole !== 'admin' && (
+                {userRole !== 'owner' && (
                   <Badge variant="secondary" className="text-xs">원장님만 작성 가능</Badge>
                 )}
               </div>
@@ -1536,9 +1536,9 @@ export default function LessonsPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, director_feedback: e.target.value })
                 }
-                placeholder={userRole === 'director' || userRole === 'admin' ? "원장님의 추가 피드백을 입력하세요" : "원장님만 작성할 수 있습니다"}
+                placeholder={userRole === 'owner' ? "원장님의 추가 피드백을 입력하세요" : "원장님만 작성할 수 있습니다"}
                 rows={4}
-                disabled={userRole !== 'director' && userRole !== 'admin'}
+                disabled={userRole !== 'owner'}
               />
             </div>
 
@@ -1593,7 +1593,7 @@ export default function LessonsPage() {
                 <Button variant="secondary" onClick={handleUpdateFeedback}>
                   피드백 저장
                 </Button>
-                {(userRole === 'director' || userRole === 'admin' || userRole === 'owner') && (
+                {(userRole === 'owner') && (
                   <Button onClick={handleSendNotification}>
                     알림톡 보내기
                   </Button>
@@ -1604,7 +1604,7 @@ export default function LessonsPage() {
                 <Button variant="outline" onClick={handleSaveLesson}>
                   작성 완료
                 </Button>
-                {(userRole === 'director' || userRole === 'admin' || userRole === 'owner') && (
+                {(userRole === 'owner') && (
                   <Button onClick={handleSendNotification}>
                     알림톡 보내기
                   </Button>

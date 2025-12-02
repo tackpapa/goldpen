@@ -44,7 +44,6 @@ import {
 import type { Consultation } from '@/lib/types/database'
 import { format } from 'date-fns'
 import { GRADE_OPTIONS } from '@/lib/constants/grades'
-import { createClient } from '@/lib/supabase/client'
 
 // Waitlist type
 interface Waitlist {
@@ -106,25 +105,26 @@ export default function ConsultationsPage() {
   })
   const [isUploadingImages, setIsUploadingImages] = useState(false)
 
-  // Supabase Storage에 이미지 업로드하는 함수
+  // API를 통해 이미지 업로드하는 함수
   const uploadImageToStorage = async (file: File): Promise<string | null> => {
     try {
-      const supabase = createClient()
-      const timestamp = Date.now()
-      const randomStr = Math.random().toString(36).substring(2, 8)
-      const ext = file.name.split('.').pop() || 'jpg'
-      const fileName = `consultations/${institutionName}/${timestamp}_${randomStr}.${ext}`
+      const formData = new FormData()
+      formData.append('file', file)
 
-      const { data, error } = await supabase.storage
-        .from('consultation-images')
-        .upload(fileName, file, {
-          cacheControl: '3600',
-          upsert: false
-        })
+      const response = await fetch(
+        `/api/storage/upload?orgSlug=${institutionName}&bucket=consultation-images&folder=consultations`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        }
+      )
 
-      if (error) {
-        console.error('Upload error:', error)
-        // 버킷이 없거나 권한 문제일 경우 폴백: Base64로 저장 (작은 이미지만)
+      const data = await response.json() as { url?: string; error?: string }
+
+      if (!response.ok) {
+        console.error('Upload error:', data.error)
+        // 서버 오류 시 폴백: Base64로 저장 (작은 이미지만)
         if (file.size < 500 * 1024) { // 500KB 이하만 Base64 허용
           return new Promise((resolve) => {
             const reader = new FileReader()
@@ -135,12 +135,7 @@ export default function ConsultationsPage() {
         return null
       }
 
-      // Public URL 생성
-      const { data: urlData } = supabase.storage
-        .from('consultation-images')
-        .getPublicUrl(fileName)
-
-      return urlData.publicUrl
+      return data.url
     } catch (error) {
       console.error('Upload error:', error)
       return null

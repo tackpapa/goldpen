@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       return Response.json({ inserted: 0, skipped: 0, reason: 'no schedules' })
     }
 
-    const classIds = schedules.map((s) => s.class_id).filter(Boolean)
+    const classIds = schedules.map((s: { class_id?: string }) => s.class_id).filter(Boolean)
     if (!classIds.length) {
       return Response.json({ inserted: 0, skipped: 0, reason: 'no class ids' })
     }

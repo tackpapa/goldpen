@@ -96,7 +96,9 @@ export default function KakaoPage() {
       const response = await fetch(`/api/admin/kakao?period=${period}`)
       if (response.ok) {
         const data = await response.json() as { stats?: any; organization_usages?: any[]; recent_usages?: any[]; daily_stats?: any[] }
-        setStats(data.stats)
+        if (data.stats) {
+          setStats(data.stats)
+        }
         setOrgUsages(data.organization_usages || [])
         setRecentUsages(data.recent_usages || [])
         setDailyStats(data.daily_stats || [])

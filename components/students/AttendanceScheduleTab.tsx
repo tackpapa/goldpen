@@ -78,8 +78,8 @@ export function AttendanceScheduleTab({
 
     setSchedules(optimistic)
     void persistSchedule(day, {
-      start_time: field === 'start_time' ? value : getScheduleForDay(day)?.start_time ?? null,
-      end_time: field === 'end_time' ? value : getScheduleForDay(day)?.end_time ?? null,
+      start_time: field === 'start_time' ? value : (getScheduleForDay(day)?.start_time ?? undefined),
+      end_time: field === 'end_time' ? value : (getScheduleForDay(day)?.end_time ?? undefined),
     })
   }
 

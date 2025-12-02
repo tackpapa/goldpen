@@ -31,9 +31,17 @@ export async function GET(request: Request) {
 
     // accounts 형식으로 변환 (프론트엔드 호환성 유지)
     // 슈퍼관리자 이메일(admin@goldpen.kr) 제외
-    const accounts = (users || [])
-      .filter(user => user.email !== 'admin@goldpen.kr')
-      .map(user => ({
+    interface UserRecord {
+      id: string
+      email: string
+      name: string
+      role: string
+      status: string
+      created_at: string
+    }
+    const accounts = (users as UserRecord[] || [])
+      .filter((user: UserRecord) => user.email !== 'admin@goldpen.kr')
+      .map((user: UserRecord) => ({
         id: user.id,
         email: user.email,
         name: user.name,

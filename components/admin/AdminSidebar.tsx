@@ -12,6 +12,7 @@ import {
   Shield,
   Package,
   MessageSquare,
+  Server,
 } from 'lucide-react'
 
 interface NavigationItem {
@@ -51,6 +52,12 @@ const navigationItems: NavigationItem[] = [
     name: '카카오 알림톡',
     href: '/admin/kakao',
     icon: MessageSquare,
+  },
+  {
+    id: 'infrastructure',
+    name: '인프라 현황',
+    href: '/admin/infrastructure',
+    icon: Server,
   },
   {
     id: 'settings',
