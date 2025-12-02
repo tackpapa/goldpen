@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
     const entityType = searchParams.get('entity_type')
     const actionType = searchParams.get('action_type')
+    const userId = searchParams.get('userId')
 
     let query = db
       .from('activity_logs')
@@ -49,18 +50,24 @@ export async function GET(request: NextRequest) {
       query = query.eq('action_type', actionType)
     }
 
+    // 특정 사용자의 활동 이력만 조회
+    if (userId) {
+      query = query.eq('user_id', userId)
+    }
+
     const { data, error } = await query
 
     if (error) {
       // 테이블이 없으면 빈 배열 반환
       if (error.code === '42P01') {
-        return NextResponse.json({ data: [], message: 'activity_logs table not found' })
+        return NextResponse.json({ logs: [], data: [], message: 'activity_logs table not found' })
       }
       console.error('Activity logs fetch error:', error)
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ data: data || [] })
+    // logs와 data 둘 다 반환 (호환성)
+    return NextResponse.json({ logs: data || [], data: data || [] })
   } catch (error: any) {
     if (error?.message === 'AUTH_REQUIRED') {
       return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 })

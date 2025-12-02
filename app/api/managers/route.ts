@@ -40,10 +40,10 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search')
 
-    // 매니저 목록 조회 (users 테이블 role='manager')
+    // 매니저 목록 조회 (users 테이블 role='manager', 확장 필드 포함)
     let query = db
       .from('users')
-      .select('id, org_id, name, email, phone, role, status, created_at, updated_at')
+      .select('id, org_id, name, email, phone, role, status, employment_type, salary_type, salary_amount, payment_day, hire_date, notes, created_at, updated_at')
       .eq('org_id', orgId)
       .eq('role', 'manager')
       .order('created_at', { ascending: false })
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       return Response.json({ error: '매니저 목록 조회 실패', details: error.message }, { status: 500 })
     }
 
-    // 매니저 데이터 포맷팅 (강사와 유사한 형태)
+    // 매니저 데이터 포맷팅 (실제 DB 값 사용, null이면 기본값)
     const formattedManagers = (managers || []).map((m: any) => ({
       id: m.id,
       org_id: m.org_id,
@@ -68,11 +68,12 @@ export async function GET(request: Request) {
       email: m.email,
       phone: m.phone || '',
       status: m.status || 'active',
-      employment_type: 'full_time',
-      salary_type: 'monthly',
-      salary_amount: 0,
-      hire_date: '',
-      notes: null,
+      employment_type: m.employment_type || 'full_time',
+      salary_type: m.salary_type || 'monthly',
+      salary_amount: m.salary_amount || 0,
+      payment_day: m.payment_day || 25,
+      hire_date: m.hire_date || '',
+      notes: m.notes || null,
       created_at: m.created_at,
       updated_at: m.updated_at,
     }))

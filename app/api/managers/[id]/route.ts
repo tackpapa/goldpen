@@ -22,8 +22,9 @@ const updateManagerSchema = z.object({
   employment_type: z.enum(['full_time', 'part_time', 'contract']).optional(),
   salary_type: z.enum(['monthly', 'hourly']).optional(),
   salary_amount: z.coerce.number().nonnegative().optional(),
-  hire_date: z.string().optional(),
-  notes: z.string().optional(),
+  payment_day: z.coerce.number().min(1).max(31).nullable().optional(),
+  hire_date: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
 })
 
 /**
@@ -38,10 +39,10 @@ export async function GET(
     const { db, orgId } = await getSupabaseWithOrg(request)
     const { id: managerId } = await params
 
-    // 매니저 조회
+    // 매니저 조회 (확장 필드 포함)
     const { data: manager, error } = await db
       .from('users')
-      .select('id, org_id, name, email, phone, role, status, created_at, updated_at')
+      .select('id, org_id, name, email, phone, role, status, employment_type, salary_type, salary_amount, payment_day, hire_date, notes, created_at, updated_at')
       .eq('id', managerId)
       .eq('org_id', orgId)
       .eq('role', 'manager')
@@ -55,11 +56,13 @@ export async function GET(
       manager: {
         ...manager,
         user_id: manager.id,
-        employment_type: 'full_time',
-        salary_type: 'monthly',
-        salary_amount: 0,
-        hire_date: '',
-        notes: null,
+        // DB 값 사용, null이면 기본값
+        employment_type: manager.employment_type || 'full_time',
+        salary_type: manager.salary_type || 'monthly',
+        salary_amount: manager.salary_amount || 0,
+        payment_day: manager.payment_day || 25,
+        hire_date: manager.hire_date || '',
+        notes: manager.notes || null,
       }
     })
   } catch (error: any) {
@@ -97,12 +100,19 @@ export async function PUT(
     const body = await request.json()
     const validated = updateManagerSchema.parse(body)
 
-    // users 테이블에서 수정 가능한 필드만 추출
+    // users 테이블에서 수정 가능한 필드 추출 (매니저 확장 필드 포함)
     const userUpdateData: any = {}
     if (validated.name !== undefined) userUpdateData.name = validated.name
     if (validated.email !== undefined) userUpdateData.email = validated.email
     if (validated.phone !== undefined) userUpdateData.phone = validated.phone
     if (validated.status !== undefined) userUpdateData.status = validated.status
+    // 매니저 확장 필드
+    if (validated.employment_type !== undefined) userUpdateData.employment_type = validated.employment_type
+    if (validated.salary_type !== undefined) userUpdateData.salary_type = validated.salary_type
+    if (validated.salary_amount !== undefined) userUpdateData.salary_amount = validated.salary_amount
+    if (validated.payment_day !== undefined) userUpdateData.payment_day = validated.payment_day
+    if (validated.hire_date !== undefined) userUpdateData.hire_date = validated.hire_date || null
+    if (validated.notes !== undefined) userUpdateData.notes = validated.notes || null
 
     // 매니저 정보 수정
     const { data: manager, error: updateError } = await db

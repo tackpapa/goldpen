@@ -1,16 +1,92 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import type { Manager } from './ManagerDetailModal'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Activity, Calendar, Clock, FileText } from 'lucide-react'
+import { Activity, Calendar, Clock, FileText, LogIn, LogOut, Plus, Edit, Trash2, Eye, Download, Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+
+interface ActivityLog {
+  id: string
+  action_type: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'view' | 'export'
+  entity_type: string
+  entity_name: string | null
+  description: string
+  created_at: string
+}
 
 interface ActivityTabProps {
   manager: Manager
+  institutionName?: string
 }
 
-export function ActivityTab({ manager }: ActivityTabProps) {
-  // 활동 이력은 나중에 activity_logs 테이블과 연결할 예정
-  // 현재는 placeholder UI만 제공
+const actionIcons: Record<string, React.ElementType> = {
+  create: Plus,
+  update: Edit,
+  delete: Trash2,
+  login: LogIn,
+  logout: LogOut,
+  view: Eye,
+  export: Download,
+}
+
+const actionColors: Record<string, string> = {
+  create: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  update: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  delete: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  login: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  logout: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
+  view: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
+  export: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
+}
+
+const actionLabels: Record<string, string> = {
+  create: '생성',
+  update: '수정',
+  delete: '삭제',
+  login: '로그인',
+  logout: '로그아웃',
+  view: '조회',
+  export: '내보내기',
+}
+
+export function ActivityTab({ manager, institutionName }: ActivityTabProps) {
+  const [activities, setActivities] = useState<ActivityLog[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (manager.id && institutionName) {
+      fetchActivities()
+    }
+  }, [manager.id, institutionName])
+
+  const fetchActivities = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await fetch(`/api/activity-logs?userId=${manager.id}&limit=20&orgSlug=${institutionName}`)
+      const result = (await response.json()) as any
+      if (!response.ok) throw new Error(result.error || '활동 이력 조회 실패')
+      setActivities(result.logs || [])
+    } catch (err) {
+      console.error('[ActivityTab] fetch error', err)
+      setError(err instanceof Error ? err.message : '활동 이력을 불러올 수 없습니다')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    return date.toLocaleDateString('ko-KR', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  }
 
   return (
     <div className="space-y-6">
@@ -59,17 +135,62 @@ export function ActivityTab({ manager }: ActivityTabProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="p-4 bg-muted rounded-full mb-4">
-              <FileText className="h-8 w-8 text-muted-foreground" />
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <p className="mt-2 text-sm text-muted-foreground">불러오는 중...</p>
             </div>
-            <p className="text-muted-foreground mb-2">
-              활동 이력 기능은 준비 중입니다.
-            </p>
-            <p className="text-sm text-muted-foreground">
-              로그인 기록, 작업 이력 등이 여기에 표시됩니다.
-            </p>
-          </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="p-4 bg-red-100 dark:bg-red-900/30 rounded-full mb-4">
+                <FileText className="h-8 w-8 text-red-500" />
+              </div>
+              <p className="text-muted-foreground">{error}</p>
+            </div>
+          ) : activities.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <div className="p-4 bg-muted rounded-full mb-4">
+                <FileText className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <p className="text-muted-foreground mb-2">
+                아직 활동 기록이 없습니다.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                로그인, 작업 이력 등이 여기에 표시됩니다.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activities.map((activity) => {
+                const Icon = actionIcons[activity.action_type] || FileText
+                const colorClass = actionColors[activity.action_type] || 'bg-gray-100 text-gray-700'
+                return (
+                  <div
+                    key={activity.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors"
+                  >
+                    <div className={`p-2 rounded-lg ${colorClass}`}>
+                      <Icon className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="text-xs">
+                          {actionLabels[activity.action_type] || activity.action_type}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {activity.entity_type}
+                        </span>
+                      </div>
+                      <p className="text-sm truncate">{activity.description}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {formatDate(activity.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 

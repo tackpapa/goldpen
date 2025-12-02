@@ -133,12 +133,31 @@ export function ManagerDetailModal({
     }
   }
 
-  const handleRefresh = () => {
-    // 나중에 refetch 구현
-    toast({
-      title: '새로고침',
-      description: '데이터를 새로고침했습니다.',
-    })
+  const handleRefresh = async () => {
+    if (!manager?.id) return
+    try {
+      setLoading(true)
+      const response = await fetch(`/api/managers/${manager.id}?orgSlug=${institutionName}`)
+      const result = (await response.json()) as any
+      if (!response.ok) throw new Error(result.error || '데이터 새로고침 실패')
+
+      if (result.manager) {
+        onUpdate?.(result.manager)
+        toast({
+          title: '새로고침 완료',
+          description: '최신 데이터를 불러왔습니다.',
+        })
+      }
+    } catch (err) {
+      console.error('[ManagerDetailModal] refresh error', err)
+      toast({
+        title: '새로고침 실패',
+        description: err instanceof Error ? err.message : '알 수 없는 오류',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -192,7 +211,7 @@ export function ManagerDetailModal({
 
             {/* Tab 3: 활동 이력 */}
             <TabsContent value="activity" className="mt-0">
-              <ActivityTab manager={safeManager} />
+              <ActivityTab manager={safeManager} institutionName={institutionName} />
             </TabsContent>
           </div>
         </Tabs>
