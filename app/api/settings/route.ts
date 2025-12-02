@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     const supabase = await createAuthenticatedClient(request)
     const service = getServiceClient()
     const { searchParams } = new URL(request.url)
-    const slug = searchParams.get('slug')
+    const slug = searchParams.get('orgSlug') || searchParams.get('slug')
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -157,7 +157,7 @@ export async function PUT(request: Request) {
     const supabase = await createAuthenticatedClient(request)
     const service = getServiceClient()
     const { searchParams } = new URL(request.url)
-    const slug = searchParams.get('slug')
+    const slug = searchParams.get('orgSlug') || searchParams.get('slug')
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     let orgId: string | null = null
