@@ -655,26 +655,22 @@ export default function SeatsPage() {
         const assignment = realtimeAssignments.get(seat.number)
         if (assignment) {
           // Update seat with assignment data, but preserve pass info from initial API load
+          // IMPORTANT: Preserve student_name/grade if realtime couldn't fetch them (RLS blocking)
           return {
             ...seat,
             student_id: assignment.student_id,
-            student_name: assignment.student_name,
+            // Use realtime student_name only if available, otherwise keep existing
+            student_name: assignment.student_name || seat.student_name,
             status: assignment.status,
             check_in_time: assignment.check_in_time || undefined,
             session_start_time: assignment.session_start_time || undefined,
             // Preserve pass info (realtime doesn't have it)
             // seatsremainingtime, pass_type, remaining_days are kept from initial load
           }
-        } else if (seat.student_id && !assignedSeatNumbers.has(seat.number)) {
-          // Seat had assignment but now removed (deleted from DB)
-          return {
-            ...seat,
-            student_id: null,
-            student_name: null,
-            status: 'vacant' as const,
-            check_in_time: undefined,
-          }
         }
+        // NOTE: Removed "else if" branch that deleted seats not in realtimeAssignments
+        // This was causing data loss when realtime hook's initial load failed due to RLS
+        // DELETE events are now only handled by the realtime hook itself
         // Keep seat as is (vacant seats without changes)
         return seat
       })
@@ -1038,30 +1034,22 @@ export default function SeatsPage() {
       setAlarmInterval(null)
     }
 
-    // Update sleep record status to 'awake' in database
+    // Update sleep record status to 'awake' via API
     if (sleepAlertInfo) {
-      if (!orgId) {
-        console.error('Org ID missing; cannot update sleep_records')
-        setSleepAlertOpen(false)
-        return
-      }
       try {
-        const supabase = createClient()
-        const today = new Date().toISOString().split('T')[0]
+        const response = await fetch(`/api/sleep-records?orgSlug=${institutionName}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            seatNumber: sleepAlertInfo.seatNumber,
+            action: 'wake',
+          }),
+        })
 
-        const { error } = await supabase
-          .from('sleep_records')
-          .update({
-            wake_time: new Date().toISOString(),
-            status: 'awake'
-          })
-          .eq('org_id', orgId)
-          .eq('seat_number', sleepAlertInfo.seatNumber)
-          .eq('date', today)
-          .eq('status', 'sleeping')
-
-        if (error) {
-          console.error('Error updating sleep record:', error)
+        if (!response.ok) {
+          const data = await response.json()
+          console.error('Error updating sleep record:', data.error)
         }
       } catch (error) {
         console.error('Error waking student:', error)
@@ -1105,39 +1093,35 @@ export default function SeatsPage() {
     setCallModalOpen(true)
   }
 
-  // Send call to student
+  // Send call to student via API
   const handleSendCall = async () => {
-    if (!callStudentInfo || !orgId) {
+    if (!callStudentInfo) {
       toast({
         title: '호출 실패',
-        description: '학생 또는 기관 정보가 없습니다.',
+        description: '학생 정보가 없습니다.',
         variant: 'destructive',
       })
       return
     }
 
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const supabase = createClient()
-
-      const { data, error } = await supabase
-        .from('call_records')
-        .insert({
-          org_id: orgId,
-          student_id: callStudentInfo.studentId,
-          seat_number: callStudentInfo.seatNumber,
-          date: today,
-          call_time: new Date().toISOString(),
+      const response = await fetch(`/api/call-records?orgSlug=${institutionName}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentId: callStudentInfo.studentId,
+          seatNumber: callStudentInfo.seatNumber,
           message: callMessage,
-          status: 'calling',
-        })
-        .select()
+        }),
+      })
 
-      if (error) {
-        console.error('[Student Call] ❌ Insert failed:', error)
-        throw error
+      const data = await response.json()
+
+      if (!response.ok) {
+        console.error('[Student Call] Insert failed:', data.error)
+        throw new Error(data.error)
       }
-
 
       setCallModalOpen(false)
       toast({
@@ -1154,20 +1138,25 @@ export default function SeatsPage() {
     }
   }
 
-  // Clear acknowledged call (to allow new call)
+  // Clear acknowledged call (to allow new call) via API
   const handleClearAcknowledgedCall = async (seatNumber: number) => {
     const callRecord = callRecords.get(seatNumber)
     if (!callRecord) return
 
     try {
-      const supabase = createClient()
+      const response = await fetch(`/api/call-records?orgSlug=${institutionName}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          id: callRecord.id,
+        }),
+      })
 
-      const { error } = await supabase
-        .from('call_records')
-        .delete()
-        .eq('id', callRecord.id)
-
-      if (error) throw error
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error)
+      }
 
       // Immediately remove from local state
       setCallRecords((prev) => {
@@ -2194,19 +2183,21 @@ export default function SeatsPage() {
               size="lg"
               variant="secondary"
               onClick={async () => {
-                // Mark as acknowledged in database
+                // Mark as acknowledged via API
                 try {
-                  const supabase = createClient()
-                  const today = new Date().toISOString().split('T')[0]
+                  const response = await fetch(`/api/manager-calls?orgSlug=${institutionName}`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                      seatNumber: managerCallAlert.seatNumber,
+                    }),
+                  })
 
-                  const { error } = await supabase
-                    .from('manager_calls')
-                    .delete()
-                    .eq('seat_number', managerCallAlert.seatNumber)
-                    .eq('date', today)
-                    .eq('status', 'calling')
-
-                  if (error) throw error
+                  if (!response.ok) {
+                    const data = await response.json()
+                    throw new Error(data.error)
+                  }
 
                   setManagerCallAlert(null)
 

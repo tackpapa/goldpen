@@ -110,41 +110,45 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const record = payload.new as any
 
-            // 학생 정보 가져오기
-            let studentName = null
-            let studentGrade = null
-
+            // 학생 정보 가져오기 (RLS로 인해 실패할 수 있음)
+            let studentName: string | null = null
+            let studentGrade: string | null = null
             let studentRemainingMinutes: number | null = null
+            let studentFetched = false
 
             if (record.student_id) {
               const { data: student } = await supabase
                 .from('students')
                 .select('name, grade, seatsremainingtime')
                 .eq('id', record.student_id)
-                .single()
+                .maybeSingle()  // RLS 차단 시에도 null 반환 (406 방지)
 
               if (student) {
                 studentName = student.name
                 studentGrade = student.grade
                 studentRemainingMinutes = (student as any).seatsremainingtime ?? null
+                studentFetched = true
               }
             }
 
-            const assignment: SeatAssignment = {
-              id: record.id,
-              org_id: record.org_id,
-              seat_number: record.seat_number,
-              student_id: record.student_id,
-              student_name: studentName,
-              student_grade: studentGrade,
-              status: record.status,
-              check_in_time: record.check_in_time,
-              session_start_time: record.session_start_time,
-              seatsremainingtime: studentRemainingMinutes,
-            }
-
-
+            // state 업데이트: student 정보를 못 가져오면 기존 값 유지
             setState((prev) => {
+              const existing = prev.assignments.get(record.seat_number)
+
+              const assignment: SeatAssignment = {
+                id: record.id,
+                org_id: record.org_id,
+                seat_number: record.seat_number,
+                student_id: record.student_id,
+                // student 정보: 새로 가져왔으면 사용, 아니면 기존 값 유지
+                student_name: studentFetched ? studentName : (existing?.student_name || null),
+                student_grade: studentFetched ? studentGrade : (existing?.student_grade || null),
+                status: record.status,
+                check_in_time: record.check_in_time,
+                session_start_time: record.session_start_time,
+                seatsremainingtime: studentFetched ? studentRemainingMinutes : (existing?.seatsremainingtime ?? null),
+              }
+
               const newMap = new Map(prev.assignments)
               newMap.set(record.seat_number, assignment)
               return { ...prev, assignments: newMap }
