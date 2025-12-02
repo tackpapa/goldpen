@@ -60,7 +60,6 @@ import {
   Plus,
   Search,
   MoreHorizontal,
-  Pencil,
   Trash2,
   Users,
   UserCheck,
@@ -137,7 +136,6 @@ export default function ManagersPage() {
 
   // 다이얼로그 상태
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [selectedManager, setSelectedManager] = useState<Manager | null>(null)
   const [formData, setFormData] = useState<ManagerFormData>(defaultFormData)
@@ -239,26 +237,6 @@ export default function ManagersPage() {
               <DropdownMenuItem
                 onClick={() => {
                   setSelectedManager(manager)
-                  setFormData({
-                    name: manager.name,
-                    email: manager.email,
-                    phone: manager.phone || '',
-                    status: manager.status,
-                    employment_type: manager.employment_type,
-                    salary_type: manager.salary_type,
-                    salary_amount: manager.salary_amount,
-                    hire_date: manager.hire_date || '',
-                    notes: manager.notes || '',
-                  })
-                  setEditDialogOpen(true)
-                }}
-              >
-                <Pencil className="mr-2 h-4 w-4" />
-                수정
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  setSelectedManager(manager)
                   setDeleteDialogOpen(true)
                 }}
                 className="text-red-600"
@@ -334,44 +312,6 @@ export default function ManagersPage() {
       mutate(`/api/managers?orgSlug=${institutionName}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : '매니저 생성에 실패했습니다'
-      toast({
-        title: '오류',
-        description: message,
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  // 매니저 수정
-  const handleEdit = async () => {
-    if (!selectedManager) return
-
-    setIsSubmitting(true)
-    try {
-      const res = await fetch(`/api/managers/${selectedManager.id}?orgSlug=${institutionName}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      })
-
-      if (!res.ok) {
-        const error = await res.json() as { error?: string }
-        throw new Error(error.error || '매니저 수정에 실패했습니다')
-      }
-
-      toast({
-        title: '수정 완료',
-        description: `${formData.name}님의 정보가 수정되었습니다.`,
-      })
-
-      setEditDialogOpen(false)
-      setSelectedManager(null)
-      setFormData(defaultFormData)
-      mutate(`/api/managers?orgSlug=${institutionName}`)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '매니저 수정에 실패했습니다'
       toast({
         title: '오류',
         description: message,
@@ -641,84 +581,6 @@ export default function ManagersPage() {
             </Button>
             <Button onClick={handleCreate} disabled={isSubmitting}>
               {isSubmitting ? '등록 중...' : '등록'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 매니저 수정 다이얼로그 */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>매니저 정보 수정</DialogTitle>
-            <DialogDescription>
-              매니저 정보를 수정합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">이름 *</Label>
-              <Input
-                id="edit-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-email">이메일 *</Label>
-              <Input
-                id="edit-email"
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-phone">연락처 *</Label>
-              <Input
-                id="edit-phone"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-employment_type">고용형태</Label>
-              <Select
-                value={formData.employment_type}
-                onValueChange={(v) => setFormData({ ...formData, employment_type: v as any })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="full_time">정규직</SelectItem>
-                  <SelectItem value="part_time">파트타임</SelectItem>
-                  <SelectItem value="contract">계약직</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-status">상태</Label>
-              <Select
-                value={formData.status}
-                onValueChange={(v) => setFormData({ ...formData, status: v as any })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">활성</SelectItem>
-                  <SelectItem value="inactive">비활성</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
-              취소
-            </Button>
-            <Button onClick={handleEdit} disabled={isSubmitting}>
-              {isSubmitting ? '저장 중...' : '저장'}
             </Button>
           </DialogFooter>
         </DialogContent>
