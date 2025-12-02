@@ -161,7 +161,11 @@ export async function middleware(request: NextRequest) {
   // 2. 표준 Supabase SSR 쿠키가 있으면 파싱 시도 (Base64 인코딩)
   if (!user && standardAuthToken) {
     try {
-      const decoded = atob(standardAuthToken)
+      // "base64-" 접두사 제거 후 디코딩
+      const tokenValue = standardAuthToken.startsWith('base64-')
+        ? standardAuthToken.slice(7)
+        : standardAuthToken
+      const decoded = atob(tokenValue)
       const session = JSON.parse(decoded)
       if (session.access_token) {
         const supabase = createServerClient(supabaseUrl, supabaseKey, {
