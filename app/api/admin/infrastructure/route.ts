@@ -12,17 +12,18 @@ const getServiceClient = () => {
 
 // Pro 플랜 기준 한계값
 const LIMITS = {
-  // Supabase Pro
-  dbConnections: 500,        // Pooler 동시 연결
+  // Supabase Pro (Micro compute)
+  dbConnections: 200,        // Pooler 동시 연결 (Max Client Connections)
+  dbPoolSize: 30,            // Pool Size
   dbStorage: 8 * 1024,       // 8GB in MB
   fileStorage: 100 * 1024,   // 100GB in MB
 
   // Cloudflare Workers Pro
   workersRequests: 10_000_000, // 10M/월
+  queueMessages: 1_000_000,    // Queue 메시지/월
 
-  // 계산된 tenant 한계
-  tenantsWithCron: 80,       // Cron 사용 시
-  tenantsWithQueue: 200,     // Queue 전환 시
+  // Queue 기반 tenant 한계 (이미 전환 완료)
+  tenantsWithQueue: 500,     // Queue 사용 시 확장 가능
 }
 
 export async function GET() {
@@ -88,7 +89,6 @@ export async function GET() {
 
       // 사용률 (%)
       usage: {
-        tenantsCron: Math.round(((tenantCount || 0) / LIMITS.tenantsWithCron) * 100),
         tenantsQueue: Math.round(((tenantCount || 0) / LIMITS.tenantsWithQueue) * 100),
         dbConnections: Math.round((estimatedConcurrentUsers / LIMITS.dbConnections) * 100),
         dbStorage: Math.round((estimatedDbSizeMB / LIMITS.dbStorage) * 100),
@@ -97,7 +97,6 @@ export async function GET() {
 
       // 경고 수준
       alerts: {
-        tenantsCron: getAlertLevel((tenantCount || 0) / LIMITS.tenantsWithCron),
         tenantsQueue: getAlertLevel((tenantCount || 0) / LIMITS.tenantsWithQueue),
         dbConnections: getAlertLevel(estimatedConcurrentUsers / LIMITS.dbConnections),
         dbStorage: getAlertLevel(estimatedDbSizeMB / LIMITS.dbStorage),
@@ -125,11 +124,11 @@ function getAlertLevel(ratio: number): 'safe' | 'warning' | 'danger' | 'critical
 function generateRecommendations(tenants: number, dbSizeMB: number, storageMB: number): string[] {
   const recommendations: string[] = []
 
-  if (tenants > 50) {
-    recommendations.push('Cron → Queue 전환 권장: tenant 50개 초과')
+  if (tenants > 300) {
+    recommendations.push('DB 인스턴스 업그레이드 검토 권장: tenant 300개 초과')
   }
-  if (tenants > 150) {
-    recommendations.push('DB 인스턴스 업그레이드 검토 필요')
+  if (tenants > 400) {
+    recommendations.push('DB 샤딩 또는 read replica 검토 필요')
   }
   if (dbSizeMB > 6000) {
     recommendations.push('DB 용량 75% 초과: 데이터 아카이빙 검토')

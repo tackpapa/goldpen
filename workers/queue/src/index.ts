@@ -55,14 +55,12 @@ function timeToMinutes(timeStr: string): number {
   return hours * 60 + minutes;
 }
 
-// 기본 메시지 템플릿
+// 기본 메시지 템플릿 (통합)
 const DEFAULT_TEMPLATES: Record<string, string> = {
-  'academy_late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})이 지났는데 아직 등원하지 않았습니다. 확인 부탁드립니다.',
-  'academy_absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 등원하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
-  'study_late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})이 지났는데 아직 입실하지 않았습니다. 확인 부탁드립니다.',
-  'study_absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 독서실에 등원하지 않아 결석 처리되었습니다.',
-  'class_late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 아직 {{수업명}} 수업에 출석하지 않았습니다. (수업 시작: {{예정시간}})',
-  'class_absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 {{수업명}} 수업에 출석하지 않아 결석 처리되었습니다.',
+  // 통합 출결 알림
+  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})이 지났는데 아직 도착하지 않았습니다. 확인 부탁드립니다.',
+  'absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 예정된 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
+  // 기타 알림
   'daily_report': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 {{날짜}} 학습 현황을 전해드립니다.\n\n오늘 총 {{총학습시간}} 동안 열심히 공부했습니다. 꾸준히 노력하는 모습이 대견합니다!',
   'assignment_remind': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n제출 전 한 번 더 검토해 보도록 안내해 주시면 감사하겠습니다.',
 }
@@ -231,7 +229,7 @@ async function processAcademyAttendance(
       const absentThreshold = checkOutMinutes || (checkInMinutes + 120);
 
       if (nowMinutes > absentThreshold) {
-        const template = await getTemplate(sql, orgId, 'academy_absent');
+        const template = await getTemplate(sql, orgId, 'absent');
         const message = fillTemplate(template, {
           '기관명': orgName,
           '학생명': schedule.student_name,
@@ -241,14 +239,14 @@ async function processAcademyAttendance(
           orgId,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
-          type: "academy_absent",
+          type: "absent",
           targetDate: todayDate,
           scheduledTime: schedule.check_out_time || schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
           message,
         });
       } else if (nowMinutes > checkInMinutes + 10) {
-        const template = await getTemplate(sql, orgId, 'academy_late');
+        const template = await getTemplate(sql, orgId, 'late');
         const message = fillTemplate(template, {
           '기관명': orgName,
           '학생명': schedule.student_name,
@@ -258,7 +256,7 @@ async function processAcademyAttendance(
           orgId,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
-          type: "academy_late",
+          type: "late",
           targetDate: todayDate,
           scheduledTime: schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
@@ -325,7 +323,7 @@ async function processStudyRoomAttendance(
           console.error(`[StudyRoom] Failed to insert absence record:`, insertError);
         }
 
-        const template = await getTemplate(sql, orgId, 'study_absent');
+        const template = await getTemplate(sql, orgId, 'absent');
         const message = fillTemplate(template, {
           '기관명': orgName,
           '학생명': schedule.student_name,
@@ -335,14 +333,14 @@ async function processStudyRoomAttendance(
           orgId,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
-          type: "study_absent",
+          type: "absent",
           targetDate: todayDate,
           scheduledTime: schedule.check_out_time,
           recipientPhone: schedule.parent_phone,
           message,
         });
       } else {
-        const template = await getTemplate(sql, orgId, 'study_late');
+        const template = await getTemplate(sql, orgId, 'late');
         const message = fillTemplate(template, {
           '기관명': orgName,
           '학생명': schedule.student_name,
@@ -352,7 +350,7 @@ async function processStudyRoomAttendance(
           orgId,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
-          type: "study_late",
+          type: "late",
           targetDate: todayDate,
           scheduledTime: schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
@@ -410,102 +408,100 @@ async function processClassAttendance(
         ce.student_id,
         ce.student_name,
         s.parent_phone,
-        (
-          SELECT COUNT(*) FROM attendance a
-          WHERE a.class_id = ${cls.class_id}
-            AND a.student_id = ce.student_id
-            AND a.date = ${todayDate}::date
-            AND a.status IN ('present', 'late')
-        ) as has_attendance
+        a.id as attendance_id,
+        a.status as attendance_status
       FROM class_enrollments ce
       LEFT JOIN students s ON s.id = ce.student_id
+      LEFT JOIN attendance a ON a.class_id = ce.class_id
+        AND a.student_id = ce.student_id
+        AND a.date = ${todayDate}::date
       WHERE ce.class_id = ${cls.class_id}
         AND ce.status = 'active'
     `;
 
     for (const enrollment of enrollments) {
-      const hasAttendance = Number(enrollment.has_attendance) > 0;
+      const currentStatus = enrollment.attendance_status;
 
-      if (!hasAttendance) {
-        if (nowMinutes > endMinutes) {
-          try {
-            const existing = await sql`
-              SELECT id FROM attendance
-              WHERE org_id = ${orgId}
-                AND class_id = ${cls.class_id}
-                AND student_id = ${enrollment.student_id}
-                AND date = ${todayDate}::date
-              LIMIT 1
+      // 이미 출석(present)이면 건너뜀
+      if (currentStatus === 'present') continue;
+
+      // 수업 종료 시간이 지났으면 → 결석 처리
+      if (nowMinutes > endMinutes) {
+        // 이미 결석이면 건너뜀
+        if (currentStatus === 'absent') continue;
+
+        try {
+          if (enrollment.attendance_id) {
+            // 기존 레코드(late)가 있으면 absent로 UPDATE
+            await sql`
+              UPDATE attendance SET status = 'absent', updated_at = NOW()
+              WHERE id = ${enrollment.attendance_id}
             `;
-
-            if (existing.length === 0) {
-              await sql`
-                INSERT INTO attendance (org_id, class_id, student_id, date, status)
-                VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'absent')
-              `;
-            }
-          } catch (insertError) {
-            console.error(`[Class] Failed to insert absence record:`, insertError);
-          }
-
-          const template = await getTemplate(sql, orgId, 'class_absent');
-          const message = fillTemplate(template, {
-            '기관명': orgName,
-            '학생명': enrollment.student_name,
-            '수업명': cls.class_name,
-            '예정시간': todaySchedule.end_time,
-          });
-          await sendNotification(sql, env, {
-            orgId,
-            studentId: enrollment.student_id,
-            studentName: enrollment.student_name,
-            type: "class_absent",
-            classId: cls.class_id,
-            targetDate: todayDate,
-            scheduledTime: todaySchedule.end_time,
-            recipientPhone: enrollment.parent_phone,
-            message,
-          });
-        } else if (nowMinutes > startMinutes + 10) {
-          try {
-            const existing = await sql`
-              SELECT id FROM attendance
-              WHERE org_id = ${orgId}
-                AND class_id = ${cls.class_id}
-                AND student_id = ${enrollment.student_id}
-                AND date = ${todayDate}::date
-              LIMIT 1
+            console.log(`[Class] Updated late→absent for ${enrollment.student_name} in ${cls.class_name}`);
+          } else {
+            // 레코드가 없으면 INSERT
+            await sql`
+              INSERT INTO attendance (org_id, class_id, student_id, date, status)
+              VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'absent')
             `;
-
-            if (existing.length === 0) {
-              await sql`
-                INSERT INTO attendance (org_id, class_id, student_id, date, status)
-                VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'late')
-              `;
-            }
-          } catch (insertError) {
-            console.error(`[Class] Failed to insert late record:`, insertError);
           }
-
-          const template = await getTemplate(sql, orgId, 'class_late');
-          const message = fillTemplate(template, {
-            '기관명': orgName,
-            '학생명': enrollment.student_name,
-            '수업명': cls.class_name,
-            '예정시간': todaySchedule.start_time,
-          });
-          await sendNotification(sql, env, {
-            orgId,
-            studentId: enrollment.student_id,
-            studentName: enrollment.student_name,
-            type: "class_late",
-            classId: cls.class_id,
-            targetDate: todayDate,
-            scheduledTime: todaySchedule.start_time,
-            recipientPhone: enrollment.parent_phone,
-            message,
-          });
+        } catch (err) {
+          console.error(`[Class] Failed to process absence:`, err);
         }
+
+        const template = await getTemplate(sql, orgId, 'absent');
+        const message = fillTemplate(template, {
+          '기관명': orgName,
+          '학생명': enrollment.student_name,
+          '수업명': cls.class_name,
+          '예정시간': todaySchedule.end_time,
+        });
+        await sendNotification(sql, env, {
+          orgId,
+          studentId: enrollment.student_id,
+          studentName: enrollment.student_name,
+          type: "absent",
+          classId: cls.class_id,
+          targetDate: todayDate,
+          scheduledTime: todaySchedule.end_time,
+          recipientPhone: enrollment.parent_phone,
+          message,
+        });
+      }
+      // 시작시간+10분 지났으면 → 지각 처리
+      else if (nowMinutes > startMinutes + 10) {
+        // 이미 지각이면 건너뜀
+        if (currentStatus === 'late') continue;
+
+        try {
+          if (!enrollment.attendance_id) {
+            await sql`
+              INSERT INTO attendance (org_id, class_id, student_id, date, status)
+              VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'late')
+            `;
+          }
+        } catch (err) {
+          console.error(`[Class] Failed to insert late record:`, err);
+        }
+
+        const template = await getTemplate(sql, orgId, 'late');
+        const message = fillTemplate(template, {
+          '기관명': orgName,
+          '학생명': enrollment.student_name,
+          '수업명': cls.class_name,
+          '예정시간': todaySchedule.start_time,
+        });
+        await sendNotification(sql, env, {
+          orgId,
+          studentId: enrollment.student_id,
+          studentName: enrollment.student_name,
+          type: "late",
+          classId: cls.class_id,
+          targetDate: todayDate,
+          scheduledTime: todaySchedule.start_time,
+          recipientPhone: enrollment.parent_phone,
+          message,
+        });
       }
     }
   }
@@ -677,7 +673,7 @@ async function processCommuteAbsence(
         ON CONFLICT (org_id, class_id, student_id, date) DO NOTHING
       `;
 
-      const template = await getTemplate(sql, orgId, 'study_absent');
+      const template = await getTemplate(sql, orgId, 'absent');
       const message = fillTemplate(template, {
         '기관명': orgName,
         '학생명': student.student_name,
@@ -688,7 +684,7 @@ async function processCommuteAbsence(
         orgId,
         studentId: student.student_id,
         studentName: student.student_name,
-        type: "study_absent",
+        type: "absent",
         targetDate: todayDate,
         scheduledTime: student.check_in_time,
         recipientPhone: student.parent_phone,
@@ -705,9 +701,8 @@ async function processCommuteAbsence(
 // ============================================================
 
 type NotificationType =
-  | "academy_late" | "academy_absent"
-  | "study_late" | "study_absent"
-  | "class_late" | "class_absent"
+  | "late" | "absent"
+  | "checkin" | "checkout"
   | "daily_report"
   | "assignment_remind";
 

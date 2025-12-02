@@ -33,21 +33,20 @@ interface InfraMetrics {
   }
   limits: {
     dbConnections: number
+    dbPoolSize: number
     dbStorage: number
     fileStorage: number
     workersRequests: number
-    tenantsWithCron: number
+    queueMessages: number
     tenantsWithQueue: number
   }
   usage: {
-    tenantsCron: number
     tenantsQueue: number
     dbConnections: number
     dbStorage: number
     fileStorage: number
   }
   alerts: {
-    tenantsCron: 'safe' | 'warning' | 'danger' | 'critical'
     tenantsQueue: 'safe' | 'warning' | 'danger' | 'critical'
     dbConnections: 'safe' | 'warning' | 'danger' | 'critical'
     dbStorage: 'safe' | 'warning' | 'danger' | 'critical'
@@ -279,18 +278,8 @@ export default function InfrastructurePage() {
         <h2 className="text-xl font-semibold mb-4">용량 및 한계</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <MetricCard
-            title="Tenant 수 (Cron 기준)"
-            description="현재 Cron 방식에서 안정적 운영 가능한 tenant 수"
-            icon={Building2}
-            current={metrics.current.tenants}
-            limit={metrics.limits.tenantsWithCron}
-            unit="개"
-            usage={metrics.usage.tenantsCron}
-            alert={metrics.alerts.tenantsCron}
-          />
-          <MetricCard
-            title="Tenant 수 (Queue 전환 시)"
-            description="Queue 전환 후 운영 가능한 tenant 수"
+            title="Tenant 수 (Queue 기반)"
+            description="Queue 아키텍처로 확장 가능한 tenant 수"
             icon={Zap}
             current={metrics.current.tenants}
             limit={metrics.limits.tenantsWithQueue}
@@ -369,14 +358,15 @@ export default function InfrastructurePage() {
             <div className="space-y-3">
               <h4 className="font-medium">프론트엔드</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>- Cloudflare Pages (Next.js 14)</li>
+                <li>- Cloudflare Pages (Next.js 15)</li>
                 <li>- Edge Runtime</li>
               </ul>
             </div>
             <div className="space-y-3">
               <h4 className="font-medium">백엔드</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>- Cloudflare Workers (Cron)</li>
+                <li>- Cloudflare Workers (Cron + Queue)</li>
+                <li>- Cloudflare Queues (출결 알림)</li>
                 <li>- Supabase PostgreSQL</li>
                 <li>- Supabase Auth & Storage</li>
               </ul>
@@ -385,14 +375,14 @@ export default function InfrastructurePage() {
               <h4 className="font-medium">현재 플랜</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>- Cloudflare Pro</li>
-                <li>- Supabase Pro</li>
+                <li>- Supabase Pro (Micro compute)</li>
               </ul>
             </div>
             <div className="space-y-3">
               <h4 className="font-medium">확장 계획</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
-                <li>- Cron → Queue 전환 (50+ tenant)</li>
-                <li>- DB 샤딩 (200+ tenant)</li>
+                <li>- DB 인스턴스 업그레이드 (300+ tenant)</li>
+                <li>- DB 샤딩 / Read Replica (400+ tenant)</li>
               </ul>
             </div>
           </div>

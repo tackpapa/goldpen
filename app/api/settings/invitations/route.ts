@@ -5,8 +5,8 @@ import { sendInvitationEmail } from '@/lib/email/send-invitation'
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) as string
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string
 
 // Invitation 타입 정의 (Supabase 타입에 없는 테이블)
 interface Invitation {

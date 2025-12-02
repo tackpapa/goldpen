@@ -1,7 +1,7 @@
 import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
 export const runtime = 'edge'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { z } from 'zod'
 
 const CreateOrganizationSchema = z.object({
@@ -15,14 +15,15 @@ const CreateOrganizationSchema = z.object({
 })
 
 // Check super_admin authorization
-async function checkAdminAuth(supabase: any) {
+async function checkAdminAuth(supabase: any, adminClient: any) {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
     return { authorized: false, error: 'Unauthorized', status: 401 }
   }
 
-  const { data: userData, error: userError } = await supabase
+  // Admin 클라이언트로 권한 확인 (RLS 우회)
+  const { data: userData, error: userError } = await adminClient
     .from('users')
     .select('role')
     .eq('id', user.id)
@@ -39,7 +40,8 @@ async function checkAdminAuth(supabase: any) {
 export async function GET(request: Request) {
   try {
     const supabase = createClient()
-    const authCheck = await checkAdminAuth(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkAdminAuth(supabase, adminClient)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -54,8 +56,8 @@ export async function GET(request: Request) {
 
     const offset = (page - 1) * limit
 
-    // Build query (without FK join)
-    let query = supabase
+    // Build query (Admin 클라이언트로 RLS 우회)
+    let query = adminClient
       .from('organizations')
       .select('*', { count: 'exact' })
 
@@ -82,36 +84,38 @@ export async function GET(request: Request) {
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    // Get additional data for each organization
+    // Get additional data for each organization (Admin 클라이언트로 RLS 우회)
     const orgsWithDetails = await Promise.all(
       (organizations || []).map(async (org) => {
         // User count
-        const { count: userCount } = await supabase
+        const { count: userCount } = await adminClient
           .from('users')
           .select('*', { count: 'exact', head: true })
           .eq('org_id', org.id)
 
         // Student count
-        const { count: studentCount } = await supabase
+        const { count: studentCount } = await adminClient
           .from('students')
           .select('*', { count: 'exact', head: true })
           .eq('org_id', org.id)
 
-        // Owner info (role = 'owner')
-        const { data: ownerData } = await supabase
-          .from('users')
-          .select('id, name, email')
-          .eq('org_id', org.id)
-          .eq('role', 'owner')
-          .limit(1)
-          .maybeSingle()
+        // Owner info (from owner_id in organization)
+        let ownerData = null
+        if (org.owner_id) {
+          const { data } = await adminClient
+            .from('users')
+            .select('id, name, email')
+            .eq('id', org.owner_id)
+            .maybeSingle()
+          ownerData = data
+        }
 
         // Monthly revenue (billing_transactions this month)
         const startOfMonth = new Date()
         startOfMonth.setDate(1)
         startOfMonth.setHours(0, 0, 0, 0)
 
-        const { data: revenueData } = await supabase
+        const { data: revenueData } = await adminClient
           .from('billing_transactions')
           .select('amount')
           .eq('org_id', org.id)
@@ -123,7 +127,7 @@ export async function GET(request: Request) {
         )
 
         // Org settings
-        const { data: settingsData } = await supabase
+        const { data: settingsData } = await adminClient
           .from('org_settings')
           .select('*')
           .eq('org_id', org.id)
@@ -135,6 +139,7 @@ export async function GET(request: Request) {
           student_count: studentCount || 0,
           owner: ownerData || null,
           monthly_revenue: monthlyRevenue,
+          credit_balance: org.credit_balance || 0,
           org_settings: settingsData || null,
         }
       })
@@ -156,7 +161,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const supabase = createClient()
-    const authCheck = await checkAdminAuth(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkAdminAuth(supabase, adminClient)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -174,7 +180,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: organization, error } = await supabase
+    const { data: organization, error } = await adminClient
       .from('organizations')
       .insert({
         name: validation.data.name,
@@ -195,7 +201,7 @@ export async function POST(request: Request) {
     }
 
     // Log audit
-    await supabase.from('audit_logs').insert({
+    await adminClient.from('audit_logs').insert({
       admin_id: authCheck.user.id,
       action: 'create',
       target_type: 'organization',

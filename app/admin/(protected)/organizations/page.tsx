@@ -39,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MoreHorizontal, Plus, Search, Users, GraduationCap, TrendingUp } from 'lucide-react'
+import { MoreHorizontal, Plus, Search, Users, GraduationCap, TrendingUp, Wallet } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface Organization {
@@ -52,6 +52,7 @@ interface Organization {
   user_count: number
   student_count: number
   monthly_revenue: number
+  credit_balance: number
   owner: { id: string; name: string; email: string } | null
   org_settings: {
     logo_url?: string
@@ -181,6 +182,23 @@ export default function OrganizationsPage() {
         return (
           <div className="text-right font-medium">
             {revenue.toLocaleString()}원
+          </div>
+        )
+      },
+    },
+    {
+      accessorKey: 'credit_balance',
+      header: () => (
+        <div className="flex items-center gap-1">
+          <Wallet className="h-4 w-4" />
+          충전금
+        </div>
+      ),
+      cell: ({ row }) => {
+        const credit = row.getValue('credit_balance') as number
+        return (
+          <div className="text-right font-medium text-emerald-600">
+            {(credit || 0).toLocaleString()}원
           </div>
         )
       },

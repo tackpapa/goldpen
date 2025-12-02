@@ -8,8 +8,8 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 // Cloudflare Pages에서는 런타임에 process.env를 읽어야 함
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) as string
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string
 const LATE_GRACE_MINUTES = Number(process.env.NEXT_PUBLIC_ATTENDANCE_LATE_GRACE ?? '10')
 
 // Schema for assigning a student to a seat

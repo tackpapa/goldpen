@@ -135,7 +135,7 @@ export default function ConsultationsPage() {
         return null
       }
 
-      return data.url
+      return data.url ?? null
     } catch (error) {
       console.error('Upload error:', error)
       return null

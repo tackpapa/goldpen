@@ -8,11 +8,11 @@ import {
   LayoutDashboard,
   Building2,
   Users,
-  Settings,
   Shield,
   Package,
   MessageSquare,
   Server,
+  CreditCard,
 } from 'lucide-react'
 
 interface NavigationItem {
@@ -48,6 +48,12 @@ const navigationItems: NavigationItem[] = [
     icon: Package,
   },
   {
+    id: 'payments',
+    name: '결제내역',
+    href: '/admin/payments',
+    icon: CreditCard,
+  },
+  {
     id: 'kakao',
     name: '카카오 알림톡',
     href: '/admin/kakao',
@@ -58,12 +64,6 @@ const navigationItems: NavigationItem[] = [
     name: '인프라 현황',
     href: '/admin/infrastructure',
     icon: Server,
-  },
-  {
-    id: 'settings',
-    name: '시스템 설정',
-    href: '/admin/settings',
-    icon: Settings,
   },
 ]
 

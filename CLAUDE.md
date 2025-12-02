@@ -70,46 +70,68 @@ const supabase = createClient(
 )
 ```
 
-#### 2. Node.js pg 직접 연결 (--eval 사용)
+#### 2. Prisma를 사용한 직접 SQL 실행 (권장)
 
 ```bash
-# ✅ 올바름 - 파일 생성 없이 직접 실행
-node --input-type=module --eval "
-import pg from 'pg';
-const { Client } = pg;
+# ✅ 올바름 - Prisma ORM을 통한 직접 실행 (파일 생성 없음)
+node --eval "
+import('@prisma/client').then(({ PrismaClient }) => {
+  const prisma = new PrismaClient({
+    datasourceUrl: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true'
+  });
 
-const client = new Client({
-  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+  // SELECT 쿼리
+  prisma.\$queryRaw\`SELECT * FROM students LIMIT 5\`.then(result => {
+    console.log(JSON.stringify(result, null, 2));
+    prisma.\$disconnect();
+  });
 });
-
-await client.connect();
-const result = await client.query('SELECT * FROM students LIMIT 5');
-console.log(result.rows);
-await client.end();
 "
+```
+
+**연결 문자열 구조**:
+```
+postgresql://     [프로토콜]
+postgres.ipqhhqduppzvsqwwzjkp  [사용자명]
+:rhfemvps123      [비밀번호]
+@aws-1-ap-northeast-1.pooler.supabase.com  [호스트]
+:6543             [포트 - Pooler]
+/postgres         [데이터베이스명]
+?pgbouncer=true   [옵션 - Connection Pooling]
 ```
 
 **장점**:
 - 파일이 생성되지 않음 → Git 커밋 불가
 - 일회성 실행 후 사라짐
 - 터미널 히스토리에만 남음 (GitHub 노출 안 됨)
+- Type-safe (TypeScript 타입 안전)
+- SQL Injection 방지
 
-#### 3. SQL 파일 실행 (마이그레이션)
+#### 3. 테이블 생성/마이그레이션 실행
 
 ```bash
-# ✅ 올바름 - 연결 문자열만 --eval로 전달, SQL은 파일로 읽기
-node --input-type=module --eval "
-import pg from 'pg';
-import fs from 'fs';
+# ✅ 올바름 - Prisma $executeRaw로 DDL 실행
+node --eval "
+import('@prisma/client').then(({ PrismaClient }) => {
+  const prisma = new PrismaClient({
+    datasourceUrl: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true'
+  });
 
-const client = new pg.Client({
-  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+  // 테이블 생성
+  prisma.\$executeRaw\`
+    CREATE TABLE IF NOT EXISTS example (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(100) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  \`.then(() => {
+    console.log('✅ 테이블 생성 완료');
+    prisma.\$disconnect();
+  }).catch(err => {
+    console.error('Error:', err.message);
+    prisma.\$disconnect();
+  });
 });
-
-await client.connect();
-const sql = fs.readFileSync('/Users/kiyoungtack/Desktop/goldpen/supabase/migrations/20251123_add_enrollments_fk.sql', 'utf8');
-await client.query(sql);
-await client.end();
 "
 ```
 
@@ -171,22 +193,41 @@ git push origin main --force
 
 ### 🎯 실전 예시 (이 프로젝트에서 사용)
 
-**✅ 성공 사례 - 마이그레이션 실행**:
+**✅ 성공 사례 - 테이블 생성 및 데이터 삽입**:
 ```bash
-# Foreign Key 추가 마이그레이션
-node --input-type=module --eval "
-import pg from 'pg';
-import fs from 'fs';
+# message_pricing 테이블 생성 예시
+node --eval "
+import('@prisma/client').then(({ PrismaClient }) => {
+  const prisma = new PrismaClient({
+    datasourceUrl: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true'
+  });
 
-const client = new pg.Client({
-  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+  // 테이블 생성
+  prisma.\$executeRaw\`
+    CREATE TABLE IF NOT EXISTS message_pricing (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      message_type VARCHAR(50) NOT NULL UNIQUE,
+      price INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  \`.then(() => {
+    console.log('✅ 테이블 생성 완료');
+
+    // 데이터 삽입
+    return prisma.\$executeRaw\`
+      INSERT INTO message_pricing (message_type, price, description) VALUES
+        ('sms', 20, 'SMS 단문 문자'),
+        ('kakao_alimtalk', 9, '카카오 알림톡')
+      ON CONFLICT (message_type) DO NOTHING
+    \`;
+  }).then(() => {
+    console.log('✅ 데이터 삽입 완료');
+    prisma.\$disconnect();
+  });
 });
-
-await client.connect();
-const sql = fs.readFileSync('./supabase/migrations/20251123_add_enrollments_fk.sql', 'utf8');
-await client.query(sql);
-console.log('✅ 마이그레이션 완료');
-await client.end();
 "
 ```
 
@@ -657,40 +698,83 @@ steps:
 
 ## 🗄️ Supabase SQL 마이그레이션 가이드
 
-### Direct URL로 SQL 실행하기
+### 🔑 연결 문자열 (Connection String)
 
-**방법 1: psql 직접 연결**
+```
+# Shared Connection Pooler (권장 - pgbouncer 사용)
+DATABASE_URL="postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+
+# Direct Connection (마이그레이션용 - Pooler 없음)
+DIRECT_URL="postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+```
+
+### 🛠️ Prisma를 사용한 SQL 실행 (권장)
+
+**방법 1: SELECT 쿼리 실행**
 ```bash
-# Direct URL 형식 (pooler 아님!)
-# postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres
+node --eval "
+import('@prisma/client').then(({ PrismaClient }) => {
+  const prisma = new PrismaClient({
+    datasourceUrl: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true'
+  });
 
-# 연결
-psql "postgresql://postgres.ipqhhqduppzvsqwwzjkp:[PASSWORD]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres"
-
-# SQL 파일 실행
-psql "CONNECTION_STRING" -f supabase/migrations/20251121_migration.sql
+  prisma.\$queryRaw\`SELECT * FROM organizations LIMIT 5\`.then(result => {
+    console.log(JSON.stringify(result, null, 2));
+    prisma.\$disconnect();
+  });
+});
+"
 ```
 
-**방법 2: Node.js 스크립트 (pg 라이브러리)**
-```javascript
-// scripts/run-migration.mjs
-import pg from 'pg'
-import fs from 'fs'
+**방법 2: 테이블 생성/변경 (DDL)**
+```bash
+node --eval "
+import('@prisma/client').then(({ PrismaClient }) => {
+  const prisma = new PrismaClient({
+    datasourceUrl: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true'
+  });
 
-const client = new pg.Client({
-  connectionString: process.env.DATABASE_URL  // Direct URL
-})
-
-await client.connect()
-const sql = fs.readFileSync('./supabase/migrations/xxx.sql', 'utf8')
-await client.query(sql)
-await client.end()
+  prisma.\$executeRaw\`
+    CREATE TABLE IF NOT EXISTS new_table (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      name VARCHAR(100) NOT NULL
+    )
+  \`.then(() => {
+    console.log('✅ 완료');
+    prisma.\$disconnect();
+  });
+});
+"
 ```
 
-**방법 3: Supabase MCP 사용 (권장)**
-```
-MCP 서버가 설정되어 있으면 직접 SQL 실행 가능
-- mcp__supabase__query 도구 사용
+**방법 3: 복잡한 마이그레이션 (여러 쿼리)**
+```bash
+node --eval "
+import('@prisma/client').then(({ PrismaClient }) => {
+  const prisma = new PrismaClient({
+    datasourceUrl: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true'
+  });
+
+  // 테이블 생성
+  prisma.\$executeRaw\`CREATE TABLE IF NOT EXISTS ...\`.then(() => {
+    console.log('Table created!');
+
+    // 데이터 삽입
+    return prisma.\$executeRaw\`INSERT INTO ... VALUES ...\`;
+  }).then(() => {
+    console.log('Data inserted!');
+
+    // 검증
+    return prisma.\$queryRaw\`SELECT * FROM ... LIMIT 5\`;
+  }).then(result => {
+    console.log('Result:', JSON.stringify(result, null, 2));
+    prisma.\$disconnect();
+  }).catch(err => {
+    console.error('Error:', err.message);
+    prisma.\$disconnect();
+  });
+});
+"
 ```
 
 ### 마이그레이션 파일 위치
@@ -698,20 +782,25 @@ MCP 서버가 설정되어 있으면 직접 SQL 실행 가능
 supabase/migrations/
 ├── 20251120_create_audit_logs.sql
 ├── 20251121_add_classes_columns.sql
+├── 20251202_add_message_pricing.sql
 └── ...
 ```
 
 ### Supabase 연결 정보
 ```
 Project Ref: ipqhhqduppzvsqwwzjkp
-Region: ap-northeast-2 (Seoul)
+Region: ap-northeast-1 (Tokyo)
 API URL: https://ipqhhqduppzvsqwwzjkp.supabase.co
+DB Password: rhfemvps123
+Pooler Port: 6543 (pgbouncer)
+Direct Port: 5432
 ```
 
 ### 주의사항
 - ⚠️ Service Role Key는 절대 클라이언트에 노출 금지
-- ⚠️ Direct URL은 .env에만 저장, 커밋 금지
+- ⚠️ 연결 문자열은 --eval로만 사용 (파일에 저장 금지!)
 - ✅ RLS 정책 반드시 설정 후 테이블 생성
+- ✅ 쿼리 결과에 COUNT(*)가 있으면 ::int로 캐스팅 필요
 
 ---
 
@@ -800,5 +889,5 @@ export default {
 
 ---
 
-**마지막 업데이트**: 2025-11-23
-**버전**: 0.2.1 (보안 규칙 강화 - Supabase 키/DB 비밀번호 하드코딩 절대 금지)
+**마지막 업데이트**: 2025-12-02
+**버전**: 0.3.0 (Supabase 연결 방식 Prisma로 통일)

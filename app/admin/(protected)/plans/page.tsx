@@ -36,8 +36,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Plus, Package, Users, Building2 } from 'lucide-react'
+import { MoreHorizontal, Plus, Package, Users, Building2, MessageSquare, Send } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { Separator } from '@/components/ui/separator'
 
 interface Plan {
   id: string
@@ -54,6 +55,20 @@ interface Plan {
   is_active: boolean
   sort_order: number
   organization_count: number
+}
+
+interface MessagePricing {
+  id: string
+  message_type: string
+  price: number
+  cost: number
+  description: string
+  is_active: boolean
+}
+
+const messageTypeLabels: Record<string, { label: string; icon: 'sms' | 'kakao' }> = {
+  sms: { label: 'SMS 문자', icon: 'sms' },
+  kakao_alimtalk: { label: '카카오 알림톡', icon: 'kakao' },
 }
 
 const defaultFeatures = [
@@ -86,6 +101,12 @@ export default function PlansPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
+
+  // 메시지 비용 설정 state
+  const [messagePricing, setMessagePricing] = useState<MessagePricing[]>([])
+  const [editingPrice, setEditingPrice] = useState<{ type: string; price: number; cost: number } | null>(null)
+  const [isSavingPrice, setIsSavingPrice] = useState(false)
+
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -197,7 +218,45 @@ export default function PlansPage() {
 
   useEffect(() => {
     loadPlans()
+    loadMessagePricing()
   }, [])
+
+  const loadMessagePricing = async () => {
+    try {
+      const response = await fetch('/api/admin/message-pricing')
+      if (response.ok) {
+        const data = await response.json() as { pricing?: MessagePricing[] }
+        setMessagePricing(data.pricing || [])
+      }
+    } catch (error) {
+      console.error('Failed to load message pricing:', error)
+    }
+  }
+
+  const handleSavePrice = async (messageType: string, price: number, cost: number) => {
+    try {
+      setIsSavingPrice(true)
+      const response = await fetch('/api/admin/message-pricing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message_type: messageType, price, cost }),
+      })
+
+      if (response.ok) {
+        toast({ title: '메시지 비용이 저장되었습니다' })
+        setEditingPrice(null)
+        loadMessagePricing()
+      } else {
+        const data = await response.json() as { error?: string }
+        toast({ title: data.error || '저장 실패', variant: 'destructive' })
+      }
+    } catch (error) {
+      console.error('Failed to save price:', error)
+      toast({ title: '저장 중 오류 발생', variant: 'destructive' })
+    } finally {
+      setIsSavingPrice(false)
+    }
+  }
 
   const loadPlans = async () => {
     try {
@@ -541,6 +600,270 @@ export default function PlansPage() {
           </Card>
         ))}
       </div>
+
+      {/* 메시지 비용 설정 섹션 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            메시지 발송 비용 설정
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            문자/카카오톡 발송 시 기관 충전금에서 차감되는 건당 비용을 설정합니다
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* SMS 그룹 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <MessageSquare className="h-4 w-4" />
+                SMS 문자
+              </div>
+              {messagePricing
+                .filter(p => p.message_type === 'sms')
+                .map(pricing => (
+                  <div
+                    key={pricing.id}
+                    className="p-3 border rounded-lg"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="font-medium">
+                          {messageTypeLabels[pricing.message_type]?.label || pricing.message_type}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {pricing.description}
+                        </div>
+                      </div>
+                      {editingPrice?.type !== pricing.message_type && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingPrice({
+                            type: pricing.message_type,
+                            price: pricing.price,
+                            cost: pricing.cost || 0
+                          })}
+                        >
+                          수정
+                        </Button>
+                      )}
+                    </div>
+                    {editingPrice?.type === pricing.message_type ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Label className="w-12 text-sm">판매가</Label>
+                          <Input
+                            type="number"
+                            className="w-24 h-8 text-right"
+                            value={editingPrice.price}
+                            onChange={(e) => setEditingPrice({
+                              ...editingPrice,
+                              price: parseInt(e.target.value) || 0
+                            })}
+                            min={0}
+                          />
+                          <span className="text-sm">원</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="w-12 text-sm">원가</Label>
+                          <Input
+                            type="number"
+                            className="w-24 h-8 text-right"
+                            value={editingPrice.cost}
+                            onChange={(e) => setEditingPrice({
+                              ...editingPrice,
+                              cost: parseInt(e.target.value) || 0
+                            })}
+                            min={0}
+                          />
+                          <span className="text-sm">원</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="w-12">수익</span>
+                          <span className={`font-medium ${editingPrice.price - editingPrice.cost >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(editingPrice.price - editingPrice.cost).toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingPrice(null)}
+                            disabled={isSavingPrice}
+                          >
+                            취소
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleSavePrice(editingPrice.type, editingPrice.price, editingPrice.cost)}
+                            disabled={isSavingPrice}
+                          >
+                            저장
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">판매가</span>
+                          <div className="font-bold text-lg">{pricing.price.toLocaleString()}원</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">원가</span>
+                          <div className="font-medium">{(pricing.cost || 0).toLocaleString()}원</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">수익</span>
+                          <div className={`font-medium ${pricing.price - (pricing.cost || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(pricing.price - (pricing.cost || 0)).toLocaleString()}원
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+
+            {/* 카카오 그룹 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <Send className="h-4 w-4" />
+                카카오 알림톡
+              </div>
+              {messagePricing
+                .filter(p => p.message_type === 'kakao_alimtalk')
+                .map(pricing => (
+                  <div
+                    key={pricing.id}
+                    className="p-3 border rounded-lg"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="font-medium">
+                          {messageTypeLabels[pricing.message_type]?.label || pricing.message_type}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {pricing.description}
+                        </div>
+                      </div>
+                      {editingPrice?.type !== pricing.message_type && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingPrice({
+                            type: pricing.message_type,
+                            price: pricing.price,
+                            cost: pricing.cost || 0
+                          })}
+                        >
+                          수정
+                        </Button>
+                      )}
+                    </div>
+                    {editingPrice?.type === pricing.message_type ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <Label className="w-12 text-sm">판매가</Label>
+                          <Input
+                            type="number"
+                            className="w-24 h-8 text-right"
+                            value={editingPrice.price}
+                            onChange={(e) => setEditingPrice({
+                              ...editingPrice,
+                              price: parseInt(e.target.value) || 0
+                            })}
+                            min={0}
+                          />
+                          <span className="text-sm">원</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Label className="w-12 text-sm">원가</Label>
+                          <Input
+                            type="number"
+                            className="w-24 h-8 text-right"
+                            value={editingPrice.cost}
+                            onChange={(e) => setEditingPrice({
+                              ...editingPrice,
+                              cost: parseInt(e.target.value) || 0
+                            })}
+                            min={0}
+                          />
+                          <span className="text-sm">원</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="w-12">수익</span>
+                          <span className={`font-medium ${editingPrice.price - editingPrice.cost >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(editingPrice.price - editingPrice.cost).toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEditingPrice(null)}
+                            disabled={isSavingPrice}
+                          >
+                            취소
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleSavePrice(editingPrice.type, editingPrice.price, editingPrice.cost)}
+                            disabled={isSavingPrice}
+                          >
+                            저장
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">판매가</span>
+                          <div className="font-bold text-lg">{pricing.price.toLocaleString()}원</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">원가</span>
+                          <div className="font-medium">{(pricing.cost || 0).toLocaleString()}원</div>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">수익</span>
+                          <div className={`font-medium ${pricing.price - (pricing.cost || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(pricing.price - (pricing.cost || 0)).toLocaleString()}원
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+            </div>
+
+            {/* 안내 */}
+            <div className="space-y-3 p-4 bg-muted/50 rounded-lg">
+              <div className="text-sm font-medium">비용 설정 안내</div>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>• <strong>판매가</strong>: 기관 충전금에서 차감되는 금액</li>
+                <li>• <strong>원가</strong>: 실제 발송 비용 (통신사/카카오)</li>
+                <li>• <strong>수익</strong>: 판매가 - 원가 (건당 마진)</li>
+              </ul>
+              <Separator className="my-2" />
+              <div className="text-sm font-medium">메시지 종류</div>
+              <ul className="text-xs text-muted-foreground space-y-1">
+                <li>• <strong>SMS</strong>: 일반 문자 메시지</li>
+                <li>• <strong>카카오 알림톡</strong>: 템플릿 기반 정보성 메시지</li>
+              </ul>
+            </div>
+          </div>
+
+          {messagePricing.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>메시지 비용 데이터가 없습니다.</p>
+              <p className="text-sm mt-2">데이터베이스에 message_pricing 테이블을 생성해주세요.</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

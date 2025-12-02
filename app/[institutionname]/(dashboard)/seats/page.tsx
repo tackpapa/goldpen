@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Users, UserCheck, UserX, Settings2, Armchair, Moon, DoorOpen, Copy, Check, ClipboardList } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useToast } from '@/hooks/use-toast'
 import type { Student } from '@/lib/types/database'
 import { useAllSeatsRealtime } from '@/hooks/use-all-seats-realtime'
 import { useSeatAssignmentsRealtime } from '@/hooks/use-seat-assignments-realtime'
@@ -569,7 +570,7 @@ export default function SeatsPage() {
 
   const params = useParams()
   const institutionName = params.institutionname as string
-  const toast = () => {}
+  const { toast } = useToast()
   const [totalSeats, setTotalSeats] = useState(20)
   const [seatTypes, setSeatTypes] = useState<SeatType[]>([])
   const [seats, setSeats] = useState<Seat[]>(initializeSeats(20, []))
@@ -1048,7 +1049,7 @@ export default function SeatsPage() {
         })
 
         if (!response.ok) {
-          const data = await response.json()
+          const data = await response.json() as { error?: string }
           console.error('Error updating sleep record:', data.error)
         }
       } catch (error) {
@@ -1116,11 +1117,11 @@ export default function SeatsPage() {
         }),
       })
 
-      const data = await response.json()
+      const data = await response.json() as { error?: string }
 
       if (!response.ok) {
         console.error('[Student Call] Insert failed:', data.error)
-        throw new Error(data.error)
+        throw new Error(data.error || 'Unknown error')
       }
 
       setCallModalOpen(false)
@@ -1154,8 +1155,8 @@ export default function SeatsPage() {
       })
 
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error)
+        const data = await response.json() as { error?: string }
+        throw new Error(data.error || 'Unknown error')
       }
 
       // Immediately remove from local state
@@ -2195,8 +2196,8 @@ export default function SeatsPage() {
                   })
 
                   if (!response.ok) {
-                    const data = await response.json()
-                    throw new Error(data.error)
+                    const data = await response.json() as { error?: string }
+                    throw new Error(data.error || 'Unknown error')
                   }
 
                   setManagerCallAlert(null)

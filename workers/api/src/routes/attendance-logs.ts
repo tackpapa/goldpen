@@ -108,10 +108,8 @@ app.post("/checkin", async (c) => {
         );
       }
 
-      // 알림 발송
-      const orgType = student.org_type;
-      const notificationType: NotificationType =
-        orgType === "study_cafe" ? "study_checkin" : "academy_checkin";
+      // 알림 발송 (통합된 키 사용)
+      const notificationType: NotificationType = "checkin";
       const message = createCheckinMessage(student.org_name, student.name, timeStr);
 
       await sendNotification(client, c.env, {
@@ -208,11 +206,9 @@ app.post("/checkout", async (c) => {
         console.log(`[checkout] Seat update skipped: ${seatError}`);
       }
 
-      // 알림 발송 - 실패해도 계속 진행
+      // 알림 발송 - 실패해도 계속 진행 (통합된 키 사용)
       try {
-        const orgType = student.org_type;
-        const notificationType: NotificationType =
-          orgType === "study_cafe" ? "study_checkout" : "academy_checkout";
+        const notificationType: NotificationType = "checkout";
         const message = createCheckoutMessage(student.org_name, student.name, timeStr, studyMinutes);
 
         await sendNotification(client, c.env, {

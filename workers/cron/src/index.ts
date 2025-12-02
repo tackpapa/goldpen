@@ -79,9 +79,9 @@ export default {
         `[Cron] Korean time: ${koreanTime.toISOString()}, weekday: ${todayWeekday}, hour: ${nowHour}, minute: ${nowMinute}`
       );
 
-      // 모든 활성 기관 조회
+      // 모든 활성 기관 조회 (settings 포함)
       const organizations = await sql`
-        SELECT id, name, type FROM organizations WHERE status = 'active'
+        SELECT id, name, type, settings FROM organizations WHERE status = 'active'
       `;
 
       console.log(`[Cron] Found ${organizations.length} active organizations`);
@@ -120,22 +120,33 @@ export default {
         });
       }
 
-      // 2. 일일 학습 리포트 발송 (매일 21:00 KST)
-      if (nowHour === 21 && nowMinute === 0) {
-        console.log(`[Cron] Queuing daily reports...`);
+      // 2. 일일 학습 리포트 발송 (조직별 설정 시간에 발송)
+      // 현재 시간을 "HH:00" 형식으로 변환 (분이 0일 때만 실행)
+      if (nowMinute === 0) {
+        const nowTimeStr = `${nowHour.toString().padStart(2, '0')}:00`;
+        console.log(`[Cron] Checking daily reports for time ${nowTimeStr}...`);
+
         for (const org of organizations) {
-          messages.push({
-            body: {
-              type: 'daily_report',
-              orgId: org.id,
-              orgName: org.name,
-              orgType: org.type,
-              weekday: todayWeekday,
-              todayDate,
-              nowMinutes,
-              timestamp: Date.now(),
-            }
-          });
+          // 조직별 설정에서 dailyReportTime 가져오기 (기본값: 22:00)
+          const settings = (org.settings as Record<string, unknown>) || {};
+          const orgReportTime = (settings.dailyReportTime as string) || '22:00';
+
+          // 현재 시간이 조직의 설정 시간과 일치하면 큐에 추가
+          if (nowTimeStr === orgReportTime) {
+            console.log(`[Cron] Queuing daily report for ${org.name} (time: ${orgReportTime})`);
+            messages.push({
+              body: {
+                type: 'daily_report',
+                orgId: org.id,
+                orgName: org.name,
+                orgType: org.type,
+                weekday: todayWeekday,
+                todayDate,
+                nowMinutes,
+                timestamp: Date.now(),
+              }
+            });
+          }
         }
       }
 
@@ -293,7 +304,7 @@ export default {
           "check_academy (매 분, academy/learning_center)",
           "check_study (매 분, study_cafe)",
           "check_class (매 분, all)",
-          "daily_report (매일 21:00 KST)",
+          "daily_report (조직별 설정 시간, 기본 22:00 KST)",
           "assignment_remind (매일 09:00 KST)",
           "process_commute_absent (매일 23:50 KST, study_cafe)"
         ],

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { NextRequest } from 'next/server'
 
 export const runtime = 'edge'
@@ -22,8 +22,9 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: '인증되지 않은 사용자입니다' }, { status: 401 })
     }
 
-    // 2. super_admin 권한 확인
-    const { data: userData, error: userError } = await supabase
+    // 2. super_admin 권한 확인 (Admin 클라이언트로 확인)
+    const adminClient = createAdminClient()
+    const { data: userData, error: userError } = await adminClient
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -40,8 +41,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || ''
     const offset = (page - 1) * limit
 
-    // 4. 사용자 목록 조회 (organizations join)
-    let query = supabase
+    // 4. 사용자 목록 조회 (Admin 클라이언트로 RLS 우회)
+    let query = adminClient
       .from('users')
       .select(
         `

@@ -12,14 +12,15 @@ import type { Env } from "../env";
 
 // ============================================================
 // 기본 메시지 템플릿 (설정에서 가져오지 못할 경우 fallback)
+// 통합된 키: late, absent, checkin, checkout, study_out, study_return, ...
 // ============================================================
 export const DEFAULT_TEMPLATES: Record<string, string> = {
-  // 학원/공부방 전용
-  'academy_checkin': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 등원했습니다. 오늘도 열심히 공부하겠습니다!',
-  'academy_checkout': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 하원했습니다. 오늘도 수고했어요! 안전하게 귀가하길 바랍니다.',
+  // 출결 알림 (통합)
+  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})에 아직 도착하지 않아 안내드립니다. 확인 부탁드립니다.',
+  'absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 예정된 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
+  'checkin': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!',
+  'checkout': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다.',
   // 독서실 전용
-  'study_checkin': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 입실했습니다. 오늘도 열심히 공부하겠습니다!',
-  'study_checkout': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 퇴실했습니다. 오늘도 열심히 공부하고 갑니다.',
   'study_out': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 잠시 외출합니다.',
   'study_return': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 복귀했습니다.',
   // 수업 리포트
@@ -76,10 +77,11 @@ export async function getTemplateFromOrg(
   return DEFAULT_TEMPLATES[templateKey] || '';
 }
 
-// 알림 타입 정의
+// 알림 타입 정의 (통합된 키)
 export type NotificationType =
-  | "academy_checkin" | "academy_checkout"
-  | "study_checkin" | "study_checkout" | "study_out" | "study_return"
+  | "late" | "absent"
+  | "checkin" | "checkout"
+  | "study_out" | "study_return"
   | "lesson_report"
   | "exam_result"
   | "assignment_new";
@@ -202,10 +204,10 @@ export async function sendNotification(
  */
 function getTemplateCode(type: NotificationType): string {
   const templates: Record<NotificationType, string> = {
-    academy_checkin: "GOLDPEN_CHECKIN_001",
-    academy_checkout: "GOLDPEN_CHECKOUT_001",
-    study_checkin: "GOLDPEN_STUDY_IN_001",
-    study_checkout: "GOLDPEN_STUDY_OUT_001",
+    late: "GOLDPEN_LATE_001",
+    absent: "GOLDPEN_ABSENT_001",
+    checkin: "GOLDPEN_CHECKIN_001",
+    checkout: "GOLDPEN_CHECKOUT_001",
     study_out: "GOLDPEN_STUDY_BREAK_001",
     study_return: "GOLDPEN_STUDY_RETURN_001",
     lesson_report: "GOLDPEN_LESSON_001",
@@ -319,7 +321,7 @@ export function createCheckinMessage(
   studentName: string,
   time: string
 ): string {
-  return fillTemplate(DEFAULT_TEMPLATES['academy_checkin'], {
+  return fillTemplate(DEFAULT_TEMPLATES['checkin'], {
     '기관명': orgName,
     '학생명': studentName,
     '시간': time,
@@ -339,7 +341,7 @@ export function createCheckoutMessage(
   const studyTimeStr = studyMinutes
     ? ` (총 학습시간: ${Math.floor(studyMinutes / 60)}시간 ${studyMinutes % 60}분)`
     : "";
-  return fillTemplate(DEFAULT_TEMPLATES['academy_checkout'], {
+  return fillTemplate(DEFAULT_TEMPLATES['checkout'], {
     '기관명': orgName,
     '학생명': studentName,
     '시간': time,

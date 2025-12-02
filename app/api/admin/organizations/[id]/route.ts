@@ -11,6 +11,7 @@ const UpdateOrganizationSchema = z.object({
   max_users: z.number().int().positive().optional(),
   max_students: z.number().int().positive().optional(),
   settings: z.record(z.any()).optional(),
+  credit_balance: z.number().int().min(0).optional(),
 })
 
 async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
@@ -73,11 +74,12 @@ export async function GET(
       .eq('role', 'owner')
       .maybeSingle()
 
-    // Get all users in org
+    // Get all users in org (super_admin 제외 - 전체 서비스 관리자는 조직 소속이 아님)
     const { data: users, count: userCount } = await supabase
       .from('users')
       .select('id, name, email, role, created_at', { count: 'exact' })
       .eq('org_id', id)
+      .neq('role', 'super_admin')
       .order('created_at', { ascending: false })
       .limit(10)
 
