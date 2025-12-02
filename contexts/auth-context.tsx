@@ -48,7 +48,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // 브라우저에 저장된 supabase 세션에서 토큰 우선 확보
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
-      const { data: sessionData } = await supabase.auth.getSession()
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+      // 세션 에러가 있으면 (만료된 토큰 등) 로컬 스토리지 클리어
+      if (sessionError) {
+        console.warn('[Auth] Session error detected, clearing invalid session:', sessionError.message)
+        await supabase.auth.signOut().catch(() => {})
+        if (typeof window !== 'undefined') {
+          const keysToRemove = Object.keys(localStorage).filter(
+            key => key.startsWith('sb-') || key.includes('supabase')
+          )
+          keysToRemove.forEach(key => localStorage.removeItem(key))
+        }
+        setUser(null)
+        setOrg(null)
+        setAccessToken(null)
+        return
+      }
+
       const bearer = sessionData.session?.access_token || undefined
 
       // headers 객체를 항상 생성하고, bearer가 있으면 Authorization 추가
@@ -153,17 +170,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        // goldpen 데모 사이트인 경우 - 세션 없으면 하드코딩된 credentials로 로그인
+        // goldpen 데모 사이트인 경우 - 세션 없거나 만료되면 하드코딩된 credentials로 로그인
         if (window.location.pathname.startsWith('/goldpen/')) {
           console.log('[Auth] Goldpen demo site detected, checking session...')
 
           // 먼저 기존 세션 확인
           const { createClient } = await import('@/lib/supabase/client')
           const supabase = createClient()
-          const { data: sessionData } = await supabase.auth.getSession()
+          const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
-          if (!sessionData.session) {
-            console.log('[Auth] No session found, logging in with demo credentials...')
+          // 세션이 없거나 에러가 있으면 (만료된 토큰 포함) 새로 로그인
+          if (!sessionData.session || sessionError) {
+            console.log('[Auth] No valid session found, clearing old data and logging in with demo credentials...')
+
+            // 만료된 세션 데이터 클리어
+            await supabase.auth.signOut().catch(() => {})
+            const keysToRemove = Object.keys(localStorage).filter(
+              key => key.startsWith('sb-') || key.includes('supabase')
+            )
+            keysToRemove.forEach(key => localStorage.removeItem(key))
 
             // 하드코딩된 데모 계정으로 실제 로그인 API 호출
             const DEMO_EMAIL = 'demo@goldpen.kr'
