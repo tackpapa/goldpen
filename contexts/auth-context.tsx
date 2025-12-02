@@ -42,9 +42,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [accessToken, setAccessToken] = useState<string | null>(null)
 
+  // 만료된 세션 토큰 사전 정리 함수
+  const clearExpiredSession = useCallback(() => {
+    if (typeof window === 'undefined') return false
+
+    try {
+      // Supabase 세션 키 찾기
+      const supabaseKey = Object.keys(localStorage).find(
+        key => key.startsWith('sb-') && key.includes('-auth-token')
+      )
+
+      if (!supabaseKey) return false
+
+      const sessionStr = localStorage.getItem(supabaseKey)
+      if (!sessionStr) return false
+
+      const session = JSON.parse(sessionStr)
+      const expiresAt = session?.expires_at
+
+      // 세션 만료 시간 확인 (현재 시간보다 이전이면 만료)
+      if (expiresAt && expiresAt < Math.floor(Date.now() / 1000)) {
+        console.warn('[Auth] Expired session detected, clearing...')
+        // 만료된 세션 삭제
+        const keysToRemove = Object.keys(localStorage).filter(
+          key => key.startsWith('sb-') || key.includes('supabase')
+        )
+        keysToRemove.forEach(key => localStorage.removeItem(key))
+        return true
+      }
+
+      return false
+    } catch {
+      return false
+    }
+  }, [])
+
   // 세션 확인 함수
   const refreshSession = useCallback(async () => {
     try {
+      // 먼저 만료된 세션 정리 (getSession() 호출 전에 수행하여 refresh 시도 방지)
+      const wasExpired = clearExpiredSession()
+      if (wasExpired) {
+        setUser(null)
+        setOrg(null)
+        setAccessToken(null)
+        return
+      }
+
       // 브라우저에 저장된 supabase 세션에서 토큰 우선 확보
       const { createClient } = await import('@/lib/supabase/client')
       const supabase = createClient()
@@ -174,13 +218,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (window.location.pathname.startsWith('/goldpen/')) {
           console.log('[Auth] Goldpen demo site detected, checking session...')
 
-          // 먼저 기존 세션 확인
+          // 먼저 만료된 세션 사전 정리 (getSession 호출 전에!)
+          const wasExpired = clearExpiredSession()
+
+          // 기존 세션 확인
           const { createClient } = await import('@/lib/supabase/client')
           const supabase = createClient()
           const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
 
-          // 세션이 없거나 에러가 있으면 (만료된 토큰 포함) 새로 로그인
-          if (!sessionData.session || sessionError) {
+          // 세션이 없거나 에러가 있거나 만료되었으면 새로 로그인
+          if (!sessionData.session || sessionError || wasExpired) {
             console.log('[Auth] No valid session found, clearing old data and logging in with demo credentials...')
 
             // 만료된 세션 데이터 클리어
