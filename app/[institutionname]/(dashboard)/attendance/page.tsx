@@ -301,6 +301,53 @@ export default function AttendancePage() {
     excused: { label: '인정결석', variant: 'outline' as const, icon: CheckCircle, color: 'text-blue-600' },
   }
 
+  // 시간 기반 수업 상태 계산 (scheduled인 경우만)
+  // scheduled_time format: "14:00 - 15:30"
+  const getTimeBasedStatus = useCallback((scheduledTime: string | undefined, status: AttendanceStatus): { label: string; variant: 'outline' | 'default' | 'secondary' | 'destructive'; icon: typeof Calendar; color: string } => {
+    // status가 scheduled가 아니면 기본 statusMap 반환
+    if (status !== 'scheduled') {
+      return statusMap[status]
+    }
+
+    // scheduledTime이 없으면 기본값 반환
+    if (!scheduledTime) {
+      return statusMap.scheduled
+    }
+
+    try {
+      // "14:00 - 15:30" 형식 파싱
+      const [startStr, endStr] = scheduledTime.split(' - ').map(s => s.trim())
+      if (!startStr || !endStr) {
+        return statusMap.scheduled
+      }
+
+      const [startHour, startMin] = startStr.split(':').map(Number)
+      const [endHour, endMin] = endStr.split(':').map(Number)
+
+      // 현재 KST 시간
+      const now = new Date()
+      const kstOffset = 9 * 60 // KST는 UTC+9
+      const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes()
+      const kstMinutes = utcMinutes + kstOffset
+
+      const startMinutes = startHour * 60 + startMin
+      const endMinutes = endHour * 60 + endMin
+
+      if (kstMinutes < startMinutes) {
+        // 수업 시작 전
+        return { label: '수업예정', variant: 'outline' as const, icon: Calendar, color: 'text-gray-600' }
+      } else if (kstMinutes <= endMinutes) {
+        // 수업 중
+        return { label: '수업중', variant: 'secondary' as const, icon: Clock, color: 'text-blue-600' }
+      } else {
+        // 수업 완료
+        return { label: '수업완료', variant: 'outline' as const, icon: CheckCircle, color: 'text-green-600' }
+      }
+    } catch {
+      return statusMap.scheduled
+    }
+  }, [])
+
   const handleStatusChange = async (attendanceId: string | null, studentId: string, classId: string, newStatus: AttendanceStatus) => {
     // optimistic update
     setTodayAttendance(prev => prev.map(r => {
@@ -418,8 +465,8 @@ export default function AttendancePage() {
       return (
         <div className="flex flex-col gap-1">
           {classes.map((c) => {
-            const s = c.status as keyof typeof statusMap
-            const statusInfo = statusMap[s]
+            // 시간 기반 상태 계산 (scheduled인 경우 수업예정/수업중/수업완료 표시)
+            const statusInfo = getTimeBasedStatus(c.scheduled_time, c.status)
             const Icon = statusInfo.icon
             return (
               <Badge key={c.class_id} variant={statusInfo.variant} className="gap-1 w-fit">

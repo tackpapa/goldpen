@@ -177,6 +177,12 @@ export default {
         await sendAssignmentReminders(sql, todayDate, env);
       }
 
+      // 6. 독서실 결석 처리 (매일 23:50 KST - 밤 12시 전에 결석 처리)
+      if (nowHour === 23 && nowMinute === 50) {
+        console.log(`[Cron] Processing commute absences...`);
+        await processCommuteAbsences(sql, todayWeekday, todayDate, env);
+      }
+
       console.log(`[Cron] All checks completed`);
     } catch (error) {
       console.error(`[Cron] Error:`, error);
@@ -211,6 +217,8 @@ export default {
           await sendDailyReports(sql, todayDate, env);
         } else if (testType === "assignment_remind") {
           await sendAssignmentReminders(sql, todayDate, env);
+        } else if (testType === "commute_absent") {
+          await processCommuteAbsences(sql, todayWeekday, todayDate, env);
         } else {
           // 전체 테스트
           await checkAcademyAttendance(sql, todayWeekday, todayDate, nowMinutes, env);
@@ -240,7 +248,8 @@ export default {
           "study_late/absent (매 분)",
           "class_late/absent (매 분)",
           "daily_report (매일 21:00 KST)",
-          "assignment_remind (매일 09:00 KST)"
+          "assignment_remind (매일 09:00 KST)",
+          "commute_absent (매일 23:50 KST - 독서실 결석 처리)"
         ]
       }),
       { headers: { "Content-Type": "application/json" } }
@@ -530,20 +539,33 @@ async function checkClassAttendance(
       if (!hasAttendance) {
         // 결석 체크: 수업 종료 시간 경과
         if (nowMinutes > endMinutes) {
-          // 1. attendance 테이블에 결석 레코드 삽입
+          // 1. attendance 테이블에 결석 레코드 삽입 (중복 체크 후)
           try {
-            await sql`
-              INSERT INTO attendance (org_id, class_id, student_id, date, status)
-              VALUES (
-                ${cls.org_id},
-                ${cls.class_id},
-                ${enrollment.student_id},
-                ${todayDate}::date,
-                'absent'
-              )
-              ON CONFLICT (org_id, class_id, student_id, date) DO NOTHING
+            // 먼저 이미 존재하는지 확인
+            const existing = await sql`
+              SELECT id FROM attendance
+              WHERE org_id = ${cls.org_id}
+                AND class_id = ${cls.class_id}
+                AND student_id = ${enrollment.student_id}
+                AND date = ${todayDate}::date
+              LIMIT 1
             `;
-            console.log(`[Class] Marked absent: ${enrollment.student_name} for ${cls.class_name}`);
+
+            if (existing.length === 0) {
+              await sql`
+                INSERT INTO attendance (org_id, class_id, student_id, date, status)
+                VALUES (
+                  ${cls.org_id},
+                  ${cls.class_id},
+                  ${enrollment.student_id},
+                  ${todayDate}::date,
+                  'absent'
+                )
+              `;
+              console.log(`[Class] Marked absent: ${enrollment.student_name} for ${cls.class_name}`);
+            } else {
+              console.log(`[Class] Already has attendance: ${enrollment.student_name} for ${cls.class_name}`);
+            }
           } catch (insertError) {
             console.error(`[Class] Failed to insert absence record:`, insertError);
           }
@@ -568,25 +590,56 @@ async function checkClassAttendance(
             message,
           });
         } else {
-          // 지각 알림
-          const template = await getTemplate(sql, cls.org_id, 'class_late');
-          const message = fillTemplate(template, {
-            '기관명': cls.org_name,
-            '학생명': enrollment.student_name,
-            '수업명': cls.class_name,
-            '예정시간': todaySchedule.start_time,
-          });
-          await sendNotification(sql, env, {
-            orgId: cls.org_id,
-            studentId: enrollment.student_id,
-            studentName: enrollment.student_name,
-            type: "class_late",
-            classId: cls.class_id,
-            targetDate: todayDate,
-            scheduledTime: todaySchedule.start_time,
-            recipientPhone: enrollment.parent_phone,
-            message,
-          });
+          // 수업 중: 지각 처리 (수업 시작 후 10분 경과 시 지각 기록)
+          if (nowMinutes > startMinutes + 10) {
+            // attendance 테이블에 지각 레코드 삽입
+            try {
+              const existing = await sql`
+                SELECT id FROM attendance
+                WHERE org_id = ${cls.org_id}
+                  AND class_id = ${cls.class_id}
+                  AND student_id = ${enrollment.student_id}
+                  AND date = ${todayDate}::date
+                LIMIT 1
+              `;
+
+              if (existing.length === 0) {
+                await sql`
+                  INSERT INTO attendance (org_id, class_id, student_id, date, status)
+                  VALUES (
+                    ${cls.org_id},
+                    ${cls.class_id},
+                    ${enrollment.student_id},
+                    ${todayDate}::date,
+                    'late'
+                  )
+                `;
+                console.log(`[Class] Marked late: ${enrollment.student_name} for ${cls.class_name}`);
+              }
+            } catch (insertError) {
+              console.error(`[Class] Failed to insert late record:`, insertError);
+            }
+
+            // 지각 알림 발송
+            const template = await getTemplate(sql, cls.org_id, 'class_late');
+            const message = fillTemplate(template, {
+              '기관명': cls.org_name,
+              '학생명': enrollment.student_name,
+              '수업명': cls.class_name,
+              '예정시간': todaySchedule.start_time,
+            });
+            await sendNotification(sql, env, {
+              orgId: cls.org_id,
+              studentId: enrollment.student_id,
+              studentName: enrollment.student_name,
+              type: "class_late",
+              classId: cls.class_id,
+              targetDate: todayDate,
+              scheduledTime: todaySchedule.start_time,
+              recipientPhone: enrollment.parent_phone,
+              message,
+            });
+          }
         }
       }
     }
@@ -945,4 +998,103 @@ async function sendAssignmentReminders(
       message,
     });
   }
+}
+
+/**
+ * 독서실 결석 처리 (매일 23:50 KST 실행)
+ * - commute_schedules에 오늘 일정이 있는데 등원하지 않은 학생 → 결석 처리
+ * - attendance 테이블에 class_id = NULL로 결석 기록
+ */
+async function processCommuteAbsences(
+  sql: postgres.Sql,
+  weekday: WeekdayName,
+  todayDate: string,
+  env: Env
+): Promise<void> {
+  console.log(`[CommuteAbsent] Processing for weekday=${weekday}, date=${todayDate}`);
+
+  // 오늘 commute 일정이 있는 학생들 중 아직 attendance 기록이 없는 학생 조회
+  const students = await sql`
+    SELECT
+      cs.id as schedule_id,
+      cs.org_id,
+      cs.student_id,
+      cs.check_in_time,
+      s.name as student_name,
+      s.parent_phone,
+      o.name as org_name,
+      -- 오늘 독서실 출결 기록이 있는지 확인 (class_id IS NULL)
+      (
+        SELECT COUNT(*) FROM attendance a
+        WHERE a.org_id = cs.org_id
+          AND a.student_id = cs.student_id
+          AND a.date = ${todayDate}::date
+          AND a.class_id IS NULL
+      ) as has_attendance,
+      -- 오늘 등원 기록이 있는지 확인
+      (
+        SELECT COUNT(*) FROM attendance_logs al
+        WHERE al.student_id = cs.student_id
+          AND al.check_in_time::date = ${todayDate}::date
+      ) as has_checkin
+    FROM commute_schedules cs
+    JOIN students s ON s.id = cs.student_id
+    JOIN organizations o ON o.id = cs.org_id
+    WHERE cs.weekday = ${weekday}
+  `;
+
+  console.log(`[CommuteAbsent] Found ${students.length} students with commute schedules`);
+
+  let absentCount = 0;
+
+  for (const student of students) {
+    const hasAttendance = Number(student.has_attendance) > 0;
+    const hasCheckin = Number(student.has_checkin) > 0;
+
+    // 이미 출결 기록이 있거나 등원 기록이 있으면 스킵
+    if (hasAttendance || hasCheckin) {
+      continue;
+    }
+
+    // 결석 처리: attendance 테이블에 class_id = NULL로 삽입
+    // Note: attendance 테이블에는 student_name, class_name 컬럼이 없음
+    try {
+      await sql`
+        INSERT INTO attendance (org_id, student_id, date, status, class_id)
+        VALUES (
+          ${student.org_id},
+          ${student.student_id},
+          ${todayDate}::date,
+          'absent',
+          NULL
+        )
+        ON CONFLICT (org_id, class_id, student_id, date) DO NOTHING
+      `;
+      console.log(`[CommuteAbsent] Marked absent: ${student.student_name}`);
+      absentCount++;
+
+      // 결석 알림 발송
+      const template = await getTemplate(sql, student.org_id, 'study_absent');
+      const message = fillTemplate(template, {
+        '기관명': student.org_name,
+        '학생명': student.student_name,
+        '예정시간': student.check_in_time || '오늘',
+      });
+
+      await sendNotification(sql, env, {
+        orgId: student.org_id,
+        studentId: student.student_id,
+        studentName: student.student_name,
+        type: "study_absent",
+        targetDate: todayDate,
+        scheduledTime: student.check_in_time,
+        recipientPhone: student.parent_phone,
+        message,
+      });
+    } catch (insertError) {
+      console.error(`[CommuteAbsent] Failed to insert absence record for ${student.student_name}:`, insertError);
+    }
+  }
+
+  console.log(`[CommuteAbsent] Processed ${absentCount} absences`);
 }

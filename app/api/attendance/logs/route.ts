@@ -172,6 +172,12 @@ export async function POST(request: Request) {
         return Response.json({ error: '등원 처리 실패', details: insertError.message }, { status: 500 })
       }
 
+      // 🎯 강의 출결 자동 처리: 학생의 오늘 수업을 찾아서 출석/지각 처리
+      await processClassAttendanceOnCheckIn(supabase, orgId, student.id, now)
+
+      // 🎯 독서실 출결 자동 처리: 학생의 commute 일정 기준 출석/지각 처리
+      await processCommuteAttendanceOnCheckIn(supabase, orgId, student.id, now)
+
       return Response.json({
         message: '등원 처리 완료',
         student: { name: student.name }
@@ -227,5 +233,212 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('[AttendanceLogs POST] Unexpected error', error)
     return Response.json({ error: '서버 오류', details: error?.message }, { status: 500 })
+  }
+}
+
+/**
+ * 학생 등원 시 강의 출결 자동 처리
+ * - 수업 전 등원 → 출석 (present)
+ * - 수업 중 등원 → 지각 (late)
+ * - 수업 후 등원 → 처리 안 함 (크론이 결석 처리)
+ */
+async function processClassAttendanceOnCheckIn(
+  supabase: any,
+  orgId: string,
+  studentId: string,
+  checkInTime: Date
+): Promise<void> {
+  try {
+    // 현재 KST 시간 계산
+    const kstOffset = 9 * 60 // KST는 UTC+9
+    const utcMinutes = checkInTime.getUTCHours() * 60 + checkInTime.getUTCMinutes()
+    const kstMinutes = utcMinutes + kstOffset
+    const nowMinutes = kstMinutes % (24 * 60) // 하루를 넘어가는 경우 대비
+
+    // 오늘 요일 (KST 기준)
+    const kstDate = new Date(checkInTime.getTime() + kstOffset * 60 * 1000)
+    const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const todayWeekday = weekdays[kstDate.getUTCDay()]
+    const todayDate = kstDate.toISOString().split('T')[0]
+
+    console.log(`[ClassAttendance] Processing for student ${studentId}, weekday: ${todayWeekday}, nowMinutes: ${nowMinutes}`)
+
+    // 학생이 등록된 수업들 조회
+    const { data: enrollments, error: enrollError } = await supabase
+      .from('class_enrollments')
+      .select(`
+        class_id,
+        classes!inner(id, name, schedule, org_id)
+      `)
+      .eq('student_id', studentId)
+      .eq('status', 'active')
+      .eq('org_id', orgId)
+
+    if (enrollError || !enrollments?.length) {
+      console.log(`[ClassAttendance] No enrollments found for student ${studentId}`)
+      return
+    }
+
+    console.log(`[ClassAttendance] Found ${enrollments.length} enrollments`)
+
+    for (const enrollment of enrollments as any[]) {
+      const cls = enrollment.classes
+      if (!cls?.schedule) continue
+
+      const scheduleArr = Array.isArray(cls.schedule) ? cls.schedule : []
+
+      // 오늘 요일에 해당하는 스케줄 찾기
+      const todaySchedule = scheduleArr.find(
+        (s: any) => s.day?.toLowerCase() === todayWeekday
+      )
+
+      if (!todaySchedule?.start_time || !todaySchedule?.end_time) continue
+
+      // 시간 파싱
+      const [startHour, startMin] = todaySchedule.start_time.split(':').map(Number)
+      const [endHour, endMin] = todaySchedule.end_time.split(':').map(Number)
+      const startMinutes = startHour * 60 + startMin
+      const endMinutes = endHour * 60 + endMin
+
+      // 수업 종료 후면 스킵 (크론이 결석 처리)
+      if (nowMinutes > endMinutes) {
+        console.log(`[ClassAttendance] Class ${cls.name} already ended, skipping`)
+        continue
+      }
+
+      // 이미 출결 기록이 있는지 확인
+      const { data: existingAttendance } = await supabase
+        .from('attendance')
+        .select('id, status')
+        .eq('org_id', orgId)
+        .eq('class_id', cls.id)
+        .eq('student_id', studentId)
+        .eq('date', todayDate)
+        .maybeSingle()
+
+      if (existingAttendance) {
+        console.log(`[ClassAttendance] Already has attendance for ${cls.name}: ${(existingAttendance as any).status}`)
+        continue
+      }
+
+      // 출결 상태 결정
+      // 수업 시작 전 또는 시작 시간과 같으면 → 출석
+      // 수업 시작 후 ~ 수업 종료 전 → 지각
+      const status = nowMinutes <= startMinutes ? 'present' : 'late'
+
+      // 출결 기록 삽입
+      const { error: insertError } = await supabase
+        .from('attendance')
+        .insert({
+          org_id: orgId,
+          class_id: cls.id,
+          student_id: studentId,
+          date: todayDate,
+          status,
+        })
+
+      if (insertError) {
+        console.error(`[ClassAttendance] Insert error for ${cls.name}:`, insertError)
+      } else {
+        console.log(`[ClassAttendance] Marked ${status} for ${cls.name} (start: ${todaySchedule.start_time}, now: ${Math.floor(nowMinutes/60)}:${nowMinutes%60})`)
+      }
+    }
+  } catch (error) {
+    console.error('[ClassAttendance] Unexpected error:', error)
+  }
+}
+
+/**
+ * 독서실 출결 자동 처리 (commute_schedules 기반)
+ * - commute 일정 있음 + 예정시간 전 등원 → 출석 (present)
+ * - commute 일정 있음 + 예정시간 후 등원 → 지각 (late)
+ * - commute 일정 없음 → 출석 (present) - 일정 없이 등원하면 무조건 출석
+ * - 결석 처리는 크론에서 밤 12시 전에 처리
+ */
+async function processCommuteAttendanceOnCheckIn(
+  supabase: any,
+  orgId: string,
+  studentId: string,
+  checkInTime: Date
+): Promise<void> {
+  try {
+    // 현재 KST 시간 계산
+    const kstOffset = 9 * 60 // KST는 UTC+9
+    const utcMinutes = checkInTime.getUTCHours() * 60 + checkInTime.getUTCMinutes()
+    const kstMinutes = utcMinutes + kstOffset
+    const nowMinutes = kstMinutes % (24 * 60) // 하루를 넘어가는 경우 대비
+
+    // 오늘 요일 (KST 기준)
+    const kstDate = new Date(checkInTime.getTime() + kstOffset * 60 * 1000)
+    const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    const todayWeekday = weekdays[kstDate.getUTCDay()]
+    const todayDate = kstDate.toISOString().split('T')[0]
+
+    console.log(`[CommuteAttendance] Processing for student ${studentId}, weekday: ${todayWeekday}, nowMinutes: ${nowMinutes}`)
+
+    // 학생의 오늘 commute 일정 조회
+    const { data: commuteSchedule, error: commuteError } = await supabase
+      .from('commute_schedules')
+      .select('id, check_in_time')
+      .eq('org_id', orgId)
+      .eq('student_id', studentId)
+      .eq('weekday', todayWeekday)
+      .maybeSingle()
+
+    if (commuteError) {
+      console.error('[CommuteAttendance] Error fetching commute schedule:', commuteError)
+      return
+    }
+
+    // 이미 오늘 독서실 출결 기록이 있는지 확인 (class_id IS NULL인 것)
+    const { data: existingAttendance } = await supabase
+      .from('attendance')
+      .select('id, status')
+      .eq('org_id', orgId)
+      .eq('student_id', studentId)
+      .eq('date', todayDate)
+      .is('class_id', null)
+      .maybeSingle()
+
+    if (existingAttendance) {
+      console.log(`[CommuteAttendance] Already has attendance for today: ${existingAttendance.status}`)
+      return
+    }
+
+    let status: 'present' | 'late' = 'present'
+
+    if (commuteSchedule?.check_in_time) {
+      // commute 일정이 있는 경우: 예정 시간과 비교
+      const [schH, schM] = commuteSchedule.check_in_time.split(':').map(Number)
+      const scheduledMinutes = schH * 60 + schM
+
+      if (nowMinutes > scheduledMinutes) {
+        status = 'late'
+      }
+      console.log(`[CommuteAttendance] Schedule found: ${commuteSchedule.check_in_time}, status: ${status}`)
+    } else {
+      // commute 일정이 없는 경우: 등원하면 무조건 출석
+      console.log(`[CommuteAttendance] No schedule found, marking as present`)
+    }
+
+    // 독서실 출결 기록 삽입 (class_id = NULL)
+    // Note: attendance 테이블에는 student_name, class_name 컬럼이 없음
+    const { error: insertError } = await supabase
+      .from('attendance')
+      .insert({
+        org_id: orgId,
+        student_id: studentId,
+        date: todayDate,
+        status,
+        class_id: null,
+      })
+
+    if (insertError) {
+      console.error(`[CommuteAttendance] Insert error:`, insertError)
+    } else {
+      console.log(`[CommuteAttendance] Marked ${status} for student ${studentId}`)
+    }
+  } catch (error) {
+    console.error('[CommuteAttendance] Unexpected error:', error)
   }
 }
