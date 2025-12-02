@@ -372,7 +372,8 @@ function SeatCard({
   handleSleepExpired,
   handleUsageTimeExpired,
   onOpenPlanner,
-  students
+  students,
+  isLoading
 }: {
   seat: any
   sleepRecord: SleepRecord | null
@@ -386,6 +387,7 @@ function SeatCard({
   handleUsageTimeExpired: (seatNumber: number, studentName: string) => void
   onOpenPlanner: (studentId: string, studentName: string) => void
   students: LocalStudent[]
+  isLoading?: boolean
 }) {
   // Determine card style based on live status
   let cardStyle = getCardStyle(seat.status)
@@ -486,12 +488,13 @@ function SeatCard({
                   size="sm"
                   variant={seat.status === 'checked_in' ? 'outline' : 'default'}
                   className="w-full"
+                  disabled={isLoading}
                   onClick={(e) => {
                     e.stopPropagation()
                     handleToggleAttendance(seat.id)
                   }}
                 >
-                  {seat.status === 'checked_in' ? '하원 처리' : '등원 처리'}
+                  {isLoading ? '처리 중...' : (seat.status === 'checked_in' ? '하원 처리' : '등원 처리')}
                 </Button>
                 {seat.status === 'checked_in' && seat.student_id && (
                   <div className="flex gap-2">
@@ -617,6 +620,9 @@ export default function SeatsPage() {
   // URL copy state
   const [urlCopied, setUrlCopied] = useState(false)
   const [liveScreenUrl, setLiveScreenUrl] = useState('')
+
+  // Per-seat loading state to prevent race conditions
+  const [loadingSeats, setLoadingSeats] = useState<Set<string>>(new Set())
 
   // Students from API
   const [students, setStudents] = useState<LocalStudent[]>([])
@@ -1534,13 +1540,19 @@ export default function SeatsPage() {
   }
 
   const handleToggleAttendance = async (seatId: string) => {
+    // Prevent race condition: skip if already loading
+    if (loadingSeats.has(seatId)) return
+
     const seat = seats.find(s => s.id === seatId)
     if (!seat || !seat.student_id) return
 
     const newStatus = seat.status === 'checked_in' ? 'checked_out' : 'checked_in'
 
+    // Mark as loading
+    setLoadingSeats(prev => new Set(prev).add(seatId))
+
     const prevSeats = seats
-    setSeats(seats.map(s => {
+    setSeats(prev => prev.map(s => {
       if (s.id === seatId && s.student_id) {
         return {
           ...s,
@@ -1588,6 +1600,13 @@ export default function SeatsPage() {
         title: '상태 변경 실패',
         description: '네트워크 오류가 발생했습니다.',
         variant: 'destructive',
+      })
+    } finally {
+      // Remove loading state
+      setLoadingSeats(prev => {
+        const next = new Set(prev)
+        next.delete(seatId)
+        return next
       })
     }
   }
@@ -1745,6 +1764,7 @@ export default function SeatsPage() {
                   setIsPlannerModalOpen(true)
                 }}
                 students={students}
+                isLoading={loadingSeats.has(seat.id)}
               />
             ))}
           </div>
