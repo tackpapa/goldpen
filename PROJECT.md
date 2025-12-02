@@ -1,6 +1,6 @@
-# GOLDPEN_SYS_MAP v3.2
+# GOLDPEN_SYS_MAP v3.3
 # Token-optimized system reference (machine-readable)
-# Generated: 2025-11-29 | Updated: 2025-12-02 (full sync)
+# Generated: 2025-11-29 | Updated: 2025-12-03 (incremental)
 
 ## ⚠️ RULES (CRITICAL)
 rule1:EDGE_RUNTIME - export const runtime='edge' 필수
@@ -473,7 +473,7 @@ api/ (workers/api):
   └ route:api.goldpen.kr/*
 
 cron/ (workers/cron):
-├ src/index.ts - 스케줄 알림 (매 1분)
+├ src/index.ts - 스케줄 알림 (매 1분, 329줄)
 │ ├ 자동 출결 처리 (class/commute 스케줄)
 │ ├ 지각/결석 알림 (5분 유예)
 │ ├ 학습 리포트 (21:00)
@@ -482,10 +482,23 @@ cron/ (workers/cron):
   ├ cron:* * * * * (매 1분)
   └ hyperdrive:HYPERDRIVE_DB
 
+queue/ (workers/queue) NEW:
+├ src/index.ts - 큐 처리 워커 (974줄)
+│ ├ 출결 알림 큐 처리
+│ ├ 카카오 알림톡 발송
+│ ├ 이메일 발송
+│ └ 비동기 작업 처리
+├ package.json
+└ wrangler.toml
+  ├ queue:goldpen-notification-queue
+  └ hyperdrive:HYPERDRIVE_DB
+
 ## STATE_MANAGEMENT
 global:
 ├ contexts/auth-context.tsx
-│ └ {user, org, session, loading, signOut}
+│ ├ {user, org, session, loading, signOut}
+│ ├ clearExpiredSession() - 만료 세션 사전 정리 (NEW)
+│ └ refreshSession() - 세션 갱신 (improved)
 └ zustand (필요시)
 
 server:
@@ -525,6 +538,11 @@ deploy-all:pnpm deploy:all
 └ run:api:deploy + deploy
 
 test:pnpm test (vitest)
+e2e:pnpm playwright test (NEW)
+├ tests/e2e/seou-advanced.spec.ts - 고급 기능 테스트
+├ tests/e2e/seou-crud.spec.ts - CRUD 테스트
+├ tests/e2e/seou-extra-pages.spec.ts - 추가 페이지 테스트
+└ helpers.ts - 테스트 헬퍼 함수
 type-check:pnpm type-check (tsc --noEmit)
 lint:pnpm lint (next lint)
 
@@ -703,13 +721,21 @@ v1.1 (planned):
 └ [ ] Payment gateway
 
 ---
-# END OF GOLDPEN_SYS_MAP v3.2
-# Generated: 2025-11-29 | Updated: 2025-12-02 (full sync)
+# END OF GOLDPEN_SYS_MAP v3.3
+# Generated: 2025-11-29 | Updated: 2025-12-03 (incremental)
+#
+# Changes (2025-12-03):
+#   - Workers: queue worker 추가 (974줄, 비동기 알림 처리)
+#   - Auth: clearExpiredSession() 함수 추가 (만료 토큰 에러 방지)
+#   - Tests: E2E 테스트 3개 추가 (Playwright)
+#   - Cron: 리팩토링 완료 (1211줄 → 329줄)
+#
 # Changes (2025-12-02):
 #   - API: +12 routes (managers, settings/invitations, settings/* 확장)
 #   - Pages: +2 (invite/[token], [org]/managers)
 #   - Components: +5 (managers/, landing/, seats/StudentPlannerModal)
 #   - Lib: +7 (constants/, hooks/, email/)
 #   - Cron: 자동 출결 처리 기능 추가
-# Analysis method: Full codebase comparison
+#
+# Analysis method: Incremental (Git diff based)
 # Next update: /gen-context command
