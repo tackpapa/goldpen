@@ -126,7 +126,7 @@ export function useSeatAssignmentsRealtime(orgId: string | null) {
               if (student) {
                 studentName = student.name
                 studentGrade = student.grade
-                studentRemainingMinutes = student.seatsremainingtime
+                studentRemainingMinutes = (student as any).seatsremainingtime ?? null
               }
             }
 
