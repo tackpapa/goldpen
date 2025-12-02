@@ -18,6 +18,7 @@ interface Env {
   HYPERDRIVE_DB: Hyperdrive;
   ATTENDANCE_QUEUE: Queue<AttendanceMessage>;
   TIMEZONE: string;
+  API_WORKER_URL?: string; // API warm-up용 URL
 }
 
 // Queue 메시지 타입
@@ -64,6 +65,18 @@ export default {
     ctx: ExecutionContext
   ): Promise<void> {
     console.log(`[Cron] Queue producer started at ${new Date().toISOString()}`);
+
+    // API Worker warm-up ping (콜드 스타트 방지)
+    const apiUrl = env.API_WORKER_URL || 'https://goldpen-api.hello-51f.workers.dev';
+    try {
+      const warmupResponse = await fetch(`${apiUrl}/health`, {
+        method: 'GET',
+        headers: { 'User-Agent': 'GoldPen-Cron-Warmup' }
+      });
+      console.log(`[Cron] API warm-up: ${warmupResponse.status}`);
+    } catch (warmupError) {
+      console.warn(`[Cron] API warm-up failed:`, warmupError);
+    }
 
     const sql = postgres(env.HYPERDRIVE_DB.connectionString);
 

@@ -1,24 +1,24 @@
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
 
-async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+async function checkSuperAdmin(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return { authorized: false, error: 'Unauthorized', status: 401 }
-  }
+  if (authError || !user) return { authorized: false, error: 'Unauthorized', status: 401 }
 
   const adminClient = createAdminClient()
-  const { data: userData, error: userError } = await adminClient
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (userError || !userData || userData.role !== 'super_admin') {
-    return { authorized: false, error: 'Forbidden', status: 403 }
-  }
+  const { data: userData, error: userError } = await adminClient.from('users').select('role').eq('id', user.id).single()
+  if (userError || !userData || userData.role !== 'super_admin') return { authorized: false, error: 'Forbidden', status: 403 }
 
   return { authorized: true, user }
 }
@@ -26,9 +26,8 @@ async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
 // GET /api/admin/payments - 결제내역 목록 조회
 export async function GET(request: Request) {
   try {
-    const supabase = createClient()
+    const authCheck = await checkSuperAdmin(request)
     const adminClient = createAdminClient()
-    const authCheck = await checkSuperAdmin(supabase)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })

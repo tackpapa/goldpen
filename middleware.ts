@@ -44,7 +44,7 @@ function extractOrgSlug(request: NextRequest): string | null {
     try {
       const refererUrl = new URL(referer)
       const pathSegments = refererUrl.pathname.split('/').filter(Boolean)
-      const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite', 'livescreen', 'liveattendance']
+      const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite', 'livescreen', 'liveattendance', 'demo']
       if (pathSegments.length > 0 && !systemPaths.includes(pathSegments[0])) {
         return pathSegments[0]
       }
@@ -90,7 +90,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // 시스템 경로는 slug 검증 제외
-  const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite']
+  const systemPaths = ['admin', 'login', 'signup', 'api', 'api-bypass', '_next', '404', 'favicon.ico', 'invite', 'demo']
   const firstSegment = pathSegments[0]
 
   // ========================================

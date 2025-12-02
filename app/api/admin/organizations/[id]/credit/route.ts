@@ -1,7 +1,16 @@
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 /**
  * 충전금 변경 스키마
@@ -17,23 +26,14 @@ const UpdateCreditSchema = z.object({
   description: z.string().optional(),
 })
 
-async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
+async function checkSuperAdmin(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
-
-  if (authError || !user) {
-    return { authorized: false, error: 'Unauthorized', status: 401 }
-  }
+  if (authError || !user) return { authorized: false, error: 'Unauthorized', status: 401 }
 
   const adminClient = createAdminClient()
-  const { data: userData, error: userError } = await adminClient
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (userError || !userData || userData.role !== 'super_admin') {
-    return { authorized: false, error: 'Forbidden', status: 403 }
-  }
+  const { data: userData, error: userError } = await adminClient.from('users').select('role').eq('id', user.id).single()
+  if (userError || !userData || userData.role !== 'super_admin') return { authorized: false, error: 'Forbidden', status: 403 }
 
   return { authorized: true, user }
 }
@@ -45,9 +45,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params
-    const supabase = createClient()
     const adminClient = createAdminClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -152,9 +151,8 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const supabase = createClient()
     const adminClient = createAdminClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })

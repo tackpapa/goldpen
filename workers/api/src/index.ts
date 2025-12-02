@@ -89,6 +89,7 @@ app.route("/api/expenses", expenses);
 app.route("/api/teacher_salaries", teacher_salaries);
 app.route("/api/homework/:id", homework_id);
 app.route("/api/homework", homework);
+app.route("/api/lessons/:id/notify", lessons_id);
 app.route("/api/lessons/:id", lessons_id);
 app.route("/api/lessons", lessons);
 app.route("/api/migrate", migrate);

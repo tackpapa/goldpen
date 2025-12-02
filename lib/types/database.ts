@@ -226,6 +226,7 @@ export interface Exam {
   subject: string
   class_id: string
   exam_date: string
+  exam_time?: string // 시험 시작 시간 (HH:MM 형식)
   duration_minutes?: number
   total_score: number
   description?: string
@@ -364,7 +365,11 @@ export interface LessonNote {
   comprehension_level: 'high' | 'medium' | 'low' // 이해도
   homework_assigned?: string // 과제
   next_lesson_plan?: string // 다음 수업 계획
-  parent_feedback?: string // 부모 피드백 (GPT 생성)
+  parent_feedback?: string // 부모 피드백 (AI 생성)
+  director_feedback?: string // 원장 피드백
+  final_message?: string // 최종 알림톡 메시지 (AI 생성)
+  notification_sent?: boolean // 알림톡 발송 여부
+  notification_sent_at?: string // 알림톡 발송 시간
   notes?: string
 }
 

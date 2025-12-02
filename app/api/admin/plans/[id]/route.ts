@@ -1,7 +1,16 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 const UpdatePlanSchema = z.object({
   name: z.string().min(1).optional(),
@@ -18,22 +27,14 @@ const UpdatePlanSchema = z.object({
   sort_order: z.number().int().optional(),
 })
 
-async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
+async function checkSuperAdmin(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return { authorized: false, error: 'Unauthorized', status: 401 }
 
-  if (authError || !user) {
-    return { authorized: false, error: 'Unauthorized', status: 401 }
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (userError || !userData || userData.role !== 'super_admin') {
-    return { authorized: false, error: 'Forbidden', status: 403 }
-  }
+  const adminClient = createAdminClient()
+  const { data: userData, error: userError } = await adminClient.from('users').select('role').eq('id', user.id).single()
+  if (userError || !userData || userData.role !== 'super_admin') return { authorized: false, error: 'Forbidden', status: 403 }
 
   return { authorized: true, user }
 }
@@ -44,8 +45,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -53,7 +54,7 @@ export async function GET(
 
     const { id } = await params
 
-    const { data: plan, error } = await supabase
+    const { data: plan, error } = await adminClient
       .from('plans')
       .select('*')
       .eq('id', id)
@@ -64,7 +65,7 @@ export async function GET(
     }
 
     // Get organizations using this plan
-    const { data: orgs, count } = await supabase
+    const { data: orgs, count } = await adminClient
       .from('organizations')
       .select('id, name, type, created_at', { count: 'exact' })
       .eq('subscription_plan', plan.code)
@@ -87,8 +88,8 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -110,7 +111,7 @@ export async function PUT(
       updateData.features = JSON.stringify(validation.data.features)
     }
 
-    const { data: plan, error } = await supabase
+    const { data: plan, error } = await adminClient
       .from('plans')
       .update(updateData)
       .eq('id', id)
@@ -135,8 +136,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const supabase = createClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -145,14 +146,14 @@ export async function DELETE(
     const { id } = await params
 
     // Check if any organizations are using this plan
-    const { data: plan } = await supabase
+    const { data: plan } = await adminClient
       .from('plans')
       .select('code')
       .eq('id', id)
       .single()
 
     if (plan) {
-      const { count } = await supabase
+      const { count } = await adminClient
         .from('organizations')
         .select('*', { count: 'exact', head: true })
         .eq('subscription_plan', plan.code)
@@ -165,7 +166,7 @@ export async function DELETE(
       }
     }
 
-    const { error } = await supabase
+    const { error } = await adminClient
       .from('plans')
       .delete()
       .eq('id', id)

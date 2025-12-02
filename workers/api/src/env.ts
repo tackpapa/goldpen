@@ -21,6 +21,10 @@ export interface Env {
   KAKAO_ALIMTALK_SECRET_KEY?: string
   KAKAO_ALIMTALK_SENDER_KEY?: string
 
+  // Telegram (모니터링용)
+  TELEGRAM_BOT_TOKEN?: string
+  TELEGRAM_CHAT_ID?: string
+
   // Cloudflare Hyperdrive (Postgres over Hyperdrive)
   HYPERDRIVE_DB?: string
 

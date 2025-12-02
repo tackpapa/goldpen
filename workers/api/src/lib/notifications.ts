@@ -159,6 +159,13 @@ export async function sendNotification(
       console.log(`[Notification] Log save skipped (migration needed): ${type} - ${logError}`);
     }
 
+    // 텔레그램으로 모니터링 알림 전송 (lesson_report는 태그 없이 깔끔하게)
+    const typeEmoji = getTypeEmoji(type);
+    const telegramMessage = type === "lesson_report"
+      ? `${typeEmoji} ${studentName} 학생 수업일지\n\n${message}`
+      : `${typeEmoji} [${type.toUpperCase()}] ${studentName}\n\n${message}`;
+    await sendTelegram(env, telegramMessage);
+
     // 카카오 알림톡 발송
     if (recipientPhone) {
       const templateCode = getTemplateCode(type);
@@ -449,4 +456,70 @@ export function createAssignmentNewMessage(
     return baseMessage.replace('\n\n과제 제출', `\n📋 내용: ${description}\n\n과제 제출`);
   }
   return baseMessage;
+}
+
+// ============================================================
+// 텔레그램 모니터링 알림
+// ============================================================
+
+/**
+ * 알림 타입별 이모지 반환
+ */
+function getTypeEmoji(type: NotificationType): string {
+  const emojis: Record<NotificationType, string> = {
+    late: "⏰",
+    absent: "❌",
+    checkin: "✅",
+    checkout: "👋",
+    study_out: "🚶",
+    study_return: "🔙",
+    lesson_report: "📚",
+    exam_result: "📊",
+    assignment_new: "📝",
+  };
+  return emojis[type] || "📋";
+}
+
+/**
+ * 텔레그램으로 모니터링 알림 전송
+ */
+async function sendTelegram(
+  env: Env,
+  message: string
+): Promise<{ success: boolean; error?: string }> {
+  const botToken = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+
+  if (!botToken || !chatId) {
+    console.log('[Telegram] No token/chatId configured. Message:', message.substring(0, 50));
+    return { success: false, error: 'TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured' };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: 'HTML',
+        }),
+      }
+    );
+
+    const result = await response.json() as { ok: boolean; description?: string };
+
+    if (result.ok) {
+      console.log('[Telegram] Message sent successfully');
+      return { success: true };
+    }
+
+    console.error('[Telegram] API error:', result);
+    return { success: false, error: result.description || 'Telegram API error' };
+  } catch (error) {
+    console.error('[Telegram] Error:', error);
+    return { success: false, error: String(error) };
+  }
 }

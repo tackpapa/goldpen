@@ -2699,28 +2699,15 @@ export default function SettingsPage() {
                 <div className="space-y-3 rounded-lg border p-4">
                   <div className="flex items-center justify-between">
                     <div className="space-y-0.5">
-                      <Label>수업일지 전송 (관리자 승인 후)</Label>
+                      <Label>수업일지 알림톡 기능</Label>
                       <p className="text-sm text-muted-foreground">
-                        강사가 수업일지 작성 → 관리자 승인 → 전송
+                        수업일지 작성 후 AI 생성 알림톡을 학부모에게 발송
                       </p>
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['lesson_report'] === 'parent' || notificationTargets['lesson_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('lesson_report', notificationTargets['lesson_report'] === 'both' ? 'student' : notificationTargets['lesson_report'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['lesson_report'] === 'student' || notificationTargets['lesson_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('lesson_report', notificationTargets['lesson_report'] === 'both' ? 'parent' : notificationTargets['lesson_report'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('lesson_report', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('lesson_report', 'student')}>학생 템플릿</Button>
-                    </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
-                    💡 강사가 작성한 수업일지는 관리자가 승인 버튼을 눌러야 발송됩니다
+                  <div className="text-xs text-muted-foreground bg-blue-50 p-3 rounded border border-blue-200">
+                    📝 수업일지 작성, AI 피드백 생성, 알림톡 발송은 <strong>수업일지 페이지</strong>에서 진행해주세요.
                   </div>
                 </div>
               </div>

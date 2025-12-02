@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { getOrgIdFromRequest } from "../lib/supabase";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapOrg = (row: any) => ({
   id: row.id,
@@ -35,20 +35,25 @@ const mapBranch = (row: any) => ({
 // GET /api/settings
 app.get("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const data = await withClient(c.env, async (client) => {
-      const orgRes = await client.query(`SELECT * FROM organizations LIMIT 1`);
+      const orgRes = await client.query(`SELECT * FROM organizations WHERE id = $1 LIMIT 1`, [orgId]);
       const org = orgRes.rows[0] ? mapOrg(orgRes.rows[0]) : null;
 
       const { rows: branchRows } = await client.query(
         `SELECT * FROM branches WHERE org_id = $1 ORDER BY created_at DESC`,
-        [DEMO_ORG],
+        [orgId],
       );
       const branches = branchRows.map(mapBranch);
 
       // rooms: map from classes as fallback
       const { rows: roomRows } = await client.query(
         `SELECT id, org_id, name, 0::int as capacity, subject as type, status, created_at, updated_at FROM classes WHERE org_id = $1`,
-        [DEMO_ORG],
+        [orgId],
       );
       const rooms = roomRows.map((r: any) => ({
         id: r.id,
@@ -71,6 +76,11 @@ app.get("/", async (c) => {
 // PUT /api/settings  (organization info + settings JSON)
 app.put("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const fields = [
       "name",
@@ -92,9 +102,12 @@ app.put("/", async (c) => {
 
     if (!setParts.length) return c.json({ error: "No fields to update" }, 400);
 
+    // Add orgId as the last parameter
+    values.push(orgId);
+
     const updated = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
-        `UPDATE organizations SET ${setParts.join(", ")}, updated_at = now() WHERE id = (SELECT id FROM organizations LIMIT 1) RETURNING *`,
+        `UPDATE organizations SET ${setParts.join(", ")}, updated_at = now() WHERE id = $${values.length} RETURNING *`,
         values,
       );
       return rows[0] ? mapOrg(rows[0]) : null;

@@ -217,7 +217,7 @@ export default function LandingPage() {
                 무료로 시작하기
               </Link>
               <Link
-                href="/api/auth/demo"
+                href="/demo"
                 className="w-full sm:w-auto rounded-lg border border-input bg-background px-8 py-3 text-base font-semibold hover:bg-accent hover:text-accent-foreground transition-colors"
               >
                 데모사이트 보기

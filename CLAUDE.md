@@ -698,6 +698,54 @@ steps:
 
 ## 🗄️ Supabase SQL 마이그레이션 가이드
 
+### 🚨 CRITICAL: DB 스키마는 반드시 실제 DB에서 확인! (추정 금지)
+
+**⚠️ 절대 원칙**: 마이그레이션 파일이 존재한다고 해서 실제 DB에 적용되었다고 **추정하지 마라!**
+
+**실패 사례 (2025-12-02)**:
+- `supabase/migrations/20251122_create_lessons_table.sql`에 `director_feedback`, `final_message` 컬럼 정의됨
+- Claude가 "마이그레이션 파일에 있으니 컬럼이 존재한다"고 추정
+- 실제 DB 확인 결과: 해당 컬럼들이 **존재하지 않음**
+- 결과: 피드백 저장 기능 완전히 실패
+
+**✅ 필수 검증 절차**:
+```bash
+# 마이그레이션 전/후 반드시 실행! 컬럼 존재 여부 직접 확인
+node --input-type=module --eval "
+import pg from 'pg';
+
+const client = new pg.Client({
+  connectionString: 'postgresql://postgres.ipqhhqduppzvsqwwzjkp:rhfemvps123@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres'
+});
+
+await client.connect();
+
+const result = await client.query(\\\`
+  SELECT column_name, data_type
+  FROM information_schema.columns
+  WHERE table_name = 'YOUR_TABLE_NAME'
+  ORDER BY ordinal_position
+\\\`);
+
+console.log('=== 실제 DB 컬럼 ===');
+result.rows.forEach(row => console.log(\\\`- \\\${row.column_name}: \\\${row.data_type}\\\`));
+
+await client.end();
+"
+```
+
+**❌ 절대 금지**:
+- "마이그레이션 파일에 있으니까 존재할 것이다" ← **추정 금지!**
+- "이전 세션에서 마이그레이션 했으니까" ← **확인 없이 가정 금지!**
+- 사용자에게 "마이그레이션 필요 없습니다"라고 대답 ← **DB 확인 후에만!**
+
+**✅ 올바른 접근**:
+1. 항상 실제 DB에 직접 쿼리 실행
+2. `information_schema.columns`로 컬럼 존재 여부 확인
+3. 확인 후에만 "마이그레이션 필요/불필요" 판단
+
+---
+
 ### 🔑 연결 문자열 (Connection String)
 
 ```

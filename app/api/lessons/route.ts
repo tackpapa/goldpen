@@ -23,6 +23,8 @@ const createLessonSchema = z.object({
   comprehension_level: z.enum(['high', 'medium', 'low']).optional(),
   student_attitudes: z.string().optional(),
   parent_feedback: z.string().optional(),
+  director_feedback: z.string().optional(),
+  final_message: z.string().optional(),
   next_lesson_plan: z.string().optional(),
   status: z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
 })
@@ -171,6 +173,8 @@ export async function GET(request: Request) {
         homework_assigned: lesson.homework_assigned || '',
         next_lesson_plan: lesson.next_lesson_plan || '',
         parent_feedback: lesson.parent_feedback || '',
+        director_feedback: lesson.director_feedback || '',
+        final_message: lesson.final_message || '',
         notes: lesson.notes || '',
         status: lesson.status || 'scheduled',
       }
@@ -281,6 +285,8 @@ export async function POST(request: Request) {
       comprehension_level: validated.comprehension_level || 'medium',
       student_attitudes: validated.student_attitudes || '',
       parent_feedback: validated.parent_feedback || '',
+      director_feedback: validated.director_feedback || '',
+      final_message: validated.final_message || '',
       next_lesson_plan: validated.next_lesson_plan || '',
       status: validated.status || 'scheduled',
       class_id: validated.class_id || null,

@@ -1,16 +1,24 @@
-import { createClient } from '@/lib/supabase/server'
-import { NextRequest } from 'next/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 /**
  * GET /api/admin/audit-logs
  * 슈퍼 어드민 - 감사 로그 목록 조회
  */
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   try {
-    const supabase = createClient()
+    const supabase = await createAuthenticatedClient(request)
+    const adminClient = createAdminClient()
 
     // 1. 인증 확인
     const {
@@ -23,7 +31,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. super_admin 권한 확인
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await adminClient
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -34,7 +42,8 @@ export async function GET(request: NextRequest) {
     }
 
     // 3. 쿼리 파라미터
-    const searchParams = request.nextUrl.searchParams
+    const url = new URL(request.url)
+    const searchParams = url.searchParams
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
     const search = searchParams.get('search') || ''
@@ -45,7 +54,7 @@ export async function GET(request: NextRequest) {
     const offset = (page - 1) * limit
 
     // 4. 감사 로그 조회 (users, organizations join)
-    let query = supabase
+    let query = adminClient
       .from('audit_logs')
       .select(
         `

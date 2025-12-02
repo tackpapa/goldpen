@@ -19,6 +19,8 @@ interface Env {
   KAKAO_ALIMTALK_API_KEY?: string;
   KAKAO_ALIMTALK_SECRET_KEY?: string;
   KAKAO_ALIMTALK_SENDER_KEY?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_CHAT_ID?: string;
   TIMEZONE: string;
 }
 
@@ -58,8 +60,8 @@ function timeToMinutes(timeStr: string): number {
 // 기본 메시지 템플릿 (통합)
 const DEFAULT_TEMPLATES: Record<string, string> = {
   // 통합 출결 알림
-  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})이 지났는데 아직 도착하지 않았습니다. 확인 부탁드립니다.',
-  'absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 예정된 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
+  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 등원 일정 시간({{예정시간}})이 지났는데 아직 도착하지 않았습니다. 확인 부탁드립니다.',
+  'absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 등원 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
   // 기타 알림
   'daily_report': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 {{날짜}} 학습 현황을 전해드립니다.\n\n오늘 총 {{총학습시간}} 동안 열심히 공부했습니다. 꾸준히 노력하는 모습이 대견합니다!',
   'assignment_remind': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n제출 전 한 번 더 검토해 보도록 안내해 주시면 감사하겠습니다.',
@@ -163,8 +165,70 @@ export default {
     }
   },
 
-  // HTTP handler (for status check)
+  // HTTP handler (for status check and test)
   async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+
+    // 테스트 엔드포인트: /test?type=late|absent|daily_report|assignment_remind
+    if (url.pathname === '/test' && request.method === 'GET') {
+      const type = url.searchParams.get('type') || 'late';
+      const studentName = url.searchParams.get('student') || '테스트학생';
+      const orgName = url.searchParams.get('org') || '골드펜학원';
+      const scheduledTime = url.searchParams.get('time') || '14:00';
+
+      // 템플릿으로 메시지 생성
+      let message = '';
+      switch (type) {
+        case 'late':
+          message = fillTemplate(DEFAULT_TEMPLATES['late'], {
+            '기관명': orgName,
+            '학생명': studentName,
+            '예정시간': scheduledTime,
+          });
+          break;
+        case 'absent':
+          message = fillTemplate(DEFAULT_TEMPLATES['absent'], {
+            '기관명': orgName,
+            '학생명': studentName,
+            '예정시간': scheduledTime,
+          });
+          break;
+        case 'daily_report':
+          message = fillTemplate(DEFAULT_TEMPLATES['daily_report'], {
+            '기관명': orgName,
+            '학생명': studentName,
+            '날짜': new Date().toISOString().split('T')[0],
+            '총학습시간': '3시간 25분',
+          });
+          break;
+        case 'assignment_remind':
+          message = fillTemplate(DEFAULT_TEMPLATES['assignment_remind'], {
+            '기관명': orgName,
+            '학생명': studentName,
+            '과제명': '수학 문제집 1-20번',
+            '마감일': '2025-12-03 (내일)',
+          });
+          break;
+        default:
+          message = `[테스트] 알 수 없는 타입: ${type}`;
+      }
+
+      // 텔레그램으로 전송
+      const telegramResult = await sendTelegram(env, `📱 알림톡 테스트 (${type})\n\n${message}`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          type,
+          message,
+          telegram: telegramResult,
+          params: { studentName, orgName, scheduledTime },
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // 기본 상태 체크
     return new Response(
       JSON.stringify({
         name: "GoldPen Attendance Queue Consumer",
@@ -177,7 +241,8 @@ export default {
           "daily_report",
           "assignment_remind",
           "process_commute_absent"
-        ]
+        ],
+        testEndpoint: "/test?type=late|absent|daily_report|assignment_remind&student=이름&org=기관명&time=14:00"
       }),
       { headers: { "Content-Type": "application/json" } }
     );
@@ -763,6 +828,10 @@ async function sendNotification(
 
     console.log(`[Notification] Recorded: ${type} for ${studentName}`);
 
+    // 텔레그램으로 모니터링 알림 전송
+    const typeEmoji = type === 'late' ? '⏰' : type === 'absent' ? '❌' : '📋';
+    await sendTelegram(env, `${typeEmoji} [${type.toUpperCase()}] ${studentName}\n\n${message}`);
+
     if (recipientPhone) {
       const templateCode = type.includes('late') ? 'GOLDPEN_LATE_001' : 'GOLDPEN_ABSENT_001';
       await sendKakaoAlimtalk(env, recipientPhone, message, templateCode);
@@ -857,4 +926,49 @@ async function generateHmacSignature(apiKey: string, secretKey: string, timestam
 
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
   return btoa(String.fromCharCode(...new Uint8Array(signature)));
+}
+
+// ============================================================
+// 텔레그램 테스트 알림
+// ============================================================
+
+async function sendTelegram(
+  env: Env,
+  message: string
+): Promise<{ success: boolean; error?: string }> {
+  const botToken = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+
+  if (!botToken || !chatId) {
+    console.log('[Telegram] No token/chatId configured. Message:', message);
+    return { success: false, error: 'TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured' };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: 'HTML',
+        }),
+      }
+    );
+
+    const result = await response.json() as { ok: boolean; description?: string };
+
+    if (result.ok) {
+      console.log('[Telegram] Message sent successfully');
+      return { success: true };
+    }
+
+    console.error('[Telegram] API error:', result);
+    return { success: false, error: result.description || 'Telegram API error' };
+  } catch (error) {
+    console.error('[Telegram] Error:', error);
+    return { success: false, error: String(error) };
+  }
 }

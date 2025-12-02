@@ -92,7 +92,10 @@ export default function LessonsPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false)
+  const [isGeneratingDirectorFeedback, setIsGeneratingDirectorFeedback] = useState(false)
   const [isGeneratingFinalMessage, setIsGeneratingFinalMessage] = useState(false)
+  const [isSendingNotification, setIsSendingNotification] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
 
@@ -111,9 +114,10 @@ export default function LessonsPage() {
   const [isHomeworkExpanded, setIsHomeworkExpanded] = useState(false)
 
   // Auth Context에서 사용자 권한 및 정보 가져오기
-  const { user } = useAuth()
+  const { user, org } = useAuth()
   const userRole = user?.role ?? 'teacher'
   const currentTeacherId = user?.id ?? ''
+  const organizationName = org?.name || institutionName // 실제 기관명 (없으면 슬러그 사용)
 
   // API에서 데이터 가져오기
   useEffect(() => {
@@ -232,6 +236,8 @@ export default function LessonsPage() {
       homework_due_date: '',
       next_lesson_plan: '',
       parent_feedback: '',
+      director_feedback: '',
+      final_message: '',
     })
     setStudentAttendances([])
     setIsAttendanceExpanded(false)
@@ -239,6 +245,7 @@ export default function LessonsPage() {
     setHomeworkSubmissions({})
     setAllSubmitted(true)
     setIsHomeworkExpanded(false)
+    setIsSaved(false)
     setIsDialogOpen(true)
   }
 
@@ -326,75 +333,151 @@ export default function LessonsPage() {
     setIsDialogOpen(true)
   }
 
-  const handleSendNotification = () => {
-    // TODO: Kakao 알림톡 Cloudflare Worker 연동 예정. 현재는 발송 API 비어있음.
-    const sendKakao = async () => {
-      console.warn('[알림톡] Kakao 발송 API는 Cloudflare Worker로 연동 예정 (stub)')
-      return Promise.resolve()
+  const handleSendNotification = async () => {
+    // 저장되지 않은 수업일지인 경우 먼저 저장
+    if (!isEditing || !selectedLesson) {
+      toast({
+        title: '수업일지 저장 필요',
+        description: '수업일지를 먼저 저장한 후 알림톡을 보내주세요.',
+        variant: 'destructive',
+      })
+      return
     }
 
-    const markSent = async () => {
-      if (selectedLesson) {
-        const res = await fetch(`/api/lessons/${selectedLesson.id}`, {
+    // 이미 발송된 경우 중복 발송 방지
+    // @ts-ignore
+    if (selectedLesson.notification_sent) {
+      toast({
+        title: '이미 발송됨',
+        description: '이 수업일지는 이미 알림톡이 발송되었습니다.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    // 중복 클릭 방지
+    if (isSendingNotification) {
+      return
+    }
+
+    setIsSendingNotification(true)
+    try {
+      // Workers API를 통해 알림톡 발송 (텔레그램 포함)
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+
+      const notificationResponse = await fetch(`${apiUrl}/api/lessons/${selectedLesson.id}/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lesson_id: selectedLesson.id,
+          class_name: selectedLesson.class_name || formData.class_name,
+          lesson_date: selectedLesson.lesson_date || formData.lesson_date,
+          content: formData.content || selectedLesson.content,
+          homework_assigned: formData.homework_assigned || selectedLesson.homework_assigned,
+          final_message: formData.final_message,
+        }),
+      })
+
+      interface NotifyResponse {
+        success?: boolean
+        error?: string
+        telegram_sent?: boolean
+      }
+      const notifyResult = await notificationResponse.json() as NotifyResponse
+
+      if (!notificationResponse.ok) {
+        throw new Error(notifyResult.error || '알림톡 발송 실패')
+      }
+
+      // 발송 완료 상태로 업데이트
+      const updateRes = await fetch(`/api/lessons/${selectedLesson.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notification_sent: true,
+          notification_sent_at: new Date().toISOString(),
+        }),
+      })
+
+      if (updateRes.ok) {
+        setLessons((prev) =>
+          prev.map((l) =>
+            l.id === selectedLesson.id
+              ? { ...l, notification_sent: true, notification_sent_at: new Date().toISOString() }
+              : l
+          )
+        )
+      }
+
+      toast({
+        title: '알림톡 전송 완료',
+        description: notifyResult.telegram_sent
+          ? '학부모님께 알림톡이 발송되었습니다. (텔레그램 모니터링 전송됨)'
+          : '학부모님께 알림톡이 발송되었습니다.',
+      })
+      setIsDialogOpen(false)
+    } catch (error: any) {
+      console.error('[알림톡 발송 오류]', error)
+      toast({
+        title: '전송 실패',
+        description: error?.message || '알림톡 발송 중 오류가 발생했습니다.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsSendingNotification(false)
+    }
+  }
+
+  const handleUpdateFeedback = async () => {
+    if (isEditing && selectedLesson) {
+      try {
+        setIsLoading(true)
+
+        // API 호출하여 DB에 저장
+        const response = await fetch(`/api/lessons/${selectedLesson.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            notification_sent: true,
-            notification_sent_at: new Date().toISOString(),
+            parent_feedback: formData.parent_feedback,
+            director_feedback: formData.director_feedback,
+            final_message: formData.final_message,
           }),
         })
-        if (res.ok) {
-          setLessons((prev) =>
-            prev.map((l) =>
-              l.id === selectedLesson.id
-                ? { ...l, notification_sent: true, notification_sent_at: new Date().toISOString() }
-                : l
-            )
-          )
-        }
-      }
-    }
 
-    sendKakao()
-      .then(markSent)
-      .then(() => {
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({})) as { error?: string }
+          throw new Error(err.error || '피드백 저장에 실패했습니다.')
+        }
+
+        // 로컬 상태 업데이트
+        const updatedLessons = lessons.map((lesson) =>
+          lesson.id === selectedLesson.id
+            ? {
+                ...lesson,
+                parent_feedback: formData.parent_feedback,
+                director_feedback: formData.director_feedback,
+                final_message: formData.final_message,
+                updated_at: new Date().toISOString()
+              }
+            : lesson
+        )
+        setLessons(updatedLessons)
+
         toast({
-          title: '알림톡 전송 완료',
-          description: '학부모님께 알림톡(예정)이 발송 처리되었습니다.',
+          title: '피드백 저장 완료',
+          description: '피드백이 성공적으로 저장되었습니다.',
         })
         setIsDialogOpen(false)
-      })
-      .catch((error: any) => {
+      } catch (error: any) {
         toast({
-          title: '전송 실패',
-          description: error?.message || '알림톡 발송 중 오류가 발생했습니다.',
+          title: '오류 발생',
+          description: error.message || '피드백 저장 중 오류가 발생했습니다.',
           variant: 'destructive',
         })
-      })
-  }
-
-  const handleUpdateFeedback = () => {
-    if (isEditing && selectedLesson) {
-      // Update only feedback fields
-      const updatedLessons = lessons.map((lesson) =>
-        lesson.id === selectedLesson.id
-          ? {
-              ...lesson,
-              parent_feedback: formData.parent_feedback,
-              // @ts-ignore - director_feedback는 타입에 없지만 런타임에서 처리
-              director_feedback: formData.director_feedback,
-              updated_at: new Date().toISOString()
-            }
-          : lesson
-      )
-      setLessons(updatedLessons)
-
-      toast({
-        title: '피드백 수정 완료',
-        description: '피드백이 성공적으로 수정되었습니다.',
-      })
+      } finally {
+        setIsLoading(false)
+      }
     }
-    setIsDialogOpen(false)
   }
 
   const handleGenerateFeedback = async () => {
@@ -438,7 +521,7 @@ export default function LessonsPage() {
         setFormData((prev) => ({ ...prev, parent_feedback: result.text }))
         toast({
           title: 'AI 피드백 생성 완료',
-          description: '생성된 피드백을 확인하고 필요시 수정해주세요.',
+          description: '생성된 피드백을 확인하고 필요시 수정 후 저장해주세요.',
         })
       } else {
         throw new Error(result.error || 'AI 응답 오류')
@@ -452,6 +535,66 @@ export default function LessonsPage() {
       })
     } finally {
       setIsGeneratingFeedback(false)
+    }
+  }
+
+  // 원장님 피드백 AI 생성
+  const handleGenerateDirectorFeedback = async () => {
+    if (!formData.content) {
+      toast({
+        title: '학습 내용 필요',
+        description: '피드백 생성을 위해 학습 내용을 먼저 입력해주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsGeneratingDirectorFeedback(true)
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+      const response = await fetch(`${apiUrl}/api/ai/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'director_feedback',
+          lesson: {
+            class_name: formData.class_name,
+            date: formData.lesson_date,
+            content: formData.content,
+            topic: formData.subject,
+            homework: formData.homework_assigned,
+            notes: formData.student_attitudes,
+            // 선생님 피드백을 참고하여 원장님 피드백 생성
+            teacher_feedback: formData.parent_feedback,
+          },
+        }),
+      })
+
+      interface AIResponse {
+        success?: boolean
+        text?: string
+        error?: string
+      }
+      const result = await response.json() as AIResponse
+
+      if (response.ok && result.success && result.text) {
+        setFormData((prev) => ({ ...prev, director_feedback: result.text }))
+        toast({
+          title: 'AI 원장님 피드백 생성 완료',
+          description: '생성된 피드백을 확인하고 필요시 수정 후 저장해주세요.',
+        })
+      } else {
+        throw new Error(result.error || 'AI 응답 오류')
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '알 수 없는 오류'
+      toast({
+        title: 'AI 원장님 피드백 생성 실패',
+        description: message,
+        variant: 'destructive',
+      })
+    } finally {
+      setIsGeneratingDirectorFeedback(false)
     }
   }
 
@@ -475,11 +618,16 @@ export default function LessonsPage() {
         body: JSON.stringify({
           type: 'final_message',
           lesson: {
+            org_name: organizationName,
             class_name: formData.class_name,
             date: formData.lesson_date,
             content: formData.content,
             topic: formData.subject,
             homework: formData.homework_assigned,
+            notes: formData.student_attitudes,
+            // 선생님 피드백과 원장님 피드백을 포함하여 종합 알림톡 생성
+            teacher_feedback: formData.parent_feedback,
+            director_feedback: formData.director_feedback,
           },
         }),
       })
@@ -495,7 +643,7 @@ export default function LessonsPage() {
         setFormData((prev) => ({ ...prev, final_message: result.text }))
         toast({
           title: 'AI 안내 메시지 생성 완료',
-          description: '생성된 메시지를 확인하고 필요시 수정해주세요.',
+          description: '생성된 메시지를 확인하고 필요시 수정 후 저장해주세요.',
         })
       } else {
         throw new Error(result.error || 'AI 응답 오류')
@@ -573,6 +721,8 @@ export default function LessonsPage() {
           comprehension_level: formData.comprehension_level || 'medium',
           student_attitudes: formData.student_attitudes,
           parent_feedback: formData.parent_feedback,
+          director_feedback: formData.director_feedback,
+          final_message: formData.final_message,
           next_lesson_plan: formData.next_lesson_plan,
           status: 'completed',
         }),
@@ -625,8 +775,10 @@ export default function LessonsPage() {
         })
       }
 
-      setIsDialogOpen(false)
-      setSelectedLesson(null)
+      // 저장됨 상태로 변경하고 모달 유지
+      setIsSaved(true)
+      setSelectedLesson(data.lesson)
+      setIsEditing(true)
     } catch (error: any) {
       toast({
         title: '오류 발생',
@@ -1484,22 +1636,20 @@ export default function LessonsPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="parent_feedback">선생님 피드백</Label>
-                {!isEditing && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleGenerateFeedback}
-                    disabled={isGeneratingFeedback}
-                  >
-                    {isGeneratingFeedback ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Sparkles className="mr-2 h-4 w-4" />
-                    )}
-                    {isGeneratingFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
-                  </Button>
-                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleGenerateFeedback}
+                  disabled={isGeneratingFeedback}
+                >
+                  {isGeneratingFeedback ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-2 h-4 w-4" />
+                  )}
+                  {isGeneratingFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
+                </Button>
               </div>
               <p className="text-xs text-muted-foreground mb-2">
                 선생님이 작성한 부모님에게 보내는 피드백
@@ -1513,19 +1663,35 @@ export default function LessonsPage() {
                 placeholder="부모님께 보낼 피드백을 입력하거나 AI로 생성하세요"
                 rows={4}
               />
-              {!isEditing && (
-                <p className="text-xs text-muted-foreground">
-                  AI 버튼을 클릭하면 수업 내용을 바탕으로 부모님께 보낼 피드백 초안이 자동 생성됩니다
-                </p>
-              )}
+              <p className="text-xs text-muted-foreground">
+                AI 버튼을 클릭하면 수업 내용을 바탕으로 부모님께 보낼 피드백 초안이 자동 생성됩니다
+              </p>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="director_feedback">원장님 피드백</Label>
-                {userRole !== 'owner' && (
-                  <Badge variant="secondary" className="text-xs">원장님만 작성 가능</Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {userRole === 'owner' && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleGenerateDirectorFeedback}
+                      disabled={isGeneratingDirectorFeedback}
+                    >
+                      {isGeneratingDirectorFeedback ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Sparkles className="mr-2 h-4 w-4" />
+                      )}
+                      {isGeneratingDirectorFeedback ? 'AI 생성 중...' : 'AI 피드백 생성'}
+                    </Button>
+                  )}
+                  {userRole !== 'owner' && (
+                    <Badge variant="secondary" className="text-xs">원장님만 작성 가능</Badge>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-muted-foreground mb-2">
                 원장님이 작성한 부모님에게 보내는 추가 피드백
@@ -1536,7 +1702,7 @@ export default function LessonsPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, director_feedback: e.target.value })
                 }
-                placeholder={userRole === 'owner' ? "원장님의 추가 피드백을 입력하세요" : "원장님만 작성할 수 있습니다"}
+                placeholder={userRole === 'owner' ? "원장님의 추가 피드백을 입력하거나 AI로 생성하세요" : "원장님만 작성할 수 있습니다"}
                 rows={4}
                 disabled={userRole !== 'owner'}
               />
@@ -1594,19 +1760,58 @@ export default function LessonsPage() {
                   피드백 저장
                 </Button>
                 {(userRole === 'owner') && (
-                  <Button onClick={handleSendNotification}>
-                    알림톡 보내기
+                  <Button
+                    onClick={handleSendNotification}
+                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent}
+                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : "default"}
+                  >
+                    {isSendingNotification ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        발송 중...
+                      </>
+                    ) : (selectedLesson as any)?.notification_sent ? (
+                      '발송완료'
+                    ) : (
+                      '알림톡 보내기'
+                    )}
                   </Button>
                 )}
               </>
             ) : (
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleSaveLesson}>
-                  작성 완료
+                <Button
+                  variant={isSaved ? "secondary" : "outline"}
+                  onClick={handleSaveLesson}
+                  disabled={isSaved || isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      저장 중...
+                    </>
+                  ) : isSaved ? (
+                    '저장됨'
+                  ) : (
+                    '작성 완료'
+                  )}
                 </Button>
                 {(userRole === 'owner') && (
-                  <Button onClick={handleSendNotification}>
-                    알림톡 보내기
+                  <Button
+                    onClick={handleSendNotification}
+                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent || !isSaved}
+                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : "default"}
+                  >
+                    {isSendingNotification ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        발송 중...
+                      </>
+                    ) : (selectedLesson as any)?.notification_sent ? (
+                      '발송완료'
+                    ) : (
+                      '알림톡 보내기'
+                    )}
                   </Button>
                 )}
               </div>

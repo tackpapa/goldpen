@@ -1,7 +1,16 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 const CreatePlanSchema = z.object({
   name: z.string().min(1),
@@ -20,22 +29,14 @@ const CreatePlanSchema = z.object({
 
 const UpdatePlanSchema = CreatePlanSchema.partial()
 
-async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
+async function checkSuperAdmin(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return { authorized: false, error: 'Unauthorized', status: 401 }
 
-  if (authError || !user) {
-    return { authorized: false, error: 'Unauthorized', status: 401 }
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (userError || !userData || userData.role !== 'super_admin') {
-    return { authorized: false, error: 'Forbidden', status: 403 }
-  }
+  const adminClient = createAdminClient()
+  const { data: userData, error: userError } = await adminClient.from('users').select('role').eq('id', user.id).single()
+  if (userError || !userData || userData.role !== 'super_admin') return { authorized: false, error: 'Forbidden', status: 403 }
 
   return { authorized: true, user }
 }
@@ -43,8 +44,8 @@ async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
 // GET /api/admin/plans
 export async function GET(request: Request) {
   try {
-    const supabase = createClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -53,7 +54,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const includeInactive = searchParams.get('includeInactive') === 'true'
 
-    let query = supabase
+    let query = adminClient
       .from('plans')
       .select('*')
       .order('sort_order', { ascending: true })
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
     // Get organization count per plan
     const plansWithStats = await Promise.all(
       (plans || []).map(async (plan) => {
-        const { count } = await supabase
+        const { count } = await adminClient
           .from('organizations')
           .select('*', { count: 'exact', head: true })
           .eq('subscription_plan', plan.code)
@@ -94,8 +95,8 @@ export async function GET(request: Request) {
 // POST /api/admin/plans
 export async function POST(request: Request) {
   try {
-    const supabase = createClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -111,7 +112,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: plan, error } = await supabase
+    const { data: plan, error } = await adminClient
       .from('plans')
       .insert({
         ...validation.data,

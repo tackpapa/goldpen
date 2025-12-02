@@ -27,9 +27,18 @@ export async function POST(request: Request) {
     }
 
     const secureFlag = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+    // Supabase project ref 추출 (URL에서)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
+
     const expired = [
       `sb-auth-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`,
       `sb-access-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`, // 호환용
+      // Supabase SSR 표준 쿠키 패턴 삭제
+      ...(projectRef ? [
+        `sb-${projectRef}-auth-token=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`,
+        `sb-${projectRef}-auth-token-code-verifier=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag}`,
+      ] : []),
     ]
 
     return Response.json(

@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { getOrgIdFromRequest } from "../lib/supabase";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapTrans = (row: any) => ({
   id: row.id,
@@ -24,8 +24,14 @@ const mapTrans = (row: any) => ({
 //  - category: 카테고리별 매출 합계
 //  - teacher_salaries: 월별 급여 합계
 app.get("/", async (c) => {
-  const summary = c.req.query("summary");
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const summary = c.req.query("summary");
+
     if (summary === "monthly") {
       const monthly = await withClient(c.env, async (client) => {
         const { rows } = await client.query(
@@ -37,7 +43,7 @@ app.get("/", async (c) => {
           GROUP BY 1
           ORDER BY 1
           `,
-          [DEMO_ORG],
+          [orgId],
         );
         return rows;
       });
@@ -54,7 +60,7 @@ app.get("/", async (c) => {
           GROUP BY 1
           ORDER BY 2 DESC
           `,
-          [DEMO_ORG],
+          [orgId],
         );
         return rows;
       });
@@ -72,7 +78,7 @@ app.get("/", async (c) => {
           GROUP BY 1
           ORDER BY 1
           `,
-          [DEMO_ORG],
+          [orgId],
         );
         return rows;
       });
@@ -89,7 +95,7 @@ app.get("/", async (c) => {
           WHERE org_id = $1
           GROUP BY 1
           `,
-          [DEMO_ORG],
+          [orgId],
         );
         const expenses = await client.query(
           `
@@ -99,7 +105,7 @@ app.get("/", async (c) => {
           WHERE org_id = $1
           GROUP BY 1
           `,
-          [DEMO_ORG],
+          [orgId],
         );
         const revMap = new Map<string, number>();
         revenue.rows.forEach((r: any) => revMap.set(r.month, Number(r.revenue)));
@@ -126,7 +132,7 @@ app.get("/", async (c) => {
     const transactions = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
         `SELECT * FROM billing_transactions WHERE org_id = $1 ORDER BY payment_date DESC, created_at DESC LIMIT 500`,
-        [DEMO_ORG],
+        [orgId],
       );
       return rows.map(mapTrans);
     });
@@ -140,6 +146,11 @@ app.get("/", async (c) => {
 // POST /api/billing
 app.post("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const {
       student_id = null,
@@ -162,7 +173,7 @@ app.post("/", async (c) => {
         RETURNING *
         `,
         [
-          DEMO_ORG,
+          orgId,
           student_id,
           category,
           amount,

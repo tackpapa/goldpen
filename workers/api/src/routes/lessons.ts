@@ -1,20 +1,17 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
-import { sendNotification, createLessonReportMessage } from "../lib/notifications";
+import { getOrgIdFromRequest } from "../lib/supabase";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapLesson = (row: any) => ({
   id: row.id,
   org_id: row.org_id,
   class_id: row.class_id,
   teacher_id: row.teacher_id,
-  student_id: row.student_id,
   lesson_date: row.lesson_date,
   lesson_time: row.lesson_time,
-  duration_minutes: row.duration_minutes,
   subject: row.subject,
   content: row.content,
   student_attitudes: row.student_attitudes,
@@ -22,8 +19,8 @@ const mapLesson = (row: any) => ({
   homework_assigned: row.homework_assigned,
   next_lesson_plan: row.next_lesson_plan,
   parent_feedback: row.parent_feedback,
-  director_feedback: row.director_feedback,
-  final_message: row.final_message,
+  director_feedback: row.director_feedback || "",
+  final_message: row.final_message || "",
   notification_sent: row.notification_sent,
   notification_sent_at: row.notification_sent_at,
   attendance: row.attendance || [],
@@ -38,6 +35,11 @@ const mapLesson = (row: any) => ({
  */
 app.get("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const url = new URL(c.req.url);
     const targetDate =
       url.searchParams.get("date") || new Date().toISOString().split("T")[0];
@@ -49,7 +51,7 @@ app.get("/", async (c) => {
       async (client) => {
         const { rows } = await client.query(
           `SELECT * FROM lessons WHERE org_id = $1 ORDER BY lesson_date DESC, created_at DESC LIMIT 500`,
-          [DEMO_ORG],
+          [orgId],
         );
         const lessons = rows.map(mapLesson);
 
@@ -62,7 +64,7 @@ app.get("/", async (c) => {
         GROUP BY 1
         ORDER BY 1
         `,
-          [DEMO_ORG],
+          [orgId],
         );
 
         // comprehension trend by week (ISO week)
@@ -77,7 +79,7 @@ app.get("/", async (c) => {
         GROUP BY 1
         ORDER BY 1
         `,
-          [DEMO_ORG],
+          [orgId],
         );
 
         // scheduled classes derived from classes.schedule jsonb
@@ -86,7 +88,7 @@ app.get("/", async (c) => {
          FROM classes c
          LEFT JOIN teachers t ON t.id = c.teacher_id
          WHERE c.org_id = $1`,
-          [DEMO_ORG],
+          [orgId],
         );
 
         const schedules: any[] = [];
@@ -153,14 +155,18 @@ app.get("/", async (c) => {
  */
 app.post("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const {
       class_id = null,
       teacher_id = null,
-      student_id = null,
       lesson_date,
       lesson_time = "",
-      duration_minutes = null,
+      title = "",
       subject = "",
       content = "",
       student_attitudes = "",
@@ -168,36 +174,34 @@ app.post("/", async (c) => {
       homework_assigned = "",
       next_lesson_plan = "",
       parent_feedback = "",
-      director_feedback = "",
-      final_message = "",
       notification_sent = false,
-      attendance = [],
-      homework_submissions = {},
     } = body || {};
 
     if (!lesson_date) return c.json({ error: "lesson_date is required" }, 400);
+
+    // title이 없으면 subject를 사용하고, 둘 다 없으면 기본값 설정
+    const lessonTitle = title || subject || `${lesson_date} 수업`;
 
     const lesson = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
         `
         INSERT INTO lessons (
-          org_id, class_id, teacher_id, student_id,
-          lesson_date, lesson_time, duration_minutes,
+          org_id, class_id, teacher_id,
+          lesson_date, lesson_time, title,
           subject, content, student_attitudes, comprehension_level,
-          homework_assigned, next_lesson_plan, parent_feedback, director_feedback,
-          final_message, notification_sent, attendance, homework_submissions
+          homework_assigned, next_lesson_plan, parent_feedback,
+          notification_sent
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
         RETURNING *
         `,
         [
-          DEMO_ORG,
+          orgId,
           class_id,
           teacher_id,
-          student_id,
           lesson_date,
           lesson_time,
-          duration_minutes,
+          lessonTitle,
           subject,
           content,
           student_attitudes,
@@ -205,58 +209,11 @@ app.post("/", async (c) => {
           homework_assigned,
           next_lesson_plan,
           parent_feedback,
-          director_feedback,
-          final_message,
           notification_sent,
-          attendance,
-          homework_submissions,
         ],
       );
 
       const lessonData = rows[0] ? mapLesson(rows[0]) : null;
-
-      // 수업 리포트 알림 발송 (notification_sent가 true인 경우)
-      if (lessonData && notification_sent && student_id) {
-        try {
-          // 학생 정보 조회
-          const studentRes = await client.query(
-            `SELECT s.*, o.name as org_name, c.name as class_name
-             FROM students s
-             JOIN organizations o ON o.id = s.org_id
-             LEFT JOIN classes c ON c.id = $1
-             WHERE s.id = $2`,
-            [class_id, student_id]
-          );
-
-          if (studentRes.rows[0]) {
-            const student = studentRes.rows[0];
-            const message = createLessonReportMessage(
-              student.org_name,
-              student.name,
-              student.class_name || subject || "수업",
-              lesson_date,
-              content,
-              homework_assigned
-            );
-
-            await sendNotification(client, c.env, {
-              orgId: DEMO_ORG,
-              orgName: student.org_name,
-              studentId: student_id,
-              studentName: student.name,
-              type: "lesson_report",
-              classId: class_id,
-              className: student.class_name,
-              recipientPhone: student.parent_phone,
-              message,
-              metadata: { lesson_id: lessonData.id, lesson_date, subject, content },
-            });
-          }
-        } catch (notifError) {
-          console.error("[lessons] notification error:", notifError);
-          // 알림 실패해도 레슨 저장은 성공
-        }
-      }
 
       return lessonData;
     });

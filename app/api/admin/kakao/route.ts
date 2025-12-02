@@ -1,23 +1,24 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
 
-async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+async function checkSuperAdmin(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) return { authorized: false, error: 'Unauthorized', status: 401 }
 
-  if (authError || !user) {
-    return { authorized: false, error: 'Unauthorized', status: 401 }
-  }
-
-  const { data: userData, error: userError } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single()
-
-  if (userError || !userData || userData.role !== 'super_admin') {
-    return { authorized: false, error: 'Forbidden', status: 403 }
-  }
+  const adminClient = createAdminClient()
+  const { data: userData, error: userError } = await adminClient.from('users').select('role').eq('id', user.id).single()
+  if (userError || !userData || userData.role !== 'super_admin') return { authorized: false, error: 'Forbidden', status: 403 }
 
   return { authorized: true, user }
 }
@@ -25,8 +26,8 @@ async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
 // GET /api/admin/kakao - 카카오 알림톡 전체 현황
 export async function GET(request: Request) {
   try {
-    const supabase = createClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const adminClient = createAdminClient()
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
     startDate.setDate(startDate.getDate() - parseInt(period))
 
     // 전체 통계
-    let statsQuery = supabase
+    let statsQuery = adminClient
       .from('kakao_talk_usages')
       .select('cost, status', { count: 'exact' })
       .gte('sent_at', startDate.toISOString())
@@ -74,7 +75,7 @@ export async function GET(request: Request) {
     }
 
     // 기관별 사용량
-    const { data: orgUsages } = await supabase
+    const { data: orgUsages } = await adminClient
       .from('kakao_talk_usages')
       .select('org_id, cost')
       .gte('sent_at', startDate.toISOString())
@@ -95,7 +96,7 @@ export async function GET(request: Request) {
     let orgDetails: Record<string, { name: string; type: string }> = {}
 
     if (orgIds.length > 0) {
-      const { data: orgs } = await supabase
+      const { data: orgs } = await adminClient
         .from('organizations')
         .select('id, name, type')
         .in('id', orgIds)
@@ -118,7 +119,7 @@ export async function GET(request: Request) {
       .sort((a, b) => b.count - a.count)
 
     // 최근 발송 내역
-    let recentQuery = supabase
+    let recentQuery = adminClient
       .from('kakao_talk_usages')
       .select(`
         id,
@@ -156,7 +157,7 @@ export async function GET(request: Request) {
       const dayEnd = new Date(dateStr)
       dayEnd.setDate(dayEnd.getDate() + 1)
 
-      const { data: dayUsages } = await supabase
+      const { data: dayUsages } = await adminClient
         .from('kakao_talk_usages')
         .select('cost')
         .gte('sent_at', dayStart.toISOString())

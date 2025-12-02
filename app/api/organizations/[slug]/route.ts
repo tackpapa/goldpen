@@ -1,6 +1,14 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 // GET /api/organizations/[slug] - 기관 정보 조회 (공개)
 export async function GET(
@@ -8,11 +16,11 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
-    const supabase = createClient()
+    const adminClient = createAdminClient()
     const slug = params.slug
 
     // slug 컬럼으로 먼저 조회, 없으면 name/id로 폴백
-    let { data: organization, error } = await supabase
+    let { data: organization, error } = await adminClient
       .from('organizations')
       .select('id, name, logo_url')
       .eq('slug', slug)
@@ -20,7 +28,7 @@ export async function GET(
 
     // slug로 못 찾으면 name/id로 폴백 (레거시 호환)
     if (!organization) {
-      const fallbackResult = await supabase
+      const fallbackResult = await adminClient
         .from('organizations')
         .select('id, name, logo_url')
         .or(`name.eq.${slug},id.eq.${slug}`)

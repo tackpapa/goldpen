@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { getOrgIdFromRequest } from "../lib/supabase";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapAttendance = (row: any) => ({
   id: row.id,
@@ -22,10 +22,15 @@ const mapAttendance = (row: any) => ({
  */
 app.get("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const records = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
         `SELECT * FROM attendance WHERE org_id = $1 ORDER BY date DESC, created_at DESC LIMIT 500`,
-        [DEMO_ORG],
+        [orgId],
       );
       return rows.map(mapAttendance);
     });
@@ -42,6 +47,11 @@ app.get("/", async (c) => {
  */
 app.post("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const {
       student_id,
@@ -61,7 +71,7 @@ app.post("/", async (c) => {
         VALUES ($1,$2,$3,$4,$5,$6)
         RETURNING *
         `,
-        [DEMO_ORG, student_id, class_id, date, status, notes],
+        [orgId, student_id, class_id, date, status, notes],
       );
       return rows[0] ? mapAttendance(rows[0]) : null;
     });

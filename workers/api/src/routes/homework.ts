@@ -1,10 +1,10 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { getOrgIdFromRequest } from "../lib/supabase";
 import { sendNotification, createAssignmentNewMessage } from "../lib/notifications";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapHw = (row: any) => ({
   id: row.id,
@@ -22,10 +22,15 @@ const mapHw = (row: any) => ({
 // GET /api/homework
 app.get("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const items = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
         `SELECT * FROM homework WHERE org_id = $1 ORDER BY due_date DESC NULLS LAST, created_at DESC LIMIT 200`,
-        [DEMO_ORG],
+        [orgId],
       );
       return rows.map(mapHw);
     });
@@ -39,6 +44,11 @@ app.get("/", async (c) => {
 // POST /api/homework
 app.post("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const {
       title,
@@ -57,7 +67,7 @@ app.post("/", async (c) => {
         `INSERT INTO homework (org_id, title, description, due_date, class_id, teacher_id, status, submission_url)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [
-          DEMO_ORG,
+          orgId,
           title,
           description,
           due_date,
@@ -94,7 +104,7 @@ app.post("/", async (c) => {
             );
 
             await sendNotification(client, c.env, {
-              orgId: DEMO_ORG,
+              orgId: orgId,
               orgName: student.org_name,
               studentId: student.student_id,
               studentName: student.student_name,

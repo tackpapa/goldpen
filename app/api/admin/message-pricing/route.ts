@@ -1,7 +1,9 @@
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
 
 const UpdatePricingSchema = z.object({
   message_type: z.string(),
@@ -9,10 +11,25 @@ const UpdatePricingSchema = z.object({
   cost: z.number().int().min(0).optional(),
 })
 
-async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('[Supabase Admin] Missing environment variables')
+  }
+
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false }
+  })
+}
+
+async function checkSuperAdmin(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
+    console.error('[Message Pricing] Auth error:', authError?.message || 'No user')
     return { authorized: false, error: 'Unauthorized', status: 401 }
   }
 
@@ -24,6 +41,7 @@ async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
     .single()
 
   if (userError || !userData || userData.role !== 'super_admin') {
+    console.error('[Message Pricing] Role check failed:', userError?.message || `Role: ${userData?.role}`)
     return { authorized: false, error: 'Forbidden', status: 403 }
   }
 
@@ -31,16 +49,15 @@ async function checkSuperAdmin(supabase: ReturnType<typeof createClient>) {
 }
 
 // GET /api/admin/message-pricing - 메시지 비용 목록 조회
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const supabase = createClient()
-    const adminClient = createAdminClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
     }
 
+    const adminClient = createAdminClient()
     const { data: pricing, error } = await adminClient
       .from('message_pricing')
       .select('*')
@@ -61,13 +78,13 @@ export async function GET() {
 // PUT /api/admin/message-pricing - 메시지 비용 수정
 export async function PUT(request: Request) {
   try {
-    const supabase = createClient()
-    const adminClient = createAdminClient()
-    const authCheck = await checkSuperAdmin(supabase)
+    const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
     }
+
+    const adminClient = createAdminClient()
 
     const body = await request.json()
     const validation = UpdatePricingSchema.safeParse(body)

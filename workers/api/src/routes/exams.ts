@@ -1,28 +1,37 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { getOrgIdFromRequest } from "../lib/supabase";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapExam = (row: any) => ({
   id: row.id,
   org_id: row.org_id,
+  class_id: row.class_id,
   title: row.title,
   subject: row.subject,
   exam_date: row.exam_date,
-  max_score: row.max_score,
+  exam_time: row.exam_time,
+  duration_minutes: row.duration_minutes,
+  total_score: row.total_score,
   description: row.description,
   created_at: row.created_at,
+  updated_at: row.updated_at,
 });
 
 // GET /api/exams
 app.get("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const exams = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
         `SELECT * FROM exams WHERE org_id = $1 ORDER BY exam_date DESC, created_at DESC LIMIT 200`,
-        [DEMO_ORG],
+        [orgId],
       );
       return rows.map(mapExam);
     });
@@ -36,23 +45,32 @@ app.get("/", async (c) => {
 // POST /api/exams
 app.post("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const {
+      class_id,
       title,
-      subject = null,
+      subject,
       exam_date,
-      max_score = null,
+      exam_time = null,
+      duration_minutes = null,
+      total_score = 100,
       description = null,
     } = body || {};
-    if (!title || !exam_date)
-      return c.json({ error: "title and exam_date required" }, 400);
+
+    if (!class_id || !title || !subject || !exam_date)
+      return c.json({ error: "class_id, title, subject, exam_date required" }, 400);
 
     const exam = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
-        `INSERT INTO exams (org_id, title, subject, exam_date, max_score, description)
-         VALUES ($1,$2,$3,$4,$5,$6)
+        `INSERT INTO exams (org_id, class_id, title, subject, exam_date, exam_time, duration_minutes, total_score, description)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING *`,
-        [DEMO_ORG, title, subject, exam_date, max_score, description],
+        [orgId, class_id, title, subject, exam_date, exam_time, duration_minutes, total_score, description],
       );
       return rows[0] ? mapExam(rows[0]) : null;
     });

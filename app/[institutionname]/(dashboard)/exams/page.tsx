@@ -138,6 +138,7 @@ export default function ExamsPage() {
     subject: '',
     class_name: '',
     exam_date: '',
+    exam_time: '', // 시험 시작 시간
     duration_minutes: 60,
     total_score: 100,
   })
@@ -226,8 +227,19 @@ export default function ExamsPage() {
 
         return (
           <div className="flex gap-1 flex-wrap">
-            {/* 시험일이 지난 경우에만 채점 버튼 표시 */}
-            {new Date(exam.exam_date) < new Date(new Date().toDateString()) && (
+            {/* 시험 시작 시간이 지난 경우 채점 버튼 표시 */}
+            {(() => {
+              const now = new Date()
+              const examDate = new Date(exam.exam_date)
+              // exam_time이 있으면 그 시간, 없으면 해당 날짜의 00:00 (자정)
+              if (exam.exam_time) {
+                const [hours, minutes] = exam.exam_time.split(':').map(Number)
+                examDate.setHours(hours, minutes, 0, 0)
+              } else {
+                examDate.setHours(0, 0, 0, 0)
+              }
+              return now >= examDate
+            })() && (
               <Button
                 variant={hasScores && hasScores.length > 0 ? "default" : "outline"}
                 size="sm"
@@ -627,6 +639,7 @@ export default function ExamsPage() {
       subject: '',
       class_name: '',
       exam_date: '',
+      exam_time: '',
       duration_minutes: 60,
       total_score: 100,
     })
@@ -634,10 +647,10 @@ export default function ExamsPage() {
   }
 
   const handleSaveExam = async () => {
-    if (!examForm.title || !examForm.subject || !examForm.class_name || !examForm.exam_date) {
+    if (!examForm.title || !examForm.subject || !examForm.class_name || !examForm.exam_date || !examForm.exam_time) {
       toast({
         title: '입력 오류',
-        description: '모든 필수 항목을 입력해주세요.',
+        description: '모든 필수 항목을 입력해주세요. (시험 시작 시간 포함)',
         variant: 'destructive',
       })
       return
@@ -663,6 +676,7 @@ export default function ExamsPage() {
           title: examForm.title,
           subject: examForm.subject,
           exam_date: examForm.exam_date,
+          exam_time: examForm.exam_time || null,
           duration_minutes: examForm.duration_minutes || null,
           total_score: examForm.total_score,
           class_id: selectedClassObj.id,
@@ -937,13 +951,13 @@ export default function ExamsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="duration">시험 시간 (분)</Label>
+                <Label htmlFor="exam_time">시험 시작 시간 *</Label>
                 <Input
-                  id="duration"
-                  type="number"
-                  value={examForm.duration_minutes}
-                  onChange={(e) => setExamForm({ ...examForm, duration_minutes: parseInt(e.target.value) || 60 })}
-                  placeholder="60"
+                  id="exam_time"
+                  type="time"
+                  value={examForm.exam_time}
+                  onChange={(e) => setExamForm({ ...examForm, exam_time: e.target.value })}
+                  placeholder="09:00"
                 />
               </div>
             </div>

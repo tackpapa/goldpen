@@ -1,11 +1,20 @@
-import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
-export const runtime = 'edge'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-import { createClient } from '@/lib/supabase/server'
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 export async function GET(request: Request) {
   try {
-    const supabase = createClient()
+    const supabase = await createAuthenticatedClient(request)
+    const adminClient = createAdminClient()
 
     // Check super_admin authorization
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -14,7 +23,7 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError } = await adminClient
       .from('users')
       .select('role')
       .eq('id', user.id)
@@ -25,18 +34,18 @@ export async function GET(request: Request) {
     }
 
     // Get total organizations
-    const { count: totalOrganizations } = await supabase
+    const { count: totalOrganizations } = await adminClient
       .from('organizations')
       .select('*', { count: 'exact', head: true })
 
     // Get active organizations
-    const { count: activeOrganizations } = await supabase
+    const { count: activeOrganizations } = await adminClient
       .from('organizations')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active')
 
     // Get total users
-    const { count: totalUsers } = await supabase
+    const { count: totalUsers } = await adminClient
       .from('users')
       .select('*', { count: 'exact', head: true })
 
@@ -44,7 +53,7 @@ export async function GET(request: Request) {
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    const { count: recentOrganizations } = await supabase
+    const { count: recentOrganizations } = await adminClient
       .from('organizations')
       .select('*', { count: 'exact', head: true })
       .gte('created_at', sevenDaysAgo.toISOString())

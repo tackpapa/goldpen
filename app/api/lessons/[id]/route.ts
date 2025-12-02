@@ -17,6 +17,10 @@ const updateLessonSchema = z.object({
   attendance_count: z.number().int().optional(),
   notification_sent: z.boolean().optional(),
   notification_sent_at: z.string().optional(),
+  // AI 생성 피드백 필드
+  parent_feedback: z.string().optional(),
+  director_feedback: z.string().optional(),
+  final_message: z.string().optional(),
 })
 
 export async function PUT(

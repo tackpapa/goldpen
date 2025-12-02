@@ -1,8 +1,16 @@
-import { e2eBypass } from '@/app/api/_utils/e2e-bypass'
-export const runtime = 'edge'
-
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAuthenticatedClient } from '@/lib/supabase/client-edge'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { z } from 'zod'
+
+export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+
+function createAdminClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!supabaseUrl || !serviceRoleKey) throw new Error('[Supabase Admin] Missing env')
+  return createSupabaseClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+}
 
 const CreateOrganizationSchema = z.object({
   name: z.string().min(1, 'Organization name is required'),
@@ -15,7 +23,9 @@ const CreateOrganizationSchema = z.object({
 })
 
 // Check super_admin authorization
-async function checkAdminAuth(supabase: any, adminClient: any) {
+async function checkAdminAuth(request: Request) {
+  const supabase = await createAuthenticatedClient(request)
+  const adminClient = createAdminClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
 
   if (authError || !user) {
@@ -39,9 +49,8 @@ async function checkAdminAuth(supabase: any, adminClient: any) {
 // GET /api/admin/organizations
 export async function GET(request: Request) {
   try {
-    const supabase = createClient()
     const adminClient = createAdminClient()
-    const authCheck = await checkAdminAuth(supabase, adminClient)
+    const authCheck = await checkAdminAuth(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
@@ -160,9 +169,8 @@ export async function GET(request: Request) {
 // POST /api/admin/organizations
 export async function POST(request: Request) {
   try {
-    const supabase = createClient()
     const adminClient = createAdminClient()
-    const authCheck = await checkAdminAuth(supabase, adminClient)
+    const authCheck = await checkAdminAuth(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })

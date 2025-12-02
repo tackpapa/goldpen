@@ -1,9 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
+import { getOrgIdFromRequest } from "../lib/supabase";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapClass = (row: any) => ({
   id: row.id,
@@ -39,6 +39,11 @@ const mapClass = (row: any) => ({
  */
 app.get("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const classes = await withClient(c.env, async (client) => {
       const { rows } = await client.query(
         `
@@ -54,7 +59,7 @@ app.get("/", async (c) => {
         LEFT JOIN teachers t ON t.id = c.teacher_id
         WHERE c.org_id = $1
         ORDER BY c.created_at DESC`,
-        [DEMO_ORG],
+        [orgId],
       );
       return rows.map(mapClass);
     });
@@ -71,6 +76,11 @@ app.get("/", async (c) => {
  */
 app.post("/", async (c) => {
   try {
+    const orgId = await getOrgIdFromRequest(c.req.raw, c.env);
+    if (!orgId) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
     const body = await c.req.json();
     const {
       name,
@@ -90,7 +100,7 @@ app.post("/", async (c) => {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         RETURNING *
         `,
-        [DEMO_ORG, name, subject, teacher_id, schedule, status, capacity, room],
+        [orgId, name, subject, teacher_id, schedule, status, capacity, room],
       );
       return rows[0] ? mapClass(rows[0]) : null;
     });

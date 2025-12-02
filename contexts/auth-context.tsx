@@ -283,6 +283,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: 'POST',
         credentials: 'include',
       })
+
+      // 3. localStorage에서 Supabase 관련 항목 명시적 삭제
+      if (typeof window !== 'undefined') {
+        const keysToRemove = Object.keys(localStorage).filter(
+          key => key.startsWith('sb-') || key.includes('supabase')
+        )
+        keysToRemove.forEach(key => localStorage.removeItem(key))
+      }
     } catch (error) {
       console.error('[Auth] Logout error:', error)
     } finally {
