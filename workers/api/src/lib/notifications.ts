@@ -46,6 +46,43 @@ export function fillTemplate(template: string, variables: Record<string, string>
 }
 
 /**
+ * 날짜를 간단한 한국어 형식으로 포맷
+ * @param date - Date 객체 또는 날짜 문자열
+ * @returns 포맷된 날짜 문자열 (예: "12월 3일")
+ */
+export function formatDateSimple(date: string | Date | null | undefined): string {
+  if (!date) return '-';
+  let dateStr: string;
+
+  // Date 객체인지 확인 (toISOString 메서드 존재 여부로 체크)
+  if (typeof date === 'object' && date !== null && typeof (date as Date).toISOString === 'function') {
+    dateStr = (date as Date).toISOString();
+  } else {
+    dateStr = String(date);
+  }
+
+  // ISO 날짜 형식에서 날짜만 추출 (YYYY-MM-DD)
+  const isoMatch = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return `${parseInt(isoMatch[2], 10)}월 ${parseInt(isoMatch[3], 10)}일`;
+  }
+
+  // "Mon Dec 02 2025" 형식 처리
+  const longMatch = dateStr.match(/\w{3}\s+(\w{3})\s+(\d{1,2})\s+(\d{4})/);
+  if (longMatch) {
+    const months: Record<string, number> = {
+      'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+      'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+    };
+    const month = months[longMatch[1]] || 1;
+    const day = parseInt(longMatch[2], 10);
+    return `${month}월 ${day}일`;
+  }
+
+  return dateStr;
+}
+
+/**
  * 조직 설정에서 템플릿을 가져오는 함수
  * @param client - DB 클라이언트
  * @param orgId - 조직 ID
@@ -403,7 +440,7 @@ export function createLessonReportMessage(
     '기관명': orgName,
     '학생명': studentName,
     '수업명': className,
-    '날짜': date,
+    '날짜': formatDateSimple(date),
     '수업내용': content || '-',
     '숙제': homework || '-',
   });

@@ -54,6 +54,27 @@ interface StudentAttendance {
   status: 'present' | 'absent' | 'late' | 'excused'
 }
 
+// 뿌리오 알림톡 변수 (각 50자 이하)
+interface AlimtalkVariables {
+  수업요약: string
+  학습포인트: string
+  선생님코멘트: string
+  원장님코멘트: string
+  숙제내용: string
+  복습팁: string
+}
+
+const ALIMTALK_VARIABLE_LABELS: Record<keyof AlimtalkVariables, string> = {
+  수업요약: '오늘 수업',
+  학습포인트: '학습 포인트',
+  선생님코멘트: '선생님 코멘트',
+  원장님코멘트: '원장님 코멘트',
+  숙제내용: '숙제 내용',
+  복습팁: '복습 팁',
+}
+
+const MAX_VARIABLE_LENGTH = 50
+
 interface ScheduledClass {
   id: string
   class_name: string
@@ -95,6 +116,16 @@ export default function LessonsPage() {
   const [isGeneratingDirectorFeedback, setIsGeneratingDirectorFeedback] = useState(false)
   const [isGeneratingFinalMessage, setIsGeneratingFinalMessage] = useState(false)
   const [isSendingNotification, setIsSendingNotification] = useState(false)
+
+  // 알림톡 변수 상태 (뿌리오용 - 각 50자 이하)
+  const [alimtalkVariables, setAlimtalkVariables] = useState<AlimtalkVariables>({
+    수업요약: '',
+    학습포인트: '',
+    선생님코멘트: '',
+    원장님코멘트: '',
+    숙제내용: '',
+    복습팁: '',
+  })
   const [isSaved, setIsSaved] = useState(false)
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
@@ -246,6 +277,14 @@ export default function LessonsPage() {
     setAllSubmitted(true)
     setIsHomeworkExpanded(false)
     setIsSaved(false)
+    setAlimtalkVariables({
+      수업요약: '',
+      학습포인트: '',
+      선생님코멘트: '',
+      원장님코멘트: '',
+      숙제내용: '',
+      복습팁: '',
+    })
     setIsDialogOpen(true)
   }
 
@@ -616,7 +655,7 @@ export default function LessonsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'final_message',
+          type: 'alimtalk_variables',  // 뿌리오용 변수 생성
           lesson: {
             org_name: organizationName,
             class_name: formData.class_name,
@@ -625,7 +664,6 @@ export default function LessonsPage() {
             topic: formData.subject,
             homework: formData.homework_assigned,
             notes: formData.student_attitudes,
-            // 선생님 피드백과 원장님 피드백을 포함하여 종합 알림톡 생성
             teacher_feedback: formData.parent_feedback,
             director_feedback: formData.director_feedback,
           },
@@ -634,16 +672,16 @@ export default function LessonsPage() {
 
       interface AIResponse {
         success?: boolean
-        text?: string
+        variables?: AlimtalkVariables
         error?: string
       }
       const result = await response.json() as AIResponse
 
-      if (response.ok && result.success && result.text) {
-        setFormData((prev) => ({ ...prev, final_message: result.text }))
+      if (response.ok && result.success && result.variables) {
+        setAlimtalkVariables(result.variables)
         toast({
-          title: 'AI 안내 메시지 생성 완료',
-          description: '생성된 메시지를 확인하고 필요시 수정 후 저장해주세요.',
+          title: 'AI 알림톡 변수 생성 완료',
+          description: '각 항목을 확인하고 필요시 수정해주세요. (50자 제한)',
         })
       } else {
         throw new Error(result.error || 'AI 응답 오류')
@@ -1709,9 +1747,9 @@ export default function LessonsPage() {
             </div>
 
             <div className="border-t pt-4 mt-6">
-              <div className="space-y-2">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="final_message" className="text-base font-semibold">최종 부모님에게 가는 알림톡 내용</Label>
+                  <Label className="text-base font-semibold">알림톡 변수</Label>
                   <Button
                     type="button"
                     variant="outline"
@@ -1724,24 +1762,89 @@ export default function LessonsPage() {
                     ) : (
                       <Sparkles className="mr-2 h-4 w-4" />
                     )}
-                    {isGeneratingFinalMessage ? 'AI 생성 중...' : 'AI 알림톡 생성'}
+                    {isGeneratingFinalMessage ? 'AI 생성 중...' : 'AI 변수 생성'}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground mb-2">
-                  위의 모든 내용을 종합하여 부모님께 전송될 최종 알림톡 메시지입니다
-                </p>
-                <Textarea
-                  id="final_message"
-                  value={formData.final_message}
-                  onChange={(e) =>
-                    setFormData({ ...formData, final_message: e.target.value })
-                  }
-                  placeholder="AI 알림톡 생성 버튼을 클릭하면 자동으로 알림톡 내용이 생성됩니다"
-                  rows={8}
-                  className="font-mono text-sm"
-                />
                 <p className="text-xs text-muted-foreground">
-                  생성된 내용을 수정한 후 '알림톡 보내기' 버튼을 클릭하여 전송할 수 있습니다
+                  각 항목은 최대 50자까지 입력 가능합니다. 초과 시 빨간색으로 표시됩니다.
+                </p>
+
+                {/* 알림톡 변수별 Input 필드 */}
+                <div className="grid gap-3">
+                  {(Object.keys(alimtalkVariables) as Array<keyof AlimtalkVariables>).map((key) => {
+                    const value = alimtalkVariables[key]
+                    const isOverLimit = value.length > MAX_VARIABLE_LENGTH
+                    return (
+                      <div key={key} className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label
+                            htmlFor={`alimtalk-${key}`}
+                            className={`text-sm ${isOverLimit ? 'text-red-600' : ''}`}
+                          >
+                            {ALIMTALK_VARIABLE_LABELS[key]}
+                          </Label>
+                          <span
+                            className={`text-xs ${
+                              isOverLimit
+                                ? 'text-red-600 font-semibold'
+                                : value.length > 40
+                                ? 'text-orange-500'
+                                : 'text-muted-foreground'
+                            }`}
+                          >
+                            {value.length}/{MAX_VARIABLE_LENGTH}자
+                          </span>
+                        </div>
+                        <Input
+                          id={`alimtalk-${key}`}
+                          value={value}
+                          onChange={(e) =>
+                            setAlimtalkVariables((prev) => ({
+                              ...prev,
+                              [key]: e.target.value,
+                            }))
+                          }
+                          placeholder={`${ALIMTALK_VARIABLE_LABELS[key]} 입력 (최대 50자)`}
+                          className={`${
+                            isOverLimit
+                              ? 'border-red-500 focus-visible:ring-red-500 bg-red-50'
+                              : ''
+                          }`}
+                          maxLength={60} // 약간의 여유 (경고 표시용)
+                        />
+                        {isOverLimit && (
+                          <p className="text-xs text-red-600">
+                            {value.length - MAX_VARIABLE_LENGTH}자 초과! 50자 이하로 줄여주세요.
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* 미리보기 */}
+                <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                  <Label className="text-sm font-medium mb-2 block">미리보기</Label>
+                  <div className="text-sm whitespace-pre-line font-mono text-muted-foreground">
+                    {`[${organizationName}] 수업일지
+
+#{학생명} 학부모님 안녕하세요.
+
+📚 오늘 수업: ${alimtalkVariables.수업요약 || '(미입력)'}
+📝 학습 포인트: ${alimtalkVariables.학습포인트 || '(미입력)'}
+
+💬 선생님: ${alimtalkVariables.선생님코멘트 || '(미입력)'}${alimtalkVariables.원장님코멘트 ? `
+🏫 원장님: ${alimtalkVariables.원장님코멘트}` : ''}
+
+✏️ 숙제: ${alimtalkVariables.숙제내용 || '(미입력)'}
+💡 복습 팁: ${alimtalkVariables.복습팁 || '(미입력)'}
+
+감사합니다.`}
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  #{'{학생명}'}은 발송 시 각 학생 이름으로 자동 치환됩니다
                 </p>
               </div>
             </div>
@@ -1756,7 +1859,11 @@ export default function LessonsPage() {
                 <Button variant="destructive" onClick={handleDeleteLesson}>
                   삭제
                 </Button>
-                <Button variant="secondary" onClick={handleUpdateFeedback}>
+                <Button
+                  variant="default"
+                  onClick={handleUpdateFeedback}
+                  className="bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all shadow-sm text-white"
+                >
                   피드백 저장
                 </Button>
                 {(userRole === 'owner') && (

@@ -23,7 +23,7 @@ interface Env {
 
 // Queue 메시지 타입
 interface AttendanceMessage {
-  type: 'check_academy' | 'check_study' | 'check_class' | 'daily_report' | 'assignment_remind' | 'process_commute_absent';
+  type: 'check_academy' | 'check_study' | 'check_class' | 'check_commute' | 'daily_report' | 'assignment_remind' | 'process_commute_absent' | 'process_notification_queue';
   orgId: string;
   orgName: string;
   orgType: string;
@@ -131,6 +131,11 @@ export default {
         messages.push({
           body: { ...baseMessage, type: 'check_class' }
         });
+
+        // 통학 출결 체크 (모든 기관 - commute_schedules 기반)
+        messages.push({
+          body: { ...baseMessage, type: 'check_commute' }
+        });
       }
 
       // 2. 일일 학습 리포트 발송 (조직별 설정 시간에 발송)
@@ -202,6 +207,21 @@ export default {
           }
         }
       }
+
+      // 5. notification_queue 처리 (매 분마다)
+      // 등원/하원 알림 등 실시간 알림 처리
+      messages.push({
+        body: {
+          type: 'process_notification_queue',
+          orgId: 'system',
+          orgName: 'System',
+          orgType: 'system',
+          weekday: todayWeekday,
+          todayDate,
+          nowMinutes,
+          timestamp: Date.now(),
+        }
+      });
 
       // Queue에 메시지 일괄 전송 (100개씩 배치)
       if (messages.length > 0) {
@@ -317,6 +337,7 @@ export default {
           "check_academy (매 분, academy/learning_center)",
           "check_study (매 분, study_cafe)",
           "check_class (매 분, all)",
+          "check_commute (매 분, all - 통학 출결)",
           "daily_report (조직별 설정 시간, 기본 22:00 KST)",
           "assignment_remind (매일 09:00 KST)",
           "process_commute_absent (매일 23:50 KST, study_cafe)"

@@ -822,7 +822,7 @@ export default function SeatsPage() {
 
   // Realtime status for all seats (optimized: 2 channels for all seats)
   const allStudentIds = seats.filter(s => s.student_id).map(s => s.student_id!)
-  const { sleepRecords, outingRecords } = useAllSeatsRealtime(allStudentIds, orgId)
+  const { sleepRecords, outingRecords, clearOutingRecord, clearSleepRecord } = useAllSeatsRealtime(allStudentIds, orgId)
 
   // Subscribe to call_records (org 스코프) - orgId state가 있을 때만 구독
   useEffect(() => {
@@ -1574,6 +1574,12 @@ export default function SeatsPage() {
           variant: 'destructive',
         })
         return
+      }
+
+      // 🔴 하원 시 외출/잠자기 상태 즉시 UI에서 제거
+      if (newStatus === 'checked_out' && seat.student_id) {
+        clearOutingRecord(seat.student_id)
+        clearSleepRecord(seat.student_id)
       }
 
       toast({

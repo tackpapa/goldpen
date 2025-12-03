@@ -26,7 +26,7 @@ interface Env {
 
 // Queue 메시지 타입
 interface AttendanceMessage {
-  type: 'check_academy' | 'check_study' | 'check_class' | 'daily_report' | 'assignment_remind' | 'process_commute_absent';
+  type: 'check_academy' | 'check_study' | 'check_class' | 'check_commute' | 'daily_report' | 'assignment_remind' | 'process_commute_absent' | 'process_notification_queue';
   orgId: string;
   orgName: string;
   orgType: string;
@@ -34,6 +34,16 @@ interface AttendanceMessage {
   todayDate: string;
   nowMinutes: number;
   timestamp: number;
+}
+
+// notification_queue 레코드 타입
+interface NotificationQueueRecord {
+  id: string;
+  org_id: string;
+  type: string;
+  payload: { student_id: string; seat_number?: number };
+  status: string;
+  retry_count: number;
 }
 
 // 요일 변환
@@ -142,6 +152,9 @@ export default {
             case 'check_class':
               await processClassAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
               break;
+            case 'check_commute':
+              await processCommuteAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
+              break;
             case 'daily_report':
               await processDailyReport(sql, orgId, orgName, todayDate, env);
               break;
@@ -150,6 +163,9 @@ export default {
               break;
             case 'process_commute_absent':
               await processCommuteAbsence(sql, orgId, orgName, weekday, todayDate, env);
+              break;
+            case 'process_notification_queue':
+              await processNotificationQueue(sql, env);
               break;
           }
 
@@ -265,6 +281,13 @@ async function processAcademyAttendance(
   nowMinutes: number,
   env: Env
 ): Promise<void> {
+  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
+  const orgSettingsResult = await sql`
+    SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
+  `;
+  const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
+  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
+
   const schedules = await sql`
     SELECT
       cs.id,
@@ -290,10 +313,11 @@ async function processAcademyAttendance(
     const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
     const hasCheckin = Number(schedule.has_checkin) > 0;
 
-    if (!hasCheckin && nowMinutes > checkInMinutes) {
+    // 체크인 시간 + 유예 시간이 지나야 지각/결석 처리 (>=로 정확한 타이밍)
+    if (!hasCheckin && nowMinutes >= checkInMinutes + lateGracePeriod) {
       const absentThreshold = checkOutMinutes || (checkInMinutes + 120);
 
-      if (nowMinutes > absentThreshold) {
+      if (nowMinutes >= absentThreshold) {
         // 결석 처리 전에 지각 알림이 전송되었는지 확인
         const existingLateNotif = await sql`
           SELECT id FROM notification_logs
@@ -344,7 +368,7 @@ async function processAcademyAttendance(
           recipientPhone: schedule.parent_phone,
           message,
         });
-      } else if (nowMinutes > checkInMinutes + 10) {
+      } else if (nowMinutes >= checkInMinutes + lateGracePeriod) {
         // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
         const existingLateNotifAcademy = await sql`
           SELECT id FROM notification_logs
@@ -396,6 +420,13 @@ async function processStudyRoomAttendance(
   nowMinutes: number,
   env: Env
 ): Promise<void> {
+  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
+  const orgSettingsResult = await sql`
+    SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
+  `;
+  const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
+  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
+
   const schedules = await sql`
     SELECT
       cs.id,
@@ -421,8 +452,9 @@ async function processStudyRoomAttendance(
     const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
     const hasCheckin = Number(schedule.has_checkin) > 0;
 
-    if (!hasCheckin && nowMinutes > checkInMinutes) {
-      if (checkOutMinutes && nowMinutes > checkOutMinutes) {
+    // 체크인 시간 + 유예 시간이 지나야 지각/결석 처리 (>=로 정확한 타이밍)
+    if (!hasCheckin && nowMinutes >= checkInMinutes + lateGracePeriod) {
+      if (checkOutMinutes && nowMinutes >= checkOutMinutes) {
         // 결석 처리 전에 지각 알림이 전송되었는지 확인
         const existingLateNotif = await sql`
           SELECT id FROM notification_logs
@@ -543,6 +575,13 @@ async function processClassAttendance(
   nowMinutes: number,
   env: Env
 ): Promise<void> {
+  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
+  const orgSettingsResult = await sql`
+    SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
+  `;
+  const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
+  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
+
   const classes = await sql`
     SELECT
       c.id as class_id,
@@ -595,8 +634,8 @@ async function processClassAttendance(
       // 이미 출석(present)이면 건너뜀
       if (currentStatus === 'present') continue;
 
-      // 수업 종료 시간이 지났으면 → 결석 처리
-      if (nowMinutes > endMinutes) {
+      // 수업 종료 시간이 지났으면 → 결석 처리 (>=로 정확한 타이밍)
+      if (nowMinutes >= endMinutes) {
         // 이미 결석이면 건너뜀
         if (currentStatus === 'absent') continue;
 
@@ -708,8 +747,8 @@ async function processClassAttendance(
           message,
         });
       }
-      // 시작시간+10분 지났으면 → 지각 처리
-      else if (nowMinutes > startMinutes + 10) {
+      // 시작시간+유예시간 지났으면 → 지각 처리 (>=로 정확한 타이밍)
+      else if (nowMinutes >= startMinutes + lateGracePeriod) {
         // 이미 지각이면 건너뜀
         if (currentStatus === 'late') continue;
 
@@ -759,6 +798,171 @@ async function processClassAttendance(
           targetDate: todayDate,
           scheduledTime: todaySchedule.start_time,
           recipientPhone: enrollment.parent_phone,
+          message,
+        });
+      }
+    }
+  }
+}
+
+/**
+ * 통학 스케줄 출결 처리 (단일 기관)
+ * commute_schedules 테이블 기반 지각/결석 알림
+ */
+async function processCommuteAttendance(
+  sql: postgres.Sql,
+  orgId: string,
+  orgName: string,
+  weekday: WeekdayName,
+  todayDate: string,
+  nowMinutes: number,
+  env: Env
+): Promise<void> {
+  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
+  const orgSettingsResult = await sql`
+    SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
+  `;
+  const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
+  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
+
+  console.log(`[Commute] Checking org ${orgName}, weekday: ${weekday}, nowMinutes: ${nowMinutes}, gracePeriod: ${lateGracePeriod}`);
+
+  // 오늘 요일에 해당하는 통학 스케줄 조회
+  const schedules = await sql`
+    SELECT
+      cs.id,
+      cs.student_id,
+      cs.check_in_time,
+      cs.check_out_time,
+      s.name as student_name,
+      s.parent_phone,
+      (
+        SELECT COUNT(*) FROM attendance_logs al
+        WHERE al.student_id = cs.student_id
+          AND al.check_in_time::date = ${todayDate}::date
+      ) as has_checkin
+    FROM commute_schedules cs
+    JOIN students s ON s.id = cs.student_id
+    WHERE cs.org_id = ${orgId}
+      AND cs.weekday = ${weekday}
+      AND cs.check_in_time IS NOT NULL
+  `;
+
+  console.log(`[Commute] Found ${schedules.length} schedules for ${orgName}`);
+
+  for (const schedule of schedules) {
+    const checkInMinutes = timeToMinutes(schedule.check_in_time);
+    const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
+    const hasCheckin = Number(schedule.has_checkin) > 0;
+    const lateThreshold = checkInMinutes + lateGracePeriod;
+    // 결석 기준: check_out_time이 있으면 그 시간, 없으면 check_in + 2시간
+    const absentThreshold = checkOutMinutes || (checkInMinutes + 120);
+
+    console.log(`[Commute] Student: ${schedule.student_name}, checkInMinutes: ${checkInMinutes}, hasCheckin: ${hasCheckin}, lateThreshold: ${lateThreshold}, absentThreshold: ${absentThreshold}, nowMinutes: ${nowMinutes}`);
+
+    // 체크인이 없는 경우에만 처리
+    if (!hasCheckin) {
+      // 결석 시간이 지났으면 결석 처리
+      if (nowMinutes >= absentThreshold) {
+        // 지각 알림이 먼저 전송되었는지 확인
+        const existingLateNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type = 'commute_late'
+          LIMIT 1
+        `;
+
+        // 지각 알림이 전송된 적 없으면 먼저 전송
+        if (existingLateNotif.length === 0) {
+          console.log(`[Commute] Sending late notification first for ${schedule.student_name} (before absent)`);
+          const lateTemplate = await getTemplate(sql, orgId, 'late');
+          const lateMessage = fillTemplate(lateTemplate, {
+            '기관명': orgName,
+            '학생명': schedule.student_name,
+            '예정시간': schedule.check_in_time,
+          });
+          await sendNotification(sql, env, {
+            orgId,
+            studentId: schedule.student_id,
+            studentName: schedule.student_name,
+            type: "commute_late",
+            targetDate: todayDate,
+            scheduledTime: schedule.check_in_time,
+            recipientPhone: schedule.parent_phone,
+            message: lateMessage,
+          });
+        }
+
+        // 결석 알림 중복 체크
+        const existingAbsentNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type = 'commute_absent'
+          LIMIT 1
+        `;
+
+        if (existingAbsentNotif.length > 0) {
+          console.log(`[Commute] Absent notification already sent for ${schedule.student_name}, skipping`);
+          continue;
+        }
+
+        console.log(`[Commute] Sending absent notification for ${schedule.student_name}`);
+        const absentTemplate = await getTemplate(sql, orgId, 'absent');
+        const absentMessage = fillTemplate(absentTemplate, {
+          '기관명': orgName,
+          '학생명': schedule.student_name,
+          '예정시간': schedule.check_out_time || schedule.check_in_time,
+        });
+
+        await sendNotification(sql, env, {
+          orgId,
+          studentId: schedule.student_id,
+          studentName: schedule.student_name,
+          type: "commute_absent",
+          targetDate: todayDate,
+          scheduledTime: schedule.check_out_time || schedule.check_in_time,
+          recipientPhone: schedule.parent_phone,
+          message: absentMessage,
+        });
+      }
+      // 유예 시간만 지났으면 지각 처리
+      else if (nowMinutes >= lateThreshold) {
+        // 중복 알림 방지: 이미 오늘 지각 알림이 전송되었는지 확인
+        const existingNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type = 'commute_late'
+          LIMIT 1
+        `;
+
+        if (existingNotif.length > 0) {
+          console.log(`[Commute] Late notification already sent for ${schedule.student_name}, skipping`);
+          continue;
+        }
+
+        console.log(`[Commute] Sending late notification for ${schedule.student_name} (scheduled: ${schedule.check_in_time})`);
+
+        const template = await getTemplate(sql, orgId, 'late');
+        const message = fillTemplate(template, {
+          '기관명': orgName,
+          '학생명': schedule.student_name,
+          '예정시간': schedule.check_in_time,
+        });
+
+        await sendNotification(sql, env, {
+          orgId,
+          studentId: schedule.student_id,
+          studentName: schedule.student_name,
+          type: "commute_late",
+          targetDate: todayDate,
+          scheduledTime: schedule.check_in_time,
+          recipientPhone: schedule.parent_phone,
           message,
         });
       }
@@ -945,8 +1149,7 @@ async function processCommuteAbsence(
         orgId,
         studentId: student.student_id,
         studentName: student.student_name,
-        type: "absent",
-        context: "commute",
+        type: "commute_absent",
         targetDate: todayDate,
         scheduledTime: student.check_in_time,
         recipientPhone: student.parent_phone,
@@ -966,19 +1169,28 @@ type NotificationType =
   | "late" | "absent"
   | "checkin" | "checkout"
   | "daily_report"
-  | "assignment_remind";
+  | "assignment_remind"
+  | "commute_late" | "commute_absent";
 
 // DB에 저장되는 실제 type (notification_logs_type_check constraint)
 type DbNotificationType =
   | "study_late" | "study_absent"
   | "class_late" | "class_absent"
+  | "commute_late" | "commute_absent"
   | "academy_checkin" | "academy_checkout"
   | "study_checkin" | "study_checkout"
   | "study_out" | "study_return"
   | "lesson_report" | "exam_result" | "assignment_new";
 
 // context에 따라 DB type 변환
-function toDbNotificationType(type: NotificationType, context: 'class' | 'study' | 'academy' | 'commute'): DbNotificationType {
+function toDbNotificationType(type: NotificationType, context?: 'class' | 'study' | 'academy' | 'commute'): DbNotificationType {
+  // commute_late/commute_absent는 직접 DB type으로 사용
+  if (type === 'commute_late') {
+    return 'commute_late';
+  }
+  if (type === 'commute_absent') {
+    return 'commute_absent';
+  }
   if (type === 'late') {
     return context === 'class' ? 'class_late' : 'study_late';
   }
@@ -1005,7 +1217,7 @@ interface NotificationParams {
   studentId: string;
   studentName: string;
   type: NotificationType;
-  context: 'class' | 'study' | 'academy' | 'commute';
+  context?: 'class' | 'study' | 'academy' | 'commute';
   classId?: string;
   targetDate: string;
   scheduledTime?: string;
@@ -1204,4 +1416,261 @@ async function sendTelegram(
     console.error('[Telegram] Error:', error);
     return { success: false, error: String(error) };
   }
+}
+
+// ============================================================
+// notification_queue 처리 (등원/하원 알림 등)
+// ============================================================
+
+const API_WORKER_URL = 'https://goldpen-api.hello-51f.workers.dev';
+
+/**
+ * notification_queue 테이블에서 pending 알림을 처리
+ * 100% 전달 보장을 위한 DB 기반 큐
+ *
+ * 🔴 성능 개선: API Worker 호출 대신 직접 DB 기록 + 알림 전송
+ */
+async function processNotificationQueue(
+  sql: postgres.Sql,
+  env: Env
+): Promise<void> {
+  console.log('[NotificationQueue] Processing pending notifications...');
+
+  // pending 상태의 알림을 최대 50개까지 가져오기
+  const pendingNotifications = await sql<NotificationQueueRecord[]>`
+    SELECT id, org_id, type, payload, status, retry_count
+    FROM notification_queue
+    WHERE status = 'pending'
+    ORDER BY created_at ASC
+    LIMIT 50
+  `;
+
+  console.log(`[NotificationQueue] Found ${pendingNotifications.length} pending notifications`);
+
+  for (const notification of pendingNotifications) {
+    try {
+      const studentId = notification.payload.student_id;
+
+      // 학생 정보 조회
+      const studentResult = await sql`
+        SELECT s.*, o.name as org_name, o.type as org_type
+        FROM students s
+        JOIN organizations o ON o.id = s.org_id
+        WHERE s.id = ${studentId}
+      `;
+
+      if (studentResult.length === 0) {
+        console.log(`[NotificationQueue] Student not found: ${studentId}`);
+        await sql`
+          UPDATE notification_queue
+          SET status = 'failed', error_message = 'Student not found'
+          WHERE id = ${notification.id}
+        `;
+        continue;
+      }
+
+      const student = studentResult[0];
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("ko-KR", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Seoul"
+      });
+
+      // ============================================================
+      // 타입별 직접 처리 (API 호출 제거)
+      // ============================================================
+
+      if (notification.type === 'checkin') {
+        // 체크인 처리
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        // attendance_logs에 체크인 기록
+        const logResult = await sql`
+          INSERT INTO attendance_logs (org_id, student_id, check_in_time)
+          VALUES (${student.org_id}, ${studentId}, NOW())
+          RETURNING *
+        `;
+
+        // 알림 메시지 생성 및 전송
+        const checkinMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!`;
+
+        await sendTelegram(env, checkinMessage);
+        if (student.parent_phone) {
+          await sendKakaoAlimtalk(env, student.parent_phone, checkinMessage, 'GOLDPEN_CHECKIN_001');
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Checkin completed: ${student.name}`);
+      }
+
+      else if (notification.type === 'checkout') {
+        // 체크아웃 처리 - 체크인 기록 확인
+        const checkinRecord = await sql`
+          SELECT * FROM attendance_logs
+          WHERE student_id = ${studentId}
+            AND check_out_time IS NULL
+            AND check_in_time::date = CURRENT_DATE
+          ORDER BY check_in_time DESC
+          LIMIT 1
+        `;
+
+        if (checkinRecord.length === 0) {
+          // 체크인 기록이 없으면 대기
+          if (notification.retry_count >= 5) {
+            await sql`
+              UPDATE notification_queue
+              SET status = 'failed', error_message = 'No checkin found after 5 retries'
+              WHERE id = ${notification.id}
+            `;
+            console.log(`[NotificationQueue] Checkout failed: no checkin for ${student.name}`);
+          } else {
+            await sql`
+              UPDATE notification_queue
+              SET retry_count = retry_count + 1
+              WHERE id = ${notification.id}
+            `;
+            console.log(`[NotificationQueue] Checkout waiting for checkin: ${student.name} (retry: ${notification.retry_count + 1})`);
+          }
+          continue;
+        }
+
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        // 학습 시간 계산
+        const checkInTime = new Date(checkinRecord[0].check_in_time);
+        const studyMinutes = Math.floor((now.getTime() - checkInTime.getTime()) / 60000);
+        const studyHours = Math.floor(studyMinutes / 60);
+        const studyMins = studyMinutes % 60;
+        const studyTimeStr = studyHours > 0 ? `${studyHours}시간 ${studyMins}분` : `${studyMins}분`;
+
+        // 체크아웃 업데이트
+        await sql`
+          UPDATE attendance_logs
+          SET check_out_time = NOW(), duration_minutes = ${studyMinutes}, updated_at = NOW()
+          WHERE id = ${checkinRecord[0].id}
+        `;
+
+        // 알림 메시지 생성 및 전송
+        const checkoutMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다. (총 학습시간: ${studyTimeStr})`;
+
+        await sendTelegram(env, checkoutMessage);
+        if (student.parent_phone) {
+          await sendKakaoAlimtalk(env, student.parent_phone, checkoutMessage, 'GOLDPEN_CHECKOUT_001');
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Checkout completed: ${student.name} (${studyTimeStr})`);
+      }
+
+      else if (notification.type === 'out') {
+        // 외출 처리
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        const today = now.toISOString().split('T')[0];
+        const seatNumber = notification.payload.seat_number || 0;
+
+        await sql`
+          INSERT INTO outing_records (org_id, student_id, seat_number, date, outing_time)
+          VALUES (${student.org_id}, ${studentId}, ${seatNumber}, ${today}, NOW())
+        `;
+
+        const outMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 잠시 외출했습니다.`;
+
+        await sendTelegram(env, outMessage);
+        if (student.parent_phone) {
+          await sendKakaoAlimtalk(env, student.parent_phone, outMessage, 'GOLDPEN_OUT_001');
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Out completed: ${student.name}`);
+      }
+
+      else if (notification.type === 'return') {
+        // 복귀 처리 - 외출 기록 확인
+        const outingRecord = await sql`
+          SELECT * FROM outing_records
+          WHERE student_id = ${studentId}
+            AND return_time IS NULL
+            AND date = CURRENT_DATE
+          ORDER BY outing_time DESC
+          LIMIT 1
+        `;
+
+        if (outingRecord.length === 0) {
+          if (notification.retry_count >= 5) {
+            await sql`
+              UPDATE notification_queue
+              SET status = 'failed', error_message = 'No outing found after 5 retries'
+              WHERE id = ${notification.id}
+            `;
+          } else {
+            await sql`
+              UPDATE notification_queue
+              SET retry_count = retry_count + 1
+              WHERE id = ${notification.id}
+            `;
+          }
+          continue;
+        }
+
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        await sql`
+          UPDATE outing_records SET return_time = NOW(), status = 'returned' WHERE id = ${outingRecord[0].id}
+        `;
+
+        const returnMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 외출에서 복귀했습니다.`;
+
+        await sendTelegram(env, returnMessage);
+        if (student.parent_phone) {
+          await sendKakaoAlimtalk(env, student.parent_phone, returnMessage, 'GOLDPEN_RETURN_001');
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Return completed: ${student.name}`);
+      }
+
+    } catch (error) {
+      console.error(`[NotificationQueue] Error processing ${notification.id}:`, error);
+
+      const newRetryCount = notification.retry_count + 1;
+      const newStatus = newRetryCount >= 5 ? 'failed' : 'pending';
+
+      await sql`
+        UPDATE notification_queue
+        SET
+          status = ${newStatus},
+          retry_count = ${newRetryCount},
+          error_message = ${String(error)}
+        WHERE id = ${notification.id}
+      `;
+    }
+  }
+
+  console.log('[NotificationQueue] Processing complete');
 }

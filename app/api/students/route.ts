@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const attendanceCode = searchParams.get('attendance_code') || searchParams.get('student_code') || undefined
     const checkDuplicate = searchParams.get('check_duplicate') === '1'
 
-    // 중복 체크 모드: student_code로 검색하여 존재 여부만 반환
+    // 중복 체크 모드: 빠른 응답을 위해 id만 조회
     if (checkDuplicate && attendanceCode) {
       const { data: existing, error: checkError } = await db
         .from('students')

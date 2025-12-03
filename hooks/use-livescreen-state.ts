@@ -200,6 +200,22 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
       throw new Error('studentId is required')
     }
     try {
+      // 🔴 등원 상태인지 확인 (attendance_logs에 오늘 체크인이 있고 체크아웃이 없는 경우)
+      const { data: checkinRecord } = await supabase
+        .from('attendance_logs')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('org_id', orgId)
+        .gte('check_in_time', today)
+        .is('check_out_time', null)
+        .limit(1)
+        .single()
+
+      if (!checkinRecord) {
+        console.error('❌ [SLEEP] Cannot start sleep: not checked in')
+        throw new Error('등원 상태에서만 잠자기를 시작할 수 있습니다')
+      }
+
       // Insert sleep record
       const { data: sleepRecord, error: sleepError } = await supabase
         .from('sleep_records')
@@ -272,6 +288,22 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
       throw new Error('studentId is required')
     }
     try {
+      // 🔴 등원 상태인지 확인 (attendance_logs에 오늘 체크인이 있고 체크아웃이 없는 경우)
+      const { data: checkinRecord } = await supabase
+        .from('attendance_logs')
+        .select('id')
+        .eq('student_id', studentId)
+        .eq('org_id', orgId)
+        .gte('check_in_time', today)
+        .is('check_out_time', null)
+        .limit(1)
+        .single()
+
+      if (!checkinRecord) {
+        console.error('❌ [OUTING] Cannot start outing: not checked in')
+        throw new Error('등원 상태에서만 외출할 수 있습니다')
+      }
+
       // Insert outing record
       const { data: outingRecord, error: outingError } = await supabase
         .from('outing_records')
@@ -296,6 +328,15 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
       })
 
       setCurrentOuting(outingRecord as OutingRecord)
+
+      // 알림 큐에 추가 (비동기 처리 - 100% 전달 보장)
+      await supabase.from('notification_queue').insert({
+        org_id: orgId,
+        type: 'out',
+        payload: { student_id: studentId, seat_number: seatNumber },
+        status: 'pending'
+      })
+      console.log('[OUTING] Notification queued')
     } catch (error) {
       console.error('Error starting outing:', error)
       throw error
@@ -330,6 +371,15 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
       })
 
       setCurrentOuting(null)
+
+      // 알림 큐에 추가 (비동기 처리 - 100% 전달 보장)
+      await supabase.from('notification_queue').insert({
+        org_id: orgId,
+        type: 'return',
+        payload: { student_id: studentId, seat_number: seatNumber },
+        status: 'pending'
+      })
+      console.log('[RETURN] Notification queued')
     } catch (error) {
       console.error('Error ending outing:', error)
       throw error

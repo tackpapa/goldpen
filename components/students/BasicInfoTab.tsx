@@ -75,7 +75,8 @@ export function BasicInfoTab({
   const [studentCodeError, setStudentCodeError] = useState<string | null>(null)
   const [studentCodeValid, setStudentCodeValid] = useState<boolean | null>(null)
   const [checkingCode, setCheckingCode] = useState(false)
-  const codeCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  // Edge Runtime 호환: ReturnType 사용
+  const codeCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const branchValue = student.branch_name || parseBranch(student.notes) || 'demoSchool'
   const campusValues = student.campuses || parseCampuses(student.notes)
   const placeholderClass = 'placeholder:text-muted-foreground/60'
@@ -103,8 +104,6 @@ export function BasicInfoTab({
         credentials: 'include',
       })
       const data = await response.json() as { students?: any[]; exists?: boolean }
-
-      // 중복 체크 결과
       const isDuplicate = data.exists || (data.students && data.students.length > 0)
 
       if (isDuplicate) {
@@ -133,7 +132,7 @@ export function BasicInfoTab({
     if (code && code.length === 4) {
       codeCheckTimeoutRef.current = setTimeout(() => {
         checkStudentCodeDuplicate(code)
-      }, 500) // 500ms debounce
+      }, 500)
     } else {
       setStudentCodeError(null)
       setStudentCodeValid(null)
@@ -332,19 +331,29 @@ export function BasicInfoTab({
 
             <div>
               <Label htmlFor="attendance_code">출결 코드 (4자리)</Label>
-              <Input
-                id="attendance_code"
-                value={localStudent.student_code || ''}
-                onChange={(e) => {
-                  const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4)
-                  handleFieldChange('student_code', value)
-                }}
-                placeholder="1234"
-                maxLength={4}
-                className={`${placeholderClass} ${studentCodeError ? 'border-red-500 focus-visible:ring-red-500' : ''} ${studentCodeValid ? 'border-green-500 focus-visible:ring-green-500' : ''}`}
-              />
+              <div className="relative">
+                <Input
+                  id="attendance_code"
+                  value={localStudent.student_code || ''}
+                  onChange={(e) => {
+                    const value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4)
+                    handleFieldChange('student_code', value)
+                  }}
+                  placeholder="1234"
+                  maxLength={4}
+                  className={`${placeholderClass} ${
+                    studentCodeError ? 'border-red-500 focus-visible:ring-red-500' :
+                    studentCodeValid ? 'border-green-500 focus-visible:ring-green-500' : ''
+                  }`}
+                />
+                {checkingCode && (
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
               {checkingCode ? (
-                <p className="text-sm text-muted-foreground mt-1">확인 중...</p>
+                <p className="text-xs text-muted-foreground mt-1">확인 중...</p>
               ) : studentCodeError ? (
                 <p className="text-sm text-red-500 mt-1">{studentCodeError}</p>
               ) : studentCodeValid ? (

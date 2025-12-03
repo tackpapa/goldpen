@@ -12,9 +12,9 @@ id = "8c1cfe4c456d460da34153acc8e0eb2c"
 # Cloudflare Pages configuration for Next.js
 # See: https://developers.cloudflare.com/pages/framework-guides/deploy-a-nextjs-site/
 
-[env.production]
-# Production environment variables
-# Set these in Cloudflare Pages dashboard: Settings > Environment Variables
-
-# Note: Environment variables should be set in the Cloudflare Pages dashboard
-# This file is for configuration only, not secrets
+# Environment variables are set in Cloudflare Pages Dashboard
+# Settings > Environment Variables:
+# - NEXT_PUBLIC_APP_URL = https://goldpen.kr
+# - NEXT_PUBLIC_SUPABASE_URL
+# - NEXT_PUBLIC_SUPABASE_ANON_KEY
+# - SUPABASE_SERVICE_ROLE_KEY (secret)

@@ -671,6 +671,26 @@ export async function PUT(request: Request) {
       await recordAttendanceLog(orgToUse, workingAssignment.student_id, validated.status)
     }
 
+    // 🔴 하원 시 외출 기록도 자동 종료 + livescreen_state 초기화
+    if (validated.status === 'checked_out' && workingAssignment?.student_id) {
+      // 1) 외출 중인 기록 종료
+      await supabase
+        .from('outing_records')
+        .update({ return_time: new Date().toISOString(), status: 'returned' })
+        .eq('student_id', workingAssignment.student_id)
+        .eq('date', new Date().toISOString().split('T')[0])
+        .is('return_time', null)
+
+      // 2) livescreen_state 외출 상태 초기화
+      await supabase
+        .from('livescreen_state')
+        .update({ is_out: false, current_outing_id: null })
+        .eq('student_id', workingAssignment.student_id)
+        .eq('date', new Date().toISOString().split('T')[0])
+
+      console.log(`[SeatAssignments] Outing records closed for student ${workingAssignment.student_id}`)
+    }
+
     // 동시로 출결 테이블 업데이트 (지각/출석)
     await upsertAttendanceForStudent({
       supabase,
@@ -679,6 +699,18 @@ export async function PUT(request: Request) {
       status: validated.status,
       now: new Date(),
     })
+
+    // 알림 큐에 추가 (비동기 처리 - 100% 전달 보장)
+    if (workingAssignment?.student_id) {
+      const notificationType = validated.status === 'checked_in' ? 'checkin' : 'checkout'
+      await supabase.from('notification_queue').insert({
+        org_id: orgToUse,
+        type: notificationType,
+        payload: { student_id: workingAssignment.student_id },
+        status: 'pending'
+      })
+      console.log(`[SeatAssignments] Notification queued for ${validated.status}`)
+    }
 
     return Response.json({
       message: validated.status === 'checked_in' ? '등원 처리 완료' : '하원 처리 완료',

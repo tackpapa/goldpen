@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         data: {
           name: validated.name,
         },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:8000'}/login?verified=true`,
+        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://goldpen.kr'}/login?verified=true`,
       },
     })
 

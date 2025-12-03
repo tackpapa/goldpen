@@ -87,7 +87,7 @@ app.post("/checkin", async (c) => {
 
       const student = studentRes.rows[0];
       const now = new Date();
-      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" });
 
       // attendance_logs에 체크인 기록
       const { rows } = await client.query(
@@ -163,7 +163,7 @@ app.post("/checkout", async (c) => {
 
       const student = studentRes.rows[0];
       const now = new Date();
-      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" });
 
       // 오늘의 체크인 로그 찾기 (체크아웃 안 된 것)
       const logQuery = log_id
@@ -265,7 +265,7 @@ app.post("/out", async (c) => {
 
       const student = studentRes.rows[0];
       const now = new Date();
-      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" });
       const today = now.toISOString().split("T")[0];
 
       // 좌석 번호 조회 (없으면 현재 좌석에서 가져오기) - 실패해도 0 사용
@@ -360,7 +360,7 @@ app.post("/return", async (c) => {
 
       const student = studentRes.rows[0];
       const now = new Date();
-      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
+      const timeStr = now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" });
 
       // 외출 기록 찾기 (outing_time 사용)
       const outingQuery = outing_id
@@ -375,9 +375,9 @@ app.post("/return", async (c) => {
         throw new Error("No active outing found");
       }
 
-      // 복귀 시간 업데이트
+      // 복귀 시간 업데이트 + status 변경
       const { rows } = await client.query(
-        `UPDATE outing_records SET return_time = NOW()
+        `UPDATE outing_records SET return_time = NOW(), status = 'returned'
          WHERE id = $1
          RETURNING *`,
         [outingRes.rows[0].id]

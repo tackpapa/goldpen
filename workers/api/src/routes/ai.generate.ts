@@ -7,7 +7,7 @@ const app = new Hono<{ Bindings: Env }>();
 const MODEL = "@cf/qwen/qwen3-30b-a3b-fp8";
 
 interface GenerateRequest {
-  type: "feedback" | "director_feedback" | "final_message";
+  type: "feedback" | "director_feedback" | "final_message" | "alimtalk_variables";
   lesson?: {
     student_name?: string;
     class_name?: string;
@@ -23,6 +23,16 @@ interface GenerateRequest {
     org_name?: string;
   };
   context?: string;
+}
+
+// 뿌리오 알림톡 변수 (각 50자 이하)
+interface AlimtalkVariables {
+  수업요약: string;      // 오늘 배운 핵심 내용
+  학습포인트: string;    // 집중한 학습 포인트
+  선생님코멘트: string;  // 격려/칭찬 메시지
+  원장님코멘트: string;  // 응원 메시지
+  숙제내용: string;      // 구체적 숙제
+  복습팁: string;        // 가정학습 조언
 }
 
 /**
@@ -160,12 +170,49 @@ ${lesson?.homework || "숙제 없음"}${feedbackInfo}
 
 위 내용을 종합하여 500~800자 메시지를 작성하세요.
 학생 이름 부분은 반드시 {{학생명}}으로 표기하세요!`;
+    } else if (type === "alimtalk_variables") {
+      // 뿌리오 알림톡용 변수 생성 (각 50자 이하)
+      const orgName = lesson?.org_name || "학원";
+
+      // 엄격한 50자 제한 프롬프트
+      systemPrompt = `You are a JSON generator for Korean lesson reports. OUTPUT ONLY VALID JSON.
+
+CRITICAL RULES:
+1. Each value MUST be UNDER 45 Korean characters (NOT 50, leave margin)
+2. Each sentence MUST be COMPLETE - end with 요/다/세요/니다
+3. NEVER use "..." or cut off mid-sentence
+4. Keep it short but meaningful
+5. If no director feedback provided: 원장님코멘트 = ""
+6. Warm, encouraging tone in Korean
+
+Output format (copy exactly, fill values):
+{"수업요약":"","학습포인트":"","선생님코멘트":"","원장님코멘트":"","숙제내용":"","복습팁":""}`;
+
+      // 피드백 정보 구성
+      let feedbackInfo = "";
+      if (lesson?.teacher_feedback) {
+        feedbackInfo += `\n선생님 피드백: ${lesson.teacher_feedback}`;
+      }
+      if (lesson?.director_feedback) {
+        feedbackInfo += `\n원장님 피드백: ${lesson.director_feedback}`;
+      }
+
+      prompt = `Generate JSON for this lesson (each value UNDER 45 chars, complete sentences):
+
+수업반: ${lesson?.class_name || "수업"}
+내용: ${lesson?.content || "수업 진행"}
+숙제: ${lesson?.homework || "없음"}${feedbackInfo}
+
+Remember: MAX 45 characters per value, complete sentences only!`;
     } else {
-      return c.json({ error: "Invalid type. Use 'feedback', 'director_feedback', or 'final_message'" }, 400);
+      return c.json({ error: "Invalid type. Use 'feedback', 'director_feedback', 'final_message', or 'alimtalk_variables'" }, 400);
     }
 
-    // final_message는 더 긴 응답이 필요하므로 max_tokens 증가 (500~800자 지원)
-    const maxTokens = type === "final_message" ? 1536 : 512;
+    // final_message와 alimtalk_variables는 더 긴 응답이 필요
+    const maxTokens = type === "final_message" ? 1536 : type === "alimtalk_variables" ? 1500 : 512;
+
+    // alimtalk_variables는 temperature 0으로 일관된 JSON 출력
+    const temp = type === "alimtalk_variables" ? 0 : 0.7;
 
     // @ts-ignore - Qwen3 model not in AiModels type definition
     const response = await ai.run(MODEL, {
@@ -174,7 +221,7 @@ ${lesson?.homework || "숙제 없음"}${feedbackInfo}
         { role: "user", content: prompt },
       ],
       max_tokens: maxTokens,
-      temperature: 0.7,
+      temperature: temp,
       // Disable reasoning mode to get direct response in content field
       thinking: false,
     }) as Record<string, unknown>;
@@ -232,6 +279,61 @@ ${lesson?.homework || "숙제 없음"}${feedbackInfo}
       }, 500);
     }
 
+    // alimtalk_variables 타입일 때 JSON 파싱 및 50자 검증
+    if (type === "alimtalk_variables") {
+      try {
+        // JSON 추출 (앞뒤 불필요한 텍스트 제거)
+        let jsonText = generatedText;
+
+        // 첫 번째 { 찾기
+        const firstBrace = jsonText.indexOf('{');
+        // 마지막 } 찾기
+        const lastBrace = jsonText.lastIndexOf('}');
+
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          jsonText = jsonText.substring(firstBrace, lastBrace + 1);
+        }
+
+        console.log("[ai/generate] Extracted JSON:", jsonText.slice(0, 200));
+
+        const variables = JSON.parse(jsonText) as AlimtalkVariables;
+
+        // 빈 문자열 처리 (undefined/null을 ""로)
+        const safeString = (text: string | undefined): string => {
+          return text?.trim() || "";
+        };
+
+        const validatedVariables: AlimtalkVariables = {
+          수업요약: safeString(variables.수업요약),
+          학습포인트: safeString(variables.학습포인트),
+          선생님코멘트: safeString(variables.선생님코멘트),
+          원장님코멘트: safeString(variables.원장님코멘트),
+          숙제내용: safeString(variables.숙제내용),
+          복습팁: safeString(variables.복습팁),
+        };
+
+        // 길이 검증 결과 로깅 (50자 초과 시 경고)
+        const lengths = Object.entries(validatedVariables).map(([k, v]) => {
+          const warning = v.length > 50 ? " ⚠️" : "";
+          return `${k}: ${v.length}자${warning}`;
+        });
+        console.log("[ai/generate] alimtalk_variables lengths:", lengths.join(", "));
+
+        return c.json({
+          success: true,
+          type,
+          variables: validatedVariables,
+          model: MODEL,
+        });
+      } catch (parseError) {
+        console.error("[ai/generate] JSON parse error:", parseError, "Text:", generatedText);
+        return c.json({
+          error: "Failed to parse AI response as JSON",
+          debug: generatedText.slice(0, 300)
+        }, 500);
+      }
+    }
+
     return c.json({
       success: true,
       type,
@@ -252,7 +354,7 @@ app.get("/", (c) => {
   return c.json({
     status: "ok",
     model: MODEL,
-    types: ["feedback", "final_message"],
+    types: ["feedback", "director_feedback", "final_message", "alimtalk_variables"],
     description: "AI text generation for lesson notes",
   });
 });

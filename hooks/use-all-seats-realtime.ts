@@ -2,10 +2,12 @@ import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { SleepRecord, OutingRecord } from '@/lib/types/database'
 
-interface AllSeatsRealtimeStatus {
+interface AllSeatsRealtimeResult {
   sleepRecords: Map<string, SleepRecord> // studentId -> SleepRecord
   outingRecords: Map<string, OutingRecord> // studentId -> OutingRecord
   loading: boolean
+  clearOutingRecord: (studentId: string) => void // 하원 시 즉시 UI 업데이트용
+  clearSleepRecord: (studentId: string) => void // 잠자기 종료 시 즉시 UI 업데이트용
 }
 
 /**
@@ -14,22 +16,46 @@ interface AllSeatsRealtimeStatus {
  * @param studentIds - 학생 ID 목록
  * @param orgId - 조직 ID (필수, 상위 컴포넌트에서 전달)
  */
-export function useAllSeatsRealtime(studentIds: string[], orgId: string | null = null) {
-  const [status, setStatus] = useState<AllSeatsRealtimeStatus>({
-    sleepRecords: new Map(),
-    outingRecords: new Map(),
-    loading: true,
-  })
+export function useAllSeatsRealtime(studentIds: string[], orgId: string | null = null): AllSeatsRealtimeResult {
+  const [sleepRecords, setSleepRecords] = useState<Map<string, SleepRecord>>(new Map())
+  const [outingRecords, setOutingRecords] = useState<Map<string, OutingRecord>>(new Map())
+  const [loading, setLoading] = useState(true)
 
   const supabase = useMemo(() => createClient(), [])
-  const today = new Date().toISOString().split('T')[0]
+  // 🔴 KST 기준으로 오늘 날짜 계산 (UTC+9)
+  const today = useMemo(() => {
+    const now = new Date()
+    const kstOffset = 9 * 60 * 60 * 1000
+    const kstDate = new Date(now.getTime() + kstOffset)
+    return kstDate.toISOString().split('T')[0]
+  }, [])
 
   // Handle empty state
   useEffect(() => {
     if (studentIds.length === 0 || !orgId) {
-      setStatus({ sleepRecords: new Map(), outingRecords: new Map(), loading: false })
+      setSleepRecords(new Map())
+      setOutingRecords(new Map())
+      setLoading(false)
     }
   }, [studentIds.length, orgId])
+
+  // 🔴 수동으로 외출 기록 삭제 (하원 시 즉시 UI 업데이트용)
+  const clearOutingRecord = (studentId: string) => {
+    setOutingRecords((prev) => {
+      const newMap = new Map(prev)
+      newMap.delete(studentId)
+      return newMap
+    })
+  }
+
+  // 🔴 수동으로 잠자기 기록 삭제 (잠자기 종료 시 즉시 UI 업데이트용)
+  const clearSleepRecord = (studentId: string) => {
+    setSleepRecords((prev) => {
+      const newMap = new Map(prev)
+      newMap.delete(studentId)
+      return newMap
+    })
+  }
 
   useEffect(() => {
     if (studentIds.length === 0) return
@@ -37,11 +63,10 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
 
     async function loadAllStatus() {
       try {
-        setStatus((prev) => ({ ...prev, loading: true }))
-
+        setLoading(true)
 
         // Load all sleep records at once
-        const { data: sleepData, error: sleepError } = await supabase
+        const { data: sleepData } = await supabase
           .from('sleep_records')
           .select('*')
           .in('student_id', studentIds)
@@ -50,14 +75,13 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
           .eq('status', 'sleeping')
 
         // Load all outing records at once
-        const { data: outingData, error: outingError } = await supabase
+        const { data: outingData } = await supabase
           .from('outing_records')
           .select('*')
           .in('student_id', studentIds)
           .eq('org_id', orgId)
           .eq('date', today)
           .eq('status', 'out')
-
 
         const sleepMap = new Map<string, SleepRecord>()
         sleepData?.forEach((record) => {
@@ -69,15 +93,12 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
           outingMap.set(record.student_id, record as OutingRecord)
         })
 
-
-        setStatus({
-          sleepRecords: sleepMap,
-          outingRecords: outingMap,
-          loading: false,
-        })
+        setSleepRecords(sleepMap)
+        setOutingRecords(outingMap)
+        setLoading(false)
       } catch (error) {
         console.error('Error loading all seats status:', error)
-        setStatus((prev) => ({ ...prev, loading: false }))
+        setLoading(false)
       }
     }
 
@@ -105,31 +126,30 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
             // Filter client-side
             if (studentIds.includes(record.student_id) && record.date === today) {
               if (record.status === 'sleeping') {
-                setStatus((prev) => {
-                  const newMap = new Map(prev.sleepRecords)
+                setSleepRecords((prev) => {
+                  const newMap = new Map(prev)
                   newMap.set(record.student_id, record)
-                  return { ...prev, sleepRecords: newMap }
+                  return newMap
                 })
               } else if (record.status === 'awake') {
-                setStatus((prev) => {
-                  const newMap = new Map(prev.sleepRecords)
+                setSleepRecords((prev) => {
+                  const newMap = new Map(prev)
                   newMap.delete(record.student_id)
-                  return { ...prev, sleepRecords: newMap }
+                  return newMap
                 })
               }
             }
           } else if (payload.eventType === 'DELETE') {
             const record = payload.old as SleepRecord
-            setStatus((prev) => {
-              const newMap = new Map(prev.sleepRecords)
+            setSleepRecords((prev) => {
+              const newMap = new Map(prev)
               newMap.delete(record.student_id)
-              return { ...prev, sleepRecords: newMap }
+              return newMap
             })
           }
         }
       )
-      .subscribe((status) => {
-      })
+      .subscribe()
 
     // Subscribe to ALL outing_records changes (single channel)
     const outingChannel = supabase
@@ -153,31 +173,30 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
             // Filter client-side
             if (studentIds.includes(record.student_id) && record.date === today) {
               if (record.status === 'out') {
-                setStatus((prev) => {
-                  const newMap = new Map(prev.outingRecords)
+                setOutingRecords((prev) => {
+                  const newMap = new Map(prev)
                   newMap.set(record.student_id, record)
-                  return { ...prev, outingRecords: newMap }
+                  return newMap
                 })
               } else if (record.status === 'returned') {
-                setStatus((prev) => {
-                  const newMap = new Map(prev.outingRecords)
+                setOutingRecords((prev) => {
+                  const newMap = new Map(prev)
                   newMap.delete(record.student_id)
-                  return { ...prev, outingRecords: newMap }
+                  return newMap
                 })
               }
             }
           } else if (payload.eventType === 'DELETE') {
             const record = payload.old as OutingRecord
-            setStatus((prev) => {
-              const newMap = new Map(prev.outingRecords)
+            setOutingRecords((prev) => {
+              const newMap = new Map(prev)
               newMap.delete(record.student_id)
-              return { ...prev, outingRecords: newMap }
+              return newMap
             })
           }
         }
       )
-      .subscribe((status) => {
-      })
+      .subscribe()
 
     return () => {
       supabase.removeChannel(sleepChannel)
@@ -185,5 +204,11 @@ export function useAllSeatsRealtime(studentIds: string[], orgId: string | null =
     }
   }, [studentIds.join(','), today, orgId])
 
-  return status
+  return {
+    sleepRecords,
+    outingRecords,
+    loading,
+    clearOutingRecord,
+    clearSleepRecord,
+  }
 }
