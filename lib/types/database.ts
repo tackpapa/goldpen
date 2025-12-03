@@ -329,6 +329,7 @@ export interface Organization {
     messageTemplates?: Record<string, string>
     messageTemplatesParent?: Record<string, string> // 학부모용 메시지 템플릿
     messageTemplatesStudent?: Record<string, string> // 학생용 메시지 템플릿
+    gracePeriods?: Record<string, number> // 알림 유예 시간 설정
   }
   created_at: string
   updated_at: string

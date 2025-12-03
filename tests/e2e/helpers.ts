@@ -67,7 +67,7 @@ export async function closeDialog(page: Page) {
   }
 
   // 또는 Escape 키 누르기
-  await page.press('Escape')
+  await page.keyboard.press('Escape')
   await page.waitForTimeout(300)
 }
 
@@ -132,7 +132,7 @@ export async function selectField(page: Page, label: string, value: string) {
  * @param page - Playwright page 객체
  * @param expectedText - 예상 텍스트
  */
-export async function expectToastMessage(page: Page, expectedText: string) {
+export async function expectToastMessage(page: Page, expectedText: string | RegExp) {
   const toast = page.locator('[role="status"], [role="alert"]').first()
   await expect(toast).toContainText(expectedText)
 }
@@ -172,7 +172,7 @@ export async function getTableCellValue(
   const row = await findTableRow(page, rowText)
   const cells = row.locator('td, [role="cell"]')
   const cell = cells.nth(columnIndex)
-  return cell.textContent() || ''
+  return (await cell.textContent()) || ''
 }
 
 /**

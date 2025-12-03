@@ -178,6 +178,9 @@ export async function POST(request: Request) {
       // 🎯 독서실 출결 자동 처리: 학생의 commute 일정 기준 출석/지각 처리
       await processCommuteAttendanceOnCheckIn(supabase, orgId, student.id, now)
 
+      // 🎯 seat_assignments 동기화: 학생의 좌석 상태를 checked_in으로 업데이트
+      await syncSeatAssignmentStatus(supabase, orgId, student.id, 'checked_in', now)
+
       return Response.json({
         message: '등원 처리 완료',
         student: { name: student.name }
@@ -223,6 +226,9 @@ export async function POST(request: Request) {
         console.error('[AttendanceLogs POST] Update error:', updateError)
         return Response.json({ error: '하원 처리 실패', details: updateError.message }, { status: 500 })
       }
+
+      // 🎯 seat_assignments 동기화: 학생의 좌석 상태를 checked_out으로 업데이트
+      await syncSeatAssignmentStatus(supabase, orgId, student.id, 'checked_out', now)
 
       return Response.json({
         message: '하원 처리 완료',
@@ -440,5 +446,67 @@ async function processCommuteAttendanceOnCheckIn(
     }
   } catch (error) {
     console.error('[CommuteAttendance] Unexpected error:', error)
+  }
+}
+
+/**
+ * seat_assignments 테이블 동기화
+ * - liveattendance에서 등/하원 시 seat_assignments의 status도 함께 업데이트
+ * - 학생에게 배정된 좌석이 있을 때만 업데이트
+ */
+async function syncSeatAssignmentStatus(
+  supabase: any,
+  orgId: string,
+  studentId: string,
+  status: 'checked_in' | 'checked_out',
+  now: Date
+): Promise<void> {
+  try {
+    // 학생에게 배정된 좌석 조회
+    const { data: assignment, error: fetchError } = await supabase
+      .from('seat_assignments')
+      .select('id, seat_number, session_start_time')
+      .eq('org_id', orgId)
+      .eq('student_id', studentId)
+      .maybeSingle()
+
+    if (fetchError) {
+      console.error('[syncSeatAssignment] Fetch error:', fetchError)
+      return
+    }
+
+    if (!assignment) {
+      // 좌석 배정이 없으면 스킵 (좌석 없이 등원하는 경우)
+      console.log(`[syncSeatAssignment] No seat assignment for student ${studentId}`)
+      return
+    }
+
+    const nowIso = now.toISOString()
+    const updateData: any = {
+      status,
+      updated_at: nowIso,
+    }
+
+    if (status === 'checked_in') {
+      // 등원: check_in_time, session_start_time 설정
+      updateData.check_in_time = nowIso
+      updateData.session_start_time = nowIso
+    } else {
+      // 하원: session_start_time 초기화 (check_in_time은 유지)
+      updateData.session_start_time = null
+    }
+
+    const { error: updateError } = await supabase
+      .from('seat_assignments')
+      .update(updateData)
+      .eq('id', assignment.id)
+
+    if (updateError) {
+      console.error('[syncSeatAssignment] Update error:', updateError)
+    } else {
+      console.log(`[syncSeatAssignment] Updated seat ${assignment.seat_number} to ${status}`)
+    }
+  } catch (error) {
+    console.error('[syncSeatAssignment] Unexpected error:', error)
   }
 }

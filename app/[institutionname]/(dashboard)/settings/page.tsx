@@ -139,6 +139,11 @@ export default function SettingsPage() {
                 ...(org.settings || {}),
               },
             })
+            // 알림 유예 시간 설정 로드
+            const savedGracePeriods = org.settings?.gracePeriods as Record<string, number> | undefined
+            if (savedGracePeriods) {
+              setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
+            }
           }
           if (data.branches) setBranches(data.branches)
           if (data.rooms) setRooms(data.rooms)
@@ -236,6 +241,11 @@ export default function SettingsPage() {
   // 일일 학습 리포트 발송 시간 (기본값: 22:00)
   const [dailyReportTime, setDailyReportTime] = useState('22:00')
 
+  // 알림 유예 시간 설정 (분 단위, 기본값: 지각 10분)
+  const [gracePeriods, setGracePeriods] = useState<Record<string, number>>({
+    'late': 10, // 지각 알림: 시작 시간 + N분 후 발송
+  })
+
   const TEMPLATE_LABELS: Record<string, string> = {
     'late': '지각 알림',
     'absent': '결석 알림',
@@ -300,6 +310,19 @@ export default function SettingsPage() {
     setOrganization({ ...organization, settings: nextSettings })
     await persistOrganization({ settings: nextSettings })
     toast({ title: '설정 저장', description: `일일 학습 리포트 발송 시간이 ${time.replace(':', '시 ')}분으로 변경되었습니다.` })
+  }
+
+  // 알림 유예 시간 변경 핸들러
+  const handleGracePeriodChange = async (key: string, minutes: number) => {
+    // 1~30분 범위로 제한
+    const validMinutes = Math.max(1, Math.min(30, minutes))
+    const newGracePeriods = { ...gracePeriods, [key]: validMinutes }
+    setGracePeriods(newGracePeriods)
+    // DB에 저장
+    const nextSettings = { ...organization.settings, gracePeriods: newGracePeriods }
+    setOrganization({ ...organization, settings: nextSettings })
+    await persistOrganization({ settings: nextSettings })
+    toast({ title: '설정 저장', description: `유예 시간이 ${validMinutes}분으로 변경되었습니다.` })
   }
 
   // Account management state
@@ -2497,6 +2520,25 @@ export default function SettingsPage() {
                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('late', 'parent')}>학부모 템플릿</Button>
                       <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('late', 'student')}>학생 템플릿</Button>
                     </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">유예 시간:</span>
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={30}
+                          value={gracePeriods['late'] || 10}
+                          onChange={(e) => handleGracePeriodChange('late', parseInt(e.target.value) || 10)}
+                          className="w-16 h-7 text-center text-sm"
+                        />
+                        <span className="text-sm text-muted-foreground">분</span>
+                      </div>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      예정 시간으로부터 N분 후 미도착 시 알림 발송
+                    </span>
                   </div>
                 </div>
 
