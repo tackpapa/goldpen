@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Student, ServiceEnrollment, Class } from '@/lib/types/database'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -73,15 +73,84 @@ export function BasicInfoTab({
   const [localStudent, setLocalStudent] = useState(student)
   const [saving, setSaving] = useState(false)
   const [studentCodeError, setStudentCodeError] = useState<string | null>(null)
+  const [studentCodeValid, setStudentCodeValid] = useState<boolean | null>(null)
+  const [checkingCode, setCheckingCode] = useState(false)
+  const codeCheckTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const branchValue = student.branch_name || parseBranch(student.notes) || 'demoSchool'
   const campusValues = student.campuses || parseCampuses(student.notes)
   const placeholderClass = 'placeholder:text-muted-foreground/60'
   const currentCampuses =
     localStudent.campuses && localStudent.campuses.length > 0 ? localStudent.campuses : campusValues
 
+  // 출결 코드 실시간 중복 체크
+  const checkStudentCodeDuplicate = useCallback(async (code: string) => {
+    if (!code || code.length !== 4) {
+      setStudentCodeError(null)
+      setStudentCodeValid(null)
+      return
+    }
+
+    // 현재 학생의 기존 코드와 같으면 체크 불필요
+    if (code === student.student_code) {
+      setStudentCodeError(null)
+      setStudentCodeValid(true)
+      return
+    }
+
+    setCheckingCode(true)
+    try {
+      const response = await fetch(`/api/students?student_code=${code}&check_duplicate=1`, {
+        credentials: 'include',
+      })
+      const data = await response.json() as { students?: any[]; exists?: boolean }
+
+      // 중복 체크 결과
+      const isDuplicate = data.exists || (data.students && data.students.length > 0)
+
+      if (isDuplicate) {
+        setStudentCodeError('이미 사용 중인 출결 코드입니다')
+        setStudentCodeValid(false)
+      } else {
+        setStudentCodeError(null)
+        setStudentCodeValid(true)
+      }
+    } catch (error) {
+      console.error('Code check error:', error)
+      setStudentCodeError(null)
+      setStudentCodeValid(null)
+    } finally {
+      setCheckingCode(false)
+    }
+  }, [student.student_code])
+
+  // 코드 변경 시 debounce로 중복 체크
+  useEffect(() => {
+    if (codeCheckTimeoutRef.current) {
+      clearTimeout(codeCheckTimeoutRef.current)
+    }
+
+    const code = localStudent.student_code
+    if (code && code.length === 4) {
+      codeCheckTimeoutRef.current = setTimeout(() => {
+        checkStudentCodeDuplicate(code)
+      }, 500) // 500ms debounce
+    } else {
+      setStudentCodeError(null)
+      setStudentCodeValid(null)
+    }
+
+    return () => {
+      if (codeCheckTimeoutRef.current) {
+        clearTimeout(codeCheckTimeoutRef.current)
+      }
+    }
+  }, [localStudent.student_code, checkStudentCodeDuplicate])
+
   // Sync local state when student prop changes (including campuses)
   useEffect(() => {
     setLocalStudent(student)
+    setStudentCodeError(null)
+    setStudentCodeValid(null)
     const campuses = student.campuses || []
     const mapToService = (campus: string): ServiceEnrollment | null => {
       const value =
@@ -272,10 +341,14 @@ export function BasicInfoTab({
                 }}
                 placeholder="1234"
                 maxLength={4}
-                className={placeholderClass}
+                className={`${placeholderClass} ${studentCodeError ? 'border-red-500 focus-visible:ring-red-500' : ''} ${studentCodeValid ? 'border-green-500 focus-visible:ring-green-500' : ''}`}
               />
-              {studentCodeError ? (
-                <p className="text-sm text-destructive mt-1">{studentCodeError}</p>
+              {checkingCode ? (
+                <p className="text-sm text-muted-foreground mt-1">확인 중...</p>
+              ) : studentCodeError ? (
+                <p className="text-sm text-red-500 mt-1">{studentCodeError}</p>
+              ) : studentCodeValid ? (
+                <p className="text-sm text-green-600 mt-1">사용 가능한 코드입니다</p>
               ) : (
                 <p className="text-xs text-muted-foreground mt-1">
                   학생이 출결 체크 시 사용하는 고유 번호입니다

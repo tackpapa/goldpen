@@ -12,6 +12,27 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url)
     const attendanceCode = searchParams.get('attendance_code') || searchParams.get('student_code') || undefined
+    const checkDuplicate = searchParams.get('check_duplicate') === '1'
+
+    // 중복 체크 모드: student_code로 검색하여 존재 여부만 반환
+    if (checkDuplicate && attendanceCode) {
+      const { data: existing, error: checkError } = await db
+        .from('students')
+        .select('id')
+        .eq('org_id', orgId)
+        .eq('student_code', attendanceCode)
+        .limit(1)
+
+      if (checkError) {
+        console.error('Error checking duplicate:', checkError)
+        return Response.json({ error: checkError.message }, { status: 500 })
+      }
+
+      return Response.json({
+        exists: existing && existing.length > 0,
+        student_code: attendanceCode
+      })
+    }
 
     let query = db
       .from('students')
