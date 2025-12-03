@@ -499,6 +499,59 @@ async function processClassAttendance(
         // 이미 결석이면 건너뜀
         if (currentStatus === 'absent') continue;
 
+        // 🔴 중요: 지각 알림이 아직 전송되지 않았으면 먼저 지각 알림 보내기
+        // (cron이 수업 종료 후에 처음 실행된 경우)
+        if (currentStatus !== 'late') {
+          // 지각 알림 먼저 전송 여부 확인
+          const existingLateNotif = await sql`
+            SELECT id FROM notification_logs
+            WHERE org_id = ${orgId}
+              AND student_id = ${enrollment.student_id}
+              AND class_id = ${cls.class_id}
+              AND target_date = ${todayDate}::date
+              AND type = 'class_late'
+            LIMIT 1
+          `;
+
+          // 지각 알림이 전송된 적 없으면 먼저 전송
+          if (existingLateNotif.length === 0) {
+            console.log(`[Class] Sending late notification first for ${enrollment.student_name} (before absent)`);
+
+            // attendance 레코드 생성 (late)
+            try {
+              if (!enrollment.attendance_id) {
+                await sql`
+                  INSERT INTO attendance (org_id, class_id, student_id, date, status)
+                  VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'late')
+                `;
+              }
+            } catch (err) {
+              console.error(`[Class] Failed to insert late record:`, err);
+            }
+
+            const lateTemplate = await getTemplate(sql, orgId, 'late');
+            const lateMessage = fillTemplate(lateTemplate, {
+              '기관명': orgName,
+              '학생명': enrollment.student_name,
+              '수업명': cls.class_name,
+              '예정시간': todaySchedule.start_time,
+            });
+            await sendNotification(sql, env, {
+              orgId,
+              studentId: enrollment.student_id,
+              studentName: enrollment.student_name,
+              type: "late",
+              context: "class",
+              classId: cls.class_id,
+              targetDate: todayDate,
+              scheduledTime: todaySchedule.start_time,
+              recipientPhone: enrollment.parent_phone,
+              message: lateMessage,
+            });
+          }
+        }
+
+        // 이제 결석 처리
         try {
           if (enrollment.attendance_id) {
             // 기존 레코드(late)가 있으면 absent로 UPDATE
@@ -508,11 +561,27 @@ async function processClassAttendance(
             `;
             console.log(`[Class] Updated late→absent for ${enrollment.student_name} in ${cls.class_name}`);
           } else {
-            // 레코드가 없으면 INSERT
-            await sql`
-              INSERT INTO attendance (org_id, class_id, student_id, date, status)
-              VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'absent')
+            // 방금 late를 insert했으므로 다시 조회해서 update
+            const latestAttendance = await sql`
+              SELECT id FROM attendance
+              WHERE org_id = ${orgId}
+                AND class_id = ${cls.class_id}
+                AND student_id = ${enrollment.student_id}
+                AND date = ${todayDate}::date
+              LIMIT 1
             `;
+            if (latestAttendance.length > 0) {
+              await sql`
+                UPDATE attendance SET status = 'absent', updated_at = NOW()
+                WHERE id = ${latestAttendance[0].id}
+              `;
+            } else {
+              // 레코드가 없으면 INSERT
+              await sql`
+                INSERT INTO attendance (org_id, class_id, student_id, date, status)
+                VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'absent')
+              `;
+            }
           }
         } catch (err) {
           console.error(`[Class] Failed to process absence:`, err);
