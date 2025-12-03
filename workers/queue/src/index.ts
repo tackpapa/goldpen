@@ -345,6 +345,23 @@ async function processAcademyAttendance(
           message,
         });
       } else if (nowMinutes > checkInMinutes + 10) {
+        // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
+        const existingLateNotifAcademy = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type IN ('academy_late', 'study_late')
+          LIMIT 1
+        `;
+
+        // 이미 지각 알림이 전송된 적 있으면 건너뜀
+        if (existingLateNotifAcademy.length > 0) {
+          console.log(`[Academy] Late notification already sent for ${schedule.student_name}, skipping`);
+          continue;
+        }
+
+        console.log(`[Academy] Sending late notification for ${schedule.student_name}`);
         const template = await getTemplate(sql, orgId, 'late');
         const message = fillTemplate(template, {
           '기관명': orgName,
@@ -475,6 +492,23 @@ async function processStudyRoomAttendance(
           message,
         });
       } else {
+        // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
+        const existingLateNotifStudy = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type IN ('study_late', 'academy_late')
+          LIMIT 1
+        `;
+
+        // 이미 지각 알림이 전송된 적 있으면 건너뜀
+        if (existingLateNotifStudy.length > 0) {
+          console.log(`[StudyRoom] Late notification already sent for ${schedule.student_name}, skipping`);
+          continue;
+        }
+
+        console.log(`[StudyRoom] Sending late notification for ${schedule.student_name}`);
         const template = await getTemplate(sql, orgId, 'late');
         const message = fillTemplate(template, {
           '기관명': orgName,
@@ -679,6 +713,23 @@ async function processClassAttendance(
         // 이미 지각이면 건너뜀
         if (currentStatus === 'late') continue;
 
+        // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
+        const existingLateNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${enrollment.student_id}
+            AND class_id = ${cls.class_id}
+            AND target_date = ${todayDate}::date
+            AND type = 'class_late'
+          LIMIT 1
+        `;
+
+        // 이미 지각 알림이 전송된 적 있으면 건너뜀
+        if (existingLateNotif.length > 0) {
+          console.log(`[Class] Late notification already sent for ${enrollment.student_name}, skipping`);
+          continue;
+        }
+
         try {
           if (!enrollment.attendance_id) {
             await sql`
@@ -690,6 +741,7 @@ async function processClassAttendance(
           console.error(`[Class] Failed to insert late record:`, err);
         }
 
+        console.log(`[Class] Sending late notification for ${enrollment.student_name} in ${cls.class_name}`);
         const template = await getTemplate(sql, orgId, 'late');
         const message = fillTemplate(template, {
           '기관명': orgName,
