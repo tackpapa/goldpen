@@ -294,6 +294,39 @@ async function processAcademyAttendance(
       const absentThreshold = checkOutMinutes || (checkInMinutes + 120);
 
       if (nowMinutes > absentThreshold) {
+        // 결석 처리 전에 지각 알림이 전송되었는지 확인
+        const existingLateNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type IN ('academy_late', 'study_late')
+          LIMIT 1
+        `;
+
+        // 지각 알림이 전송된 적 없으면 먼저 전송
+        if (existingLateNotif.length === 0) {
+          console.log(`[Academy] Sending late notification first for ${schedule.student_name} (before absent)`);
+          const lateTemplate = await getTemplate(sql, orgId, 'late');
+          const lateMessage = fillTemplate(lateTemplate, {
+            '기관명': orgName,
+            '학생명': schedule.student_name,
+            '예정시간': schedule.check_in_time,
+          });
+          await sendNotification(sql, env, {
+            orgId,
+            studentId: schedule.student_id,
+            studentName: schedule.student_name,
+            type: "late",
+            context: "academy",
+            targetDate: todayDate,
+            scheduledTime: schedule.check_in_time,
+            recipientPhone: schedule.parent_phone,
+            message: lateMessage,
+          });
+        }
+
+        // 이제 결석 알림 전송
         const template = await getTemplate(sql, orgId, 'absent');
         const message = fillTemplate(template, {
           '기관명': orgName,
@@ -373,6 +406,39 @@ async function processStudyRoomAttendance(
 
     if (!hasCheckin && nowMinutes > checkInMinutes) {
       if (checkOutMinutes && nowMinutes > checkOutMinutes) {
+        // 결석 처리 전에 지각 알림이 전송되었는지 확인
+        const existingLateNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${schedule.student_id}
+            AND target_date = ${todayDate}::date
+            AND type = 'study_late'
+          LIMIT 1
+        `;
+
+        // 지각 알림이 전송된 적 없으면 먼저 전송
+        if (existingLateNotif.length === 0) {
+          console.log(`[StudyRoom] Sending late notification first for ${schedule.student_name} (before absent)`);
+          const lateTemplate = await getTemplate(sql, orgId, 'late');
+          const lateMessage = fillTemplate(lateTemplate, {
+            '기관명': orgName,
+            '학생명': schedule.student_name,
+            '예정시간': schedule.check_in_time,
+          });
+          await sendNotification(sql, env, {
+            orgId,
+            studentId: schedule.student_id,
+            studentName: schedule.student_name,
+            type: "late",
+            context: "study",
+            targetDate: todayDate,
+            scheduledTime: schedule.check_in_time,
+            recipientPhone: schedule.parent_phone,
+            message: lateMessage,
+          });
+        }
+
+        // 결석 레코드 삽입
         try {
           await sql`
             INSERT INTO attendance_logs (org_id, student_id, check_in_time, check_out_time, duration_minutes, source)
@@ -390,6 +456,7 @@ async function processStudyRoomAttendance(
           console.error(`[StudyRoom] Failed to insert absence record:`, insertError);
         }
 
+        // 이제 결석 알림 전송
         const template = await getTemplate(sql, orgId, 'absent');
         const message = fillTemplate(template, {
           '기관명': orgName,
@@ -943,9 +1010,8 @@ async function sendNotification(
 
     console.log(`[Notification] Recorded: ${dbType} for ${studentName}`);
 
-    // 텔레그램으로 모니터링 알림 전송
-    const typeEmoji = type === 'late' ? '⏰' : type === 'absent' ? '❌' : '📋';
-    await sendTelegram(env, `${typeEmoji} [${type.toUpperCase()}] ${studentName}\n\n${message}`);
+    // 텔레그램으로 모니터링 알림 전송 (부모님께 가는 메시지 그대로 전송)
+    await sendTelegram(env, message);
 
     if (recipientPhone) {
       const templateCode = type.includes('late') ? 'GOLDPEN_LATE_001' : 'GOLDPEN_ABSENT_001';
