@@ -305,6 +305,7 @@ async function processAcademyAttendance(
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "absent",
+          context: "academy",
           targetDate: todayDate,
           scheduledTime: schedule.check_out_time || schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
@@ -322,6 +323,7 @@ async function processAcademyAttendance(
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "late",
+          context: "academy",
           targetDate: todayDate,
           scheduledTime: schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
@@ -399,6 +401,7 @@ async function processStudyRoomAttendance(
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "absent",
+          context: "study",
           targetDate: todayDate,
           scheduledTime: schedule.check_out_time,
           recipientPhone: schedule.parent_phone,
@@ -416,6 +419,7 @@ async function processStudyRoomAttendance(
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "late",
+          context: "study",
           targetDate: todayDate,
           scheduledTime: schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
@@ -526,6 +530,7 @@ async function processClassAttendance(
           studentId: enrollment.student_id,
           studentName: enrollment.student_name,
           type: "absent",
+          context: "class",
           classId: cls.class_id,
           targetDate: todayDate,
           scheduledTime: todaySchedule.end_time,
@@ -561,6 +566,7 @@ async function processClassAttendance(
           studentId: enrollment.student_id,
           studentName: enrollment.student_name,
           type: "late",
+          context: "class",
           classId: cls.class_id,
           targetDate: todayDate,
           scheduledTime: todaySchedule.start_time,
@@ -620,6 +626,7 @@ async function processDailyReport(
       studentId: record.student_id,
       studentName: record.student_name,
       type: "daily_report",
+      context: "study",
       targetDate: todayDate,
       recipientPhone: record.parent_phone,
       message,
@@ -681,6 +688,7 @@ async function processAssignmentReminder(
       studentId: assignment.student_id,
       studentName: assignment.student_name,
       type: "assignment_remind",
+      context: "class",
       classId: assignment.class_id,
       targetDate: todayDate,
       recipientPhone: assignment.parent_phone,
@@ -750,6 +758,7 @@ async function processCommuteAbsence(
         studentId: student.student_id,
         studentName: student.student_name,
         type: "absent",
+        context: "commute",
         targetDate: todayDate,
         scheduledTime: student.check_in_time,
         recipientPhone: student.parent_phone,
@@ -771,11 +780,44 @@ type NotificationType =
   | "daily_report"
   | "assignment_remind";
 
+// DB에 저장되는 실제 type (notification_logs_type_check constraint)
+type DbNotificationType =
+  | "study_late" | "study_absent"
+  | "class_late" | "class_absent"
+  | "academy_checkin" | "academy_checkout"
+  | "study_checkin" | "study_checkout"
+  | "study_out" | "study_return"
+  | "lesson_report" | "exam_result" | "assignment_new";
+
+// context에 따라 DB type 변환
+function toDbNotificationType(type: NotificationType, context: 'class' | 'study' | 'academy' | 'commute'): DbNotificationType {
+  if (type === 'late') {
+    return context === 'class' ? 'class_late' : 'study_late';
+  }
+  if (type === 'absent') {
+    return context === 'class' ? 'class_absent' : 'study_absent';
+  }
+  if (type === 'checkin') {
+    return context === 'academy' ? 'academy_checkin' : 'study_checkin';
+  }
+  if (type === 'checkout') {
+    return context === 'academy' ? 'academy_checkout' : 'study_checkout';
+  }
+  if (type === 'daily_report') {
+    return 'lesson_report';
+  }
+  if (type === 'assignment_remind') {
+    return 'assignment_new';
+  }
+  return 'study_late'; // fallback
+}
+
 interface NotificationParams {
   orgId: string;
   studentId: string;
   studentName: string;
   type: NotificationType;
+  context: 'class' | 'study' | 'academy' | 'commute';
   classId?: string;
   targetDate: string;
   scheduledTime?: string;
@@ -793,6 +835,7 @@ async function sendNotification(
     studentId,
     studentName,
     type,
+    context,
     classId,
     targetDate,
     scheduledTime,
@@ -800,19 +843,22 @@ async function sendNotification(
     message,
   } = params;
 
+  // DB에 저장할 때는 context에 맞는 type으로 변환
+  const dbType = toDbNotificationType(type, context);
+
   try {
     const existing = await sql`
       SELECT id FROM notification_logs
       WHERE org_id = ${orgId}
         AND student_id = ${studentId}
-        AND type = ${type}
+        AND type = ${dbType}
         AND target_date = ${targetDate}::date
         ${classId ? sql`AND class_id = ${classId}` : sql`AND class_id IS NULL`}
       LIMIT 1
     `;
 
     if (existing.length > 0) {
-      console.log(`[Notification] Skipping duplicate: ${type} for ${studentName}`);
+      console.log(`[Notification] Skipping duplicate: ${dbType} for ${studentName}`);
       return;
     }
 
@@ -821,12 +867,12 @@ async function sendNotification(
         org_id, student_id, type, class_id, target_date,
         scheduled_time, recipient_phone, message, status
       ) VALUES (
-        ${orgId}, ${studentId}, ${type}, ${classId || null}, ${targetDate}::date,
+        ${orgId}, ${studentId}, ${dbType}, ${classId || null}, ${targetDate}::date,
         ${scheduledTime ? sql`${scheduledTime}::time` : sql`NULL`}, ${recipientPhone || null}, ${message}, 'sent'
       )
     `;
 
-    console.log(`[Notification] Recorded: ${type} for ${studentName}`);
+    console.log(`[Notification] Recorded: ${dbType} for ${studentName}`);
 
     // 텔레그램으로 모니터링 알림 전송
     const typeEmoji = type === 'late' ? '⏰' : type === 'absent' ? '❌' : '📋';
@@ -845,7 +891,7 @@ async function sendNotification(
           org_id, student_id, type, class_id, target_date,
           scheduled_time, recipient_phone, message, status, error_message
         ) VALUES (
-          ${orgId}, ${studentId}, ${type}, ${classId || null}, ${targetDate}::date,
+          ${orgId}, ${studentId}, ${dbType}, ${classId || null}, ${targetDate}::date,
           ${scheduledTime ? sql`${scheduledTime}::time` : sql`NULL`}, ${recipientPhone || null}, ${message}, 'failed',
           ${String(error)}
         )
