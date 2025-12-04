@@ -382,7 +382,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3) 수업 크레딧 차감 (해당 반의 학생들에게 수업 시간만큼 차감)
+    // 3) 수업 크레딧 차감 (해당 반의 학생들에게 수업 시간만큼 차감) - N+1 최적화
     const durationHours = parseDurationHours(validated.lesson_time)
     if (validated.class_id && durationHours > 0) {
       const { data: enrollments, error: enrollError } = await db
@@ -394,30 +394,37 @@ export async function POST(request: Request) {
       if (enrollError) {
         console.error('[Lessons POST] class_enrollments 조회 오류:', enrollError)
       } else if (enrollments?.length) {
-        for (const enrollment of enrollments) {
-          if (enrollment.status && enrollment.status !== 'active') continue
+        // Filter active enrollments
+        const activeStudentIds = enrollments
+          .filter((e: { status: string | null }) => !e.status || e.status === 'active')
+          .map((e: { student_id: string }) => e.student_id)
 
-          const { data: studentRow, error: studentError } = await db
+        if (activeStudentIds.length > 0) {
+          // Batch fetch all students at once (N queries → 1 query)
+          const { data: students, error: studentsError } = await db
             .from('students')
-            .select('credit')
+            .select('id, credit')
             .eq('org_id', orgId)
-            .eq('id', enrollment.student_id)
-            .single()
+            .in('id', activeStudentIds)
 
-          if (studentError || !studentRow) {
-            console.error('[Lessons POST] 학생 조회 실패:', enrollment.student_id, studentError)
-            continue
-          }
+          if (studentsError) {
+            console.error('[Lessons POST] 학생 일괄 조회 실패:', studentsError)
+          } else if (students?.length) {
+            // Update each student's credit (parallel updates)
+            await Promise.all(
+              students.map(async (student: { id: string; credit: number | null }) => {
+                const nextCredit = (student.credit ?? 0) - durationHours
+                const { error: updateError } = await db
+                  .from('students')
+                  .update({ credit: nextCredit })
+                  .eq('org_id', orgId)
+                  .eq('id', student.id)
 
-          const nextCredit = (studentRow.credit ?? 0) - durationHours
-          const { error: updateError } = await db
-            .from('students')
-            .update({ credit: nextCredit })
-            .eq('org_id', orgId)
-            .eq('id', enrollment.student_id)
-
-          if (updateError) {
-            console.error('[Lessons POST] 학생 크레딧 차감 실패:', enrollment.student_id, updateError)
+                if (updateError) {
+                  console.error('[Lessons POST] 학생 크레딧 차감 실패:', student.id, updateError)
+                }
+              })
+            )
           }
         }
       }

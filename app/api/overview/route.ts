@@ -132,7 +132,7 @@ export async function GET(request: Request) {
     }
 
     return Response.json({ overview }, {
-      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+      headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=120' }
     })
   } catch (error: any) {
     if (error?.message === 'AUTH_REQUIRED') {

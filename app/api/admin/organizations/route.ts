@@ -93,66 +93,86 @@ export async function GET(request: Request) {
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    // Get additional data for each organization (Admin 클라이언트로 RLS 우회)
-    const orgsWithDetails = await Promise.all(
-      (organizations || []).map(async (org) => {
-        // User count
-        const { count: userCount } = await adminClient
-          .from('users')
-          .select('*', { count: 'exact', head: true })
-          .eq('org_id', org.id)
+    // Batch fetch all additional data (N+1 쿼리 최적화)
+    const orgIds = (organizations || []).map(org => org.id)
+    const ownerIds = (organizations || []).map(org => org.owner_id).filter(Boolean) as string[]
 
-        // Student count
-        const { count: studentCount } = await adminClient
-          .from('students')
-          .select('*', { count: 'exact', head: true })
-          .eq('org_id', org.id)
+    // Batch queries in parallel
+    const startOfMonth = new Date()
+    startOfMonth.setDate(1)
+    startOfMonth.setHours(0, 0, 0, 0)
 
-        // Owner info (from owner_id in organization)
-        let ownerData = null
-        if (org.owner_id) {
-          const { data } = await adminClient
+    const [userCounts, studentCounts, owners, revenues, settings] = await Promise.all([
+      // User counts by org_id (single query with GROUP BY simulation)
+      adminClient
+        .from('users')
+        .select('org_id')
+        .in('org_id', orgIds),
+
+      // Student counts by org_id
+      adminClient
+        .from('students')
+        .select('org_id')
+        .in('org_id', orgIds),
+
+      // All owners in one query
+      ownerIds.length > 0
+        ? adminClient
             .from('users')
             .select('id, name, email')
-            .eq('id', org.owner_id)
-            .maybeSingle()
-          ownerData = data
-        }
+            .in('id', ownerIds)
+        : Promise.resolve({ data: [] }),
 
-        // Monthly revenue (billing_transactions this month)
-        const startOfMonth = new Date()
-        startOfMonth.setDate(1)
-        startOfMonth.setHours(0, 0, 0, 0)
+      // All revenues in one query
+      adminClient
+        .from('billing_transactions')
+        .select('org_id, amount')
+        .in('org_id', orgIds)
+        .gte('created_at', startOfMonth.toISOString()),
 
-        const { data: revenueData } = await adminClient
-          .from('billing_transactions')
-          .select('amount')
-          .eq('org_id', org.id)
-          .gte('created_at', startOfMonth.toISOString())
+      // All settings in one query
+      adminClient
+        .from('org_settings')
+        .select('*')
+        .in('org_id', orgIds)
+    ])
 
-        const monthlyRevenue = (revenueData || []).reduce(
-          (sum, tx) => sum + (Number(tx.amount) || 0),
-          0
-        )
+    // Build lookup maps for O(1) access
+    const userCountMap = new Map<string, number>()
+    ;(userCounts.data || []).forEach(u => {
+      userCountMap.set(u.org_id, (userCountMap.get(u.org_id) || 0) + 1)
+    })
 
-        // Org settings
-        const { data: settingsData } = await adminClient
-          .from('org_settings')
-          .select('*')
-          .eq('org_id', org.id)
-          .maybeSingle()
+    const studentCountMap = new Map<string, number>()
+    ;(studentCounts.data || []).forEach(s => {
+      studentCountMap.set(s.org_id, (studentCountMap.get(s.org_id) || 0) + 1)
+    })
 
-        return {
-          ...org,
-          user_count: userCount || 0,
-          student_count: studentCount || 0,
-          owner: ownerData || null,
-          monthly_revenue: monthlyRevenue,
-          credit_balance: org.credit_balance || 0,
-          org_settings: settingsData || null,
-        }
-      })
-    )
+    const ownerMap = new Map<string, { id: string; name: string; email: string }>()
+    ;(owners.data || []).forEach(o => {
+      ownerMap.set(o.id, o)
+    })
+
+    const revenueMap = new Map<string, number>()
+    ;(revenues.data || []).forEach(r => {
+      revenueMap.set(r.org_id, (revenueMap.get(r.org_id) || 0) + (Number(r.amount) || 0))
+    })
+
+    const settingsMap = new Map<string, unknown>()
+    ;(settings.data || []).forEach(s => {
+      settingsMap.set(s.org_id, s)
+    })
+
+    // Map organizations with pre-fetched data
+    const orgsWithDetails = (organizations || []).map(org => ({
+      ...org,
+      user_count: userCountMap.get(org.id) || 0,
+      student_count: studentCountMap.get(org.id) || 0,
+      owner: org.owner_id ? ownerMap.get(org.owner_id) || null : null,
+      monthly_revenue: revenueMap.get(org.id) || 0,
+      credit_balance: org.credit_balance || 0,
+      org_settings: settingsMap.get(org.id) || null,
+    }))
 
     return Response.json({
       organizations: orgsWithDetails,

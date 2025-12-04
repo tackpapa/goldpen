@@ -108,7 +108,7 @@ export async function GET(request: Request) {
     }
 
     return Response.json({ exams: examsWithStudentCount, scores, count: examsWithStudentCount.length }, {
-      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+      headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=120' }
     })
   } catch (error: any) {
     console.error('[Exams GET] Unexpected error:', error)

@@ -242,10 +242,10 @@ export async function PUT(request: Request) {
         .select('id, is_system, system_key')
         .eq('org_id', orgId)
 
-      const systemCatMap = new Map(
+      const systemCatMap = new Map<string, string>(
         (existingCategories || [])
           .filter((c: any) => c.is_system)
-          .map((c: any) => [c.id, c.system_key])
+          .map((c: any) => [c.id, c.system_key as string])
       )
 
       for (let i = 0; i < body.categories.length; i++) {

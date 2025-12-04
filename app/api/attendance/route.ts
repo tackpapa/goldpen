@@ -103,25 +103,37 @@ export async function GET(request: Request) {
       })
     }
 
-    // 선택 날짜 출결 기록 (실제 체크된 것)
-    const { data: todayRows } = await supabase
-      .from('attendance')
-      .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
-      .eq('org_id', orgId)
-      .eq('date', selectedDateStr)
-      .order('updated_at', { ascending: false })
-
-
     // 선택 날짜 요일에 맞는 수업 스케줄 조회해 선생님/시간 매핑
     const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const
     const todayDay = dayMap[new Date(selectedDateStr).getDay()]
-    // 오늘 요일에 해당하는 수업들 (등록 + 스케줄) -> 모든 수업행 구성 후 출결 매핑
-  const { data: enrollments } = await supabase
-    .from('class_enrollments')
-    .select('class_id, student_id, students!inner(id, name), classes!inner(id, name, teacher_name, schedule, org_id)')
-    .eq('status', 'active')
-    .eq('org_id', orgId)
-    .eq('classes.org_id', orgId)
+
+    // 병렬 쿼리 실행 (N+1 최적화)
+    const [todayRowsRes, enrollmentsRes, weeklyStatsData, studentRatesData] = await Promise.all([
+      // 선택 날짜 출결 기록 (실제 체크된 것)
+      supabase
+        .from('attendance')
+        .select('*, student:student_id(id, name), class:class_id(id, name, teacher_name, schedule)')
+        .eq('org_id', orgId)
+        .eq('date', selectedDateStr)
+        .order('updated_at', { ascending: false }),
+
+      // 오늘 요일에 해당하는 수업들 (등록 + 스케줄)
+      supabase
+        .from('class_enrollments')
+        .select('class_id, student_id, students!inner(id, name), classes!inner(id, name, teacher_name, schedule, org_id)')
+        .eq('status', 'active')
+        .eq('org_id', orgId)
+        .eq('classes.org_id', orgId),
+
+      // 주간 통계 (병렬 실행)
+      buildWeeklyStats(supabase, orgId, weekStartStr, selectedDateStr),
+
+      // 학생별 출결률 (병렬 실행)
+      buildStudentRates(supabase, orgId, monthStartStr, selectedDateStr)
+    ])
+
+    const todayRows = todayRowsRes.data
+    const enrollments = enrollmentsRes.data
 
     const scheduleMap: Record<string, { start_time: string | null; end_time: string | null; teacher_name: string | null }> = {}
     const korDayMap: Record<string, string> = {
@@ -229,12 +241,12 @@ export async function GET(request: Request) {
       total: totalCount ?? null,
       hasMore,
       todayStudents,
-      weeklyStats: await buildWeeklyStats(supabase, orgId, weekStartStr, selectedDateStr), // 선택 주간
-      studentRates: await buildStudentRates(supabase, orgId, monthStartStr, selectedDateStr), // 선택 월간
+      weeklyStats: weeklyStatsData, // 병렬 쿼리로 미리 계산됨
+      studentRates: studentRatesData, // 병렬 쿼리로 미리 계산됨
       nextOffset: offset + (attendance?.length || 0),
       selectedDate: selectedDateStr,
     }, {
-      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
+      headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=120' }
     })
   } catch (error: any) {
     console.error('[Attendance GET] Unexpected error:', error)
