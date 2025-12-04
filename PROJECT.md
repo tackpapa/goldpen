@@ -1,6 +1,6 @@
-# GOLDPEN_SYS_MAP v3.3
+# GOLDPEN_SYS_MAP v3.4
 # Token-optimized system reference (machine-readable)
-# Generated: 2025-11-29 | Updated: 2025-12-03 (incremental)
+# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync)
 
 ## ⚠️ RULES (CRITICAL)
 rule1:EDGE_RUNTIME - export const runtime='edge' 필수
@@ -36,25 +36,26 @@ cron:cloudflare-scheduled (workers/cron)
 
 ## PROJECT_STRUCTURE
 goldpen/
-├ app/                      # Next.js App Router (37 pages)
+├ app/                      # Next.js App Router (39 pages)
 │ ├ (auth)/                # 인증 (login, signup)
 │ ├ (portal)/my/           # 포털 (dashboard)
-│ ├ admin/(protected)/     # Admin (7 pages)
-│ ├ [institutionname]/     # 기관별 (17 pages)
-│ ├ api/                   # API Routes (85 routes)
+│ ├ admin/(protected)/     # Admin (9 pages)
+│ ├ [institutionname]/     # 기관별 (19 pages)
+│ ├ api/                   # API Routes (97 routes)
 │ ├ consultation/          # 상담 신청
-│ ├ invite/[token]/        # 초대 수락 (NEW)
+│ ├ demo/                  # 데모 페이지 (NEW)
+│ ├ invite/[token]/        # 초대 수락
 │ └ lesson-note/           # 수업노트 공유
-├ components/              # React (72 files)
+├ components/              # React (74 files)
 │ ├ ui/                   # shadcn/ui (32 files)
 │ ├ students/             # 학생 모달/탭 (11 files)
 │ ├ teachers/             # 강사 모달/탭 (6 files)
-│ ├ managers/             # 매니저 모달/탭 (4 files) NEW
+│ ├ managers/             # 매니저 모달/탭 (4 files)
 │ ├ livescreen/           # 라이브스크린 (9 files)
 │ ├ dashboard/            # 대시보드 위젯 (4 files)
 │ ├ admin/                # Admin (2 files)
 │ ├ seats/                # 좌석 (2 files)
-│ ├ landing/              # 랜딩 (1 file) NEW
+│ ├ landing/              # 랜딩 (1 file)
 │ └ shared/               # 공통 (4 files)
 ├ lib/                     # 유틸/설정 (34 files)
 │ ├ supabase/             # DB 클라이언트 (4 files)
@@ -62,32 +63,33 @@ goldpen/
 │ ├ validations/          # Zod 스키마 (5 files)
 │ ├ utils/                # 유틸 (3 files)
 │ ├ config/               # 설정 (2 files)
-│ ├ constants/            # 상수 (2 files) NEW
-│ ├ hooks/                # 설정 hooks (6 files) NEW
+│ ├ constants/            # 상수 (2 files)
+│ ├ hooks/                # 설정 hooks (6 files)
 │ ├ swr/                  # SWR hooks (3 files)
 │ ├ messaging/            # 카카오 알림톡 (1 file)
-│ ├ email/                # 이메일 발송 (1 file) NEW
+│ ├ email/                # 이메일 발송 (1 file)
 │ └ data/                 # Mock 데이터 (1 file)
 ├ hooks/                   # Custom Hooks (9 files)
 ├ contexts/                # React Context (1 file)
-├ workers/                 # Cloudflare Workers
+├ workers/                 # Cloudflare Workers (59 files)
 │ ├ api/                  # Hono API (53 files)
 │ ├ cron/                 # 스케줄 알림 (1 file)
-│ ├ queue/                # 큐 (비활성)
+│ ├ queue/                # 큐 워커 (활성)
 │ ├ shared/               # 공유 (비활성)
 │ └ tail-logger/          # 로그 (비활성)
 ├ supabase/                # DB
-│ └ migrations/           # SQL (82 files)
+│ └ migrations/           # SQL (88 files)
 └ docs/                    # 문서
   └ kakao.md              # 카카오 가이드
 
-## PAGES (37)
+## PAGES (39)
 root:
 ├ / - 홈 (리다이렉트)
 ├ /login - 로그인
 ├ /signup - 회원가입
 ├ /consultation/new - 상담 신청 폼
-├ /invite/[token] - 초대 수락 (NEW)
+├ /demo - 데모 페이지 (NEW)
+├ /invite/[token] - 초대 수락
 └ /lesson-note/[token] - 수업노트 공유
 
 portal:
@@ -102,13 +104,14 @@ admin:
 ├ /admin/audit-logs - 감사 로그
 ├ /admin/kakao - 카카오 관리
 ├ /admin/plans - 요금제 관리
-└ /admin/settings - 시스템 설정
+├ /admin/infrastructure - 인프라 현황 (NEW)
+└ /admin/payments - 결제 관리 (NEW)
 
 dashboard:
 ├ /[org]/overview - 대시보드 홈
 ├ /[org]/students - 학생 관리
 ├ /[org]/teachers - 강사 관리
-├ /[org]/managers - 매니저 관리 (NEW)
+├ /[org]/managers - 매니저 관리
 ├ /[org]/classes - 반 관리
 ├ /[org]/consultations - 상담 관리
 ├ /[org]/attendance - 출결 관리
@@ -129,12 +132,12 @@ livescreen:
 ├ /[org]/livescreen/[seatNumber] - 학생 스크린
 └ /[org]/liveattendance - 실시간 출결
 
-## API_ROUTES (85)
+## API_ROUTES (97)
 auth:
 ├ /api/auth/login - POST 로그인
 ├ /api/auth/logout - POST 로그아웃
 ├ /api/auth/register - POST 회원가입
-├ /api/auth/demo - POST 데모 로그인 (NEW)
+├ /api/auth/demo - POST 데모 로그인
 └ /api/auth/me - GET 현재 사용자
 
 students:
@@ -176,7 +179,7 @@ attendance:
 homework:
 ├ /api/homework - GET/POST 숙제
 ├ /api/homework/[id] - GET/PUT/DELETE 상세
-└ /api/homework/submissions - GET/POST 제출 (NEW)
+└ /api/homework/submissions - GET/POST 제출
 
 exams:
 ├ /api/exams - GET/POST 시험
@@ -207,7 +210,10 @@ livescreen:
 ├ /api/daily-planners - GET/POST 일일 계획
 ├ /api/daily-study-stats - GET 통계
 ├ /api/planner-feedback - GET/POST AI 피드백
-└ /api/subjects - GET/POST/PUT 과목
+├ /api/subjects - GET/POST/PUT 과목
+├ /api/call-records - GET/POST 호출 기록 (NEW)
+├ /api/manager-calls - GET/POST 매니저 호출 (NEW)
+└ /api/sleep-records - GET/POST 수면 기록 (NEW)
 
 billing:
 ├ /api/billing - GET/POST 정산
@@ -220,52 +226,63 @@ billing:
 settings:
 ├ /api/settings - GET/PUT 설정
 ├ /api/settings/logo - POST 로고 업로드
-├ /api/settings/invitations - GET/POST/DELETE 초대 (NEW)
-├ /api/settings/invitations/accept - POST 초대 수락 (NEW)
-├ /api/settings/invitations/resend - POST 초대 재전송 (NEW)
-├ /api/settings/menu-settings - GET/PUT 메뉴 설정 (NEW)
-├ /api/settings/page-permissions - GET/PUT 페이지 권한 (NEW)
-├ /api/settings/user-accounts - GET/POST/PUT 사용자 계정 (NEW)
-├ /api/settings/widget-settings - GET/PUT 위젯 설정 (NEW)
-├ /api/settings/expense-categories - GET/POST/PUT 지출 카테고리 (NEW)
-├ /api/settings/revenue-categories - GET/POST/PUT 수입 카테고리 (NEW)
+├ /api/settings/invitations - GET/POST/DELETE 초대
+├ /api/settings/invitations/accept - POST 초대 수락
+├ /api/settings/invitations/resend - POST 초대 재전송
+├ /api/settings/menu-settings - GET/PUT 메뉴 설정
+├ /api/settings/page-permissions - GET/PUT 페이지 권한
+├ /api/settings/user-accounts - GET/POST/PUT 사용자 계정
+├ /api/settings/widget-settings - GET/PUT 위젯 설정
+├ /api/settings/expense-categories - GET/POST/PUT/DELETE 지출 카테고리
+├ /api/settings/revenue-categories - GET/POST/PUT/DELETE 수입 카테고리
+├ /api/settings/billing-summary - GET 정산 요약 (NEW)
 └ /api/class-enrollments - GET/POST 수강 등록
 
 managers:
-├ /api/managers - GET/POST 매니저 목록/생성 (NEW)
-└ /api/managers/[id] - GET/PUT/DELETE 매니저 상세 (NEW)
+├ /api/managers - GET/POST 매니저 목록/생성
+└ /api/managers/[id] - GET/PUT/DELETE 매니저 상세
+
+storage:
+└ /api/storage/upload - POST 파일 업로드 (NEW)
 
 misc:
 ├ /api/overview - GET 대시보드 통계
 ├ /api/widgets - GET 위젯 데이터
 ├ /api/activity-logs - GET 활동 로그
 ├ /api/organizations/[slug] - GET 기관 정보
+├ /api/me - GET 현재 사용자 정보 (NEW)
 ├ /api/test-env - GET 환경 테스트
 └ /api/debug/env - GET 환경 디버그
 
 admin:
 ├ /api/admin/organizations - GET/POST 기관
 ├ /api/admin/organizations/[id] - GET/PUT/DELETE 상세
+├ /api/admin/organizations/[id]/credit - GET/PUT 크레딧 (NEW)
 ├ /api/admin/users - GET/POST 사용자
 ├ /api/admin/audit-logs - GET 감사 로그
 ├ /api/admin/kakao - GET/POST 카카오
 ├ /api/admin/plans - GET/POST 요금제
 ├ /api/admin/plans/[id] - PUT/DELETE 수정
-└ /api/admin/stats/overview - GET Admin 통계
+├ /api/admin/infrastructure - GET 인프라 현황 (NEW)
+├ /api/admin/message-pricing - GET/POST 메시지 요금 (NEW)
+├ /api/admin/payments - GET 결제 내역 (NEW)
+├ /api/admin/stats/overview - GET Admin 통계
+├ /api/admin/stats/credits - GET 크레딧 통계 (NEW)
+└ /api/admin/stats/messages - GET 메시지 통계 (NEW)
 
-## DB_SCHEMA (82 migrations)
+## DB_SCHEMA (88 migrations)
 core:
-├ organizations - 기관 (slug, logo, settings)
+├ organizations - 기관 (slug, logo, settings, credit_balance)
 ├ users - 사용자 (role: super_admin|admin|teacher|student|parent)
 ├ students - 학생 (attendance_code, grade, school, files[], credit)
 ├ teachers - 강사 (salary, schedule, assigned_students, payment_day, lesson_note_token)
 ├ classes - 반 (teacher_id, subject, capacity)
 ├ enrollments - 수강 (student↔class)
-├ attendance - 출결 (date, status)
+├ attendance - 출결 (date, status, unique constraint)
 ├ lessons - 수업 기록 (content, comprehension_level)
 ├ homework - 숙제 (due_date, status)
 ├ homework_submissions - 숙제 제출
-├ exams - 시험 (exam_date, total_score)
+├ exams - 시험 (exam_date, total_score, exam_time)
 ├ exam_scores - 시험 점수
 ├ consultations - 상담 (status, channel, waitlist_id)
 ├ waitlists - 대기자
@@ -304,14 +321,17 @@ admin:
 ├ kakaotalk_usage - 카카오 사용량
 ├ service_usage - 서비스 사용량
 ├ activity_logs - 활동 로그
-└ notification_logs - 알림 로그
+├ notification_logs - 알림 로그
+├ message_pricing - 메시지 요금 (NEW)
+├ message_logs - 메시지 로그 (NEW)
+└ invitations - 초대 (NEW)
 
 rls:ALL_TABLES_ENABLED
 ├ policy:org_isolation (org_id 기반)
 ├ policy:role_based (user.role 기반)
 └ policy:row_owner (user_id 기반)
 
-## COMPONENTS (72)
+## COMPONENTS (74)
 ui/ (32 files, shadcn/ui):
 ├ button, input, card, table, badge, avatar
 ├ tabs, dropdown-menu, label, textarea
@@ -343,7 +363,7 @@ teachers/ (6 files):
 │ └ AssignedStudentsTab - 배정 학생
 └ ClassHistoryTab - 수업 이력
 
-managers/ (4 files) NEW:
+managers/ (4 files):
 ├ ManagerDetailModal - 매니저 상세 모달
 │ ├ BasicInfoTab - 기본정보
 │ ├ SalaryTab - 급여
@@ -374,9 +394,9 @@ shared/ (4 files):
 
 seats/ (2 files):
 ├ SeatAssignment - 좌석 배정
-└ StudentPlannerModal - 학생 계획 모달 (NEW)
+└ StudentPlannerModal - 학생 계획 모달
 
-landing/ (1 file) NEW:
+landing/ (1 file):
 └ FeatureShowcase - 랜딩 기능 전시
 
 other:
@@ -422,11 +442,11 @@ config/:
 ├ widgets.ts - 위젯 설정
 └ navigation.ts - 네비게이션 설정
 
-constants/ (NEW):
+constants/:
 ├ branding.ts - 브랜딩 상수
 └ grades.ts - 학년 상수
 
-hooks/ (NEW):
+hooks/:
 ├ useExpenseCategories.ts - 지출 카테고리
 ├ useRevenueCategories.ts - 수입 카테고리
 ├ useMenuSettings.ts - 메뉴 설정
@@ -442,10 +462,10 @@ swr/:
 messaging/:
 └ kakao-alimtalk.ts - 카카오 알림톡 연동
 
-email/ (NEW):
+email/:
 └ send-invitation.ts - 초대 이메일 발송
 
-## WORKERS
+## WORKERS (59 files)
 api/ (workers/api):
 ├ src/index.ts - Hono 메인 (라우터 등록)
 ├ src/env.ts - 환경변수 타입
@@ -482,7 +502,7 @@ cron/ (workers/cron):
   ├ cron:* * * * * (매 1분)
   └ hyperdrive:HYPERDRIVE_DB
 
-queue/ (workers/queue) NEW:
+queue/ (workers/queue):
 ├ src/index.ts - 큐 처리 워커 (974줄)
 │ ├ 출결 알림 큐 처리
 │ ├ 카카오 알림톡 발송
@@ -497,7 +517,7 @@ queue/ (workers/queue) NEW:
 global:
 ├ contexts/auth-context.tsx
 │ ├ {user, org, session, loading, signOut}
-│ ├ clearExpiredSession() - 만료 세션 사전 정리 (NEW)
+│ ├ clearExpiredSession() - 만료 세션 사전 정리
 │ └ refreshSession() - 세션 갱신 (improved)
 └ zustand (필요시)
 
@@ -538,7 +558,7 @@ deploy-all:pnpm deploy:all
 └ run:api:deploy + deploy
 
 test:pnpm test (vitest)
-e2e:pnpm playwright test (NEW)
+e2e:pnpm playwright test
 ├ tests/e2e/seou-advanced.spec.ts - 고급 기능 테스트
 ├ tests/e2e/seou-crud.spec.ts - CRUD 테스트
 ├ tests/e2e/seou-extra-pages.spec.ts - 추가 페이지 테스트
@@ -692,14 +712,14 @@ wrangler:4.47.0
 vitest:2.1.0
 
 ## STATISTICS
-pages:37
-api_routes:85
-components:72
+pages:39
+api_routes:97
+components:74
 lib_files:34
 hooks:9
-workers_files:53
-migrations:82
-total_ts_files:~320
+workers_files:59
+migrations:88
+total_ts_files:~340
 
 ## ROADMAP
 v1.0 (current):
@@ -710,7 +730,9 @@ v1.0 (current):
 ├ ✅ Admin dashboard
 ├ ✅ Audit logs
 ├ ✅ Activity logs
-└ ✅ Cron notifications
+├ ✅ Cron notifications
+├ ✅ Credit system
+└ ✅ Message pricing
 
 v1.1 (planned):
 ├ [ ] AI reports (GPT-4)
@@ -721,21 +743,32 @@ v1.1 (planned):
 └ [ ] Payment gateway
 
 ---
-# END OF GOLDPEN_SYS_MAP v3.3
-# Generated: 2025-11-29 | Updated: 2025-12-03 (incremental)
+# END OF GOLDPEN_SYS_MAP v3.4
+# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync)
+#
+# Changes (2025-12-05):
+#   - API: 85 → 97 (+12 routes)
+#     - /api/admin/infrastructure, message-pricing, payments
+#     - /api/admin/organizations/[id]/credit
+#     - /api/admin/stats/credits, messages
+#     - /api/call-records, manager-calls, sleep-records
+#     - /api/me, /api/storage/upload
+#     - /api/settings/billing-summary
+#   - Pages: 37 → 39 (+2)
+#     - /demo, /admin/infrastructure, /admin/payments
+#   - Components: 72 → 74 (+2)
+#   - Workers: 53 → 59 (+6)
+#   - Migrations: 82 → 88 (+6)
+#     - attendance_unique_constraint
+#     - credit_balance, manager_fields
+#     - message_logs, message_pricing
+#     - exam_time
 #
 # Changes (2025-12-03):
 #   - Workers: queue worker 추가 (974줄, 비동기 알림 처리)
-#   - Auth: clearExpiredSession() 함수 추가 (만료 토큰 에러 방지)
+#   - Auth: clearExpiredSession() 함수 추가
 #   - Tests: E2E 테스트 3개 추가 (Playwright)
 #   - Cron: 리팩토링 완료 (1211줄 → 329줄)
 #
-# Changes (2025-12-02):
-#   - API: +12 routes (managers, settings/invitations, settings/* 확장)
-#   - Pages: +2 (invite/[token], [org]/managers)
-#   - Components: +5 (managers/, landing/, seats/StudentPlannerModal)
-#   - Lib: +7 (constants/, hooks/, email/)
-#   - Cron: 자동 출결 처리 기능 추가
-#
-# Analysis method: Incremental (Git diff based)
+# Analysis method: Full codebase comparison (find/ls)
 # Next update: /gen-context command
