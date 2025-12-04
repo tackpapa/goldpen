@@ -4,7 +4,7 @@ export const runtime = 'edge'
 
 import { useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
 import {
   Activity,

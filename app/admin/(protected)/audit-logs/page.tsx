@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Search } from 'lucide-react'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 
 interface AuditLog {
   id: string

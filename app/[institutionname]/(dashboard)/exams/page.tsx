@@ -48,7 +48,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { Exam, ExamScore, Organization } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 // Dynamic import for chart components (heavy library - ~200KB)

@@ -45,7 +45,7 @@ import {
   AreaChart,
 } from 'recharts'
 import type { MonthlyRevenueSummary } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { cn } from '@/lib/utils'
 import { useParams } from 'next/navigation'
 

@@ -12,6 +12,7 @@ import {
   getPaginationRowModel,
   getSortedRowModel,
   useReactTable,
+  Row,
 } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +35,23 @@ interface DataTableProps<TData, TValue> {
   pageSize?: number
   toolbar?: React.ReactNode
 }
+
+// Memoized table row component to prevent unnecessary re-renders
+const MemoizedTableRow = React.memo(function MemoizedTableRow<TData>({
+  row,
+}: {
+  row: Row<TData>
+}) {
+  return (
+    <TableRow data-state={row.getIsSelected() && "selected"}>
+      {row.getVisibleCells().map((cell) => (
+        <TableCell key={cell.id} className="text-xs md:text-sm whitespace-nowrap">
+          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+        </TableCell>
+      ))}
+    </TableRow>
+  )
+}) as <TData>(props: { row: Row<TData> }) => React.ReactElement
 
 export function DataTable<TData, TValue>({
   columns,
@@ -159,19 +177,7 @@ export function DataTable<TData, TValue>({
               {displayRows?.length ? (
                 <>
                   {displayRows.map((row) => (
-                    <TableRow
-                      key={row.id}
-                      data-state={row.getIsSelected() && "selected"}
-                    >
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id} className="text-xs md:text-sm whitespace-nowrap">
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext()
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
+                    <MemoizedTableRow key={row.id} row={row} />
                   ))}
                   {/* Infinite scroll trigger */}
                   {infiniteScroll && (

@@ -35,7 +35,7 @@ import {
   ChevronRight,
   Calendar
 } from 'lucide-react'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
 
 interface Transaction {

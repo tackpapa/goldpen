@@ -19,7 +19,8 @@ import { useToast } from '@/hooks/use-toast'
 import { CheckCircle, XCircle, Clock, User, ExternalLink, ChevronLeft, ChevronRight, FileText } from 'lucide-react'
 import type { Attendance } from '@/lib/types/database'
 import { StudentPlannerModal } from '@/components/seats/StudentPlannerModal'
-import { addDays, format } from 'date-fns'
+import { format } from 'date-fns/format'
+import { addDays } from 'date-fns/addDays'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 // KST 기준 오늘 날짜를 얻는 헬퍼 함수

@@ -24,7 +24,8 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { Calendar, CheckCircle, XCircle, Clock, User, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Attendance } from '@/lib/types/database'
-import { addDays, format } from 'date-fns'
+import { format } from 'date-fns/format'
+import { addDays } from 'date-fns/addDays'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 

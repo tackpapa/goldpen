@@ -44,7 +44,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { MoreHorizontal } from 'lucide-react'
 import type { Teacher, TeacherClass } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell } from 'recharts'
 import {

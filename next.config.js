@@ -19,7 +19,9 @@ const nextConfig = {
   // 실험적 기능
   experimental: {
     optimizePackageImports: [
+      // Icon library
       'lucide-react',
+      // Radix UI components
       '@radix-ui/react-avatar',
       '@radix-ui/react-checkbox',
       '@radix-ui/react-dialog',
@@ -35,6 +37,23 @@ const nextConfig = {
       '@radix-ui/react-switch',
       '@radix-ui/react-tabs',
       '@radix-ui/react-toast',
+      '@radix-ui/react-alert-dialog',
+      // Heavy libraries - tree shaking optimization
+      'recharts',
+      'date-fns',
+      // TanStack libraries
+      '@tanstack/react-table',
+      '@tanstack/react-query',
+      // Drag and drop
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      '@dnd-kit/utilities',
+      // Form & validation
+      'react-hook-form',
+      'zod',
+      // State management
+      'zustand',
+      'swr',
     ],
   },
 

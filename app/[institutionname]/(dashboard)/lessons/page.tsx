@@ -37,7 +37,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Plus, Edit, BookOpen, TrendingUp, Sparkles, Calendar, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import type { LessonNote } from '@/lib/types/database'
 import { Checkbox } from '@/components/ui/checkbox'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
 import {
   Select,

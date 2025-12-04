@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { Upload, FileText, Image as ImageIcon, File, X, Eye, Loader2 } from 'lucide-react'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 
 interface StudentFile {
   id: string

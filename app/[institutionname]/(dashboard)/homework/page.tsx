@@ -47,7 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { Homework, HomeworkSubmission } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 
 // API 응답 타입 정의
 interface HomeworkApiResponse {

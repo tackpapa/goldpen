@@ -42,7 +42,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { Consultation } from '@/lib/types/database'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import { GRADE_OPTIONS } from '@/lib/constants/grades'
 
 // Waitlist type

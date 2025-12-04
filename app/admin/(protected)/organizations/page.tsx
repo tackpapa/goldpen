@@ -40,7 +40,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { MoreHorizontal, Plus, Search, Users, GraduationCap, TrendingUp, Wallet } from 'lucide-react'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 
 interface Organization {
   id: string
