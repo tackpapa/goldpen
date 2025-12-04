@@ -123,7 +123,7 @@ export default function StudentsPage() {
     const fetchBranches = async () => {
       if (!institutionName) return
       try {
-        const res = await fetch(`/${institutionName}/settings/branches`, { credentials: 'include' })
+        const res = await fetch(`/${institutionName}/settings/branches?orgSlug=${institutionName}`, { credentials: 'include' })
         if (res.ok) {
           const data = await res.json() as { branches: Branch[] }
           setBranches(data.branches || [])
