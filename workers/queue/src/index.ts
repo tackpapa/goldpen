@@ -233,7 +233,7 @@ export default {
         'checkout': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
         'study_out': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
         'study_return': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
-        'daily_report': { '기관명': orgName, '학생명': studentName, '날짜': todayDate, '총학습시간': '3시간 25분', '완료과목': '수학, 영어' },
+        'daily_report': { '기관명': orgName, '학생명': studentName, '날짜': todayDate, '총학습시간': '3시간 25분', '완료과목': '수학(완료), 영어(미완료)' },
         'lesson_report': { '기관명': orgName, '학생명': studentName, '오늘수업': '중등 수학 심화반', '학습포인트': '이차방정식 풀이 연습', '선생님코멘트': '오늘 집중력이 좋았어요!', '원장님코멘트': '수학 실력이 늘고 있어요!', '숙제': '교재 45~48페이지 문제풀이', '복습팁': '이차방정식 공식 암기하기' },
         'exam_result': { '기관명': orgName, '학생명': studentName, '시험명': '11월 모의고사', '점수': '92점' },
         'assignment': { '기관명': orgName, '학생명': studentName, '과제': '영어 단어 암기 (Unit 5)', '마감일': '12월 10일' },
@@ -320,6 +320,7 @@ export default {
 
 /**
  * 학원/공부방 출결 처리 (단일 기관)
+ * 🔴 병렬 처리: DB 쓰기 없음, 알림만 배치 병렬
  */
 async function processAcademyAttendance(
   sql: postgres.Sql,
@@ -357,6 +358,11 @@ async function processAcademyAttendance(
       AND cs.check_in_time IS NOT NULL
   `;
 
+  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집 + 템플릿 캐시
+  const lateTemplate = await getTemplate(sql, orgId, 'late');
+  const absentTemplate = await getTemplate(sql, orgId, 'absent');
+  const notifications: NotificationParams[] = [];
+
   for (const schedule of schedules) {
     const checkInMinutes = timeToMinutes(schedule.check_in_time);
     const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
@@ -377,16 +383,15 @@ async function processAcademyAttendance(
           LIMIT 1
         `;
 
-        // 지각 알림이 전송된 적 없으면 먼저 전송
+        // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
         if (existingLateNotif.length === 0) {
-          console.log(`[Academy] Sending late notification first for ${schedule.student_name} (before absent)`);
-          const lateTemplate = await getTemplate(sql, orgId, 'late');
+          console.log(`[Academy] Will send late notification first for ${schedule.student_name} (before absent)`);
           const lateMessage = fillTemplate(lateTemplate, {
             '기관명': orgName,
             '학생명': schedule.student_name,
             '예정시간': schedule.check_in_time,
           });
-          await sendNotification(sql, env, {
+          notifications.push({
             orgId,
             orgName,
             studentId: schedule.student_id,
@@ -400,14 +405,13 @@ async function processAcademyAttendance(
           });
         }
 
-        // 이제 결석 알림 전송
-        const template = await getTemplate(sql, orgId, 'absent');
-        const message = fillTemplate(template, {
+        // 결석 알림 추가
+        const absentMessage = fillTemplate(absentTemplate, {
           '기관명': orgName,
           '학생명': schedule.student_name,
           '예정시간': schedule.check_out_time || schedule.check_in_time,
         });
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: schedule.student_id,
@@ -417,7 +421,7 @@ async function processAcademyAttendance(
           targetDate: todayDate,
           scheduledTime: schedule.check_out_time || schedule.check_in_time,
           recipientPhone: schedule.parent_phone,
-          message,
+          message: absentMessage,
         });
       } else if (nowMinutes >= checkInMinutes + lateGracePeriod) {
         // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
@@ -436,14 +440,13 @@ async function processAcademyAttendance(
           continue;
         }
 
-        console.log(`[Academy] Sending late notification for ${schedule.student_name}`);
-        const template = await getTemplate(sql, orgId, 'late');
-        const message = fillTemplate(template, {
+        console.log(`[Academy] Will send late notification for ${schedule.student_name}`);
+        const message = fillTemplate(lateTemplate, {
           '기관명': orgName,
           '학생명': schedule.student_name,
           '예정시간': schedule.check_in_time,
         });
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: schedule.student_id,
@@ -458,10 +461,17 @@ async function processAcademyAttendance(
       }
     }
   }
+
+  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
+  if (notifications.length > 0) {
+    console.log(`[Academy] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
+    await sendNotificationsBatch(sql, env, notifications, 5);
+  }
 }
 
 /**
  * 독서실 출결 처리 (단일 기관)
+ * 🔴 병렬 처리: DB INSERT는 순차, 알림 발송은 배치 병렬
  */
 async function processStudyRoomAttendance(
   sql: postgres.Sql,
@@ -499,6 +509,11 @@ async function processStudyRoomAttendance(
       AND cs.check_in_time IS NOT NULL
   `;
 
+  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집
+  const lateTemplate = await getTemplate(sql, orgId, 'late');
+  const absentTemplate = await getTemplate(sql, orgId, 'absent');
+  const notifications: NotificationParams[] = [];
+
   for (const schedule of schedules) {
     const checkInMinutes = timeToMinutes(schedule.check_in_time);
     const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
@@ -517,16 +532,15 @@ async function processStudyRoomAttendance(
           LIMIT 1
         `;
 
-        // 지각 알림이 전송된 적 없으면 먼저 전송
+        // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
         if (existingLateNotif.length === 0) {
-          console.log(`[StudyRoom] Sending late notification first for ${schedule.student_name} (before absent)`);
-          const lateTemplate = await getTemplate(sql, orgId, 'late');
+          console.log(`[StudyRoom] Will send late notification first for ${schedule.student_name} (before absent)`);
           const lateMessage = fillTemplate(lateTemplate, {
             '기관명': orgName,
             '학생명': schedule.student_name,
             '예정시간': schedule.check_in_time,
           });
-          await sendNotification(sql, env, {
+          notifications.push({
             orgId,
             orgName,
             studentId: schedule.student_id,
@@ -540,7 +554,7 @@ async function processStudyRoomAttendance(
           });
         }
 
-        // 결석 레코드 삽입
+        // 결석 레코드 삽입 (DB는 순차 처리)
         try {
           await sql`
             INSERT INTO attendance_logs (org_id, student_id, check_in_time, check_out_time, duration_minutes, source)
@@ -558,14 +572,13 @@ async function processStudyRoomAttendance(
           console.error(`[StudyRoom] Failed to insert absence record:`, insertError);
         }
 
-        // 이제 결석 알림 전송
-        const template = await getTemplate(sql, orgId, 'absent');
-        const message = fillTemplate(template, {
+        // 결석 알림 추가
+        const absentMessage = fillTemplate(absentTemplate, {
           '기관명': orgName,
           '학생명': schedule.student_name,
           '예정시간': schedule.check_out_time,
         });
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: schedule.student_id,
@@ -575,7 +588,7 @@ async function processStudyRoomAttendance(
           targetDate: todayDate,
           scheduledTime: schedule.check_out_time,
           recipientPhone: schedule.parent_phone,
-          message,
+          message: absentMessage,
         });
       } else {
         // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
@@ -594,14 +607,13 @@ async function processStudyRoomAttendance(
           continue;
         }
 
-        console.log(`[StudyRoom] Sending late notification for ${schedule.student_name}`);
-        const template = await getTemplate(sql, orgId, 'late');
-        const message = fillTemplate(template, {
+        console.log(`[StudyRoom] Will send late notification for ${schedule.student_name}`);
+        const message = fillTemplate(lateTemplate, {
           '기관명': orgName,
           '학생명': schedule.student_name,
           '예정시간': schedule.check_in_time,
         });
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: schedule.student_id,
@@ -616,10 +628,17 @@ async function processStudyRoomAttendance(
       }
     }
   }
+
+  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
+  if (notifications.length > 0) {
+    console.log(`[StudyRoom] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
+    await sendNotificationsBatch(sql, env, notifications, 5);
+  }
 }
 
 /**
  * 강의 출결 처리 (단일 기관)
+ * 🔴 병렬 처리: DB INSERT/UPDATE는 순차, 알림 발송은 배치 병렬
  */
 async function processClassAttendance(
   sql: postgres.Sql,
@@ -648,6 +667,11 @@ async function processClassAttendance(
       AND c.schedule IS NOT NULL
       AND jsonb_array_length(c.schedule) > 0
   `;
+
+  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집 + 템플릿 캐시
+  const lateTemplate = await getTemplate(sql, orgId, 'late');
+  const absentTemplate = await getTemplate(sql, orgId, 'absent');
+  const notifications: NotificationParams[] = [];
 
   for (const cls of classes) {
     const scheduleArr = cls.schedule as Array<{
@@ -708,11 +732,11 @@ async function processClassAttendance(
             LIMIT 1
           `;
 
-          // 지각 알림이 전송된 적 없으면 먼저 전송
+          // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
           if (existingLateNotif.length === 0) {
-            console.log(`[Class] Sending late notification first for ${enrollment.student_name} (before absent)`);
+            console.log(`[Class] Will send late notification first for ${enrollment.student_name} (before absent)`);
 
-            // attendance 레코드 생성 (late)
+            // attendance 레코드 생성 (late) - DB는 순차 처리
             try {
               if (!enrollment.attendance_id) {
                 await sql`
@@ -724,14 +748,13 @@ async function processClassAttendance(
               console.error(`[Class] Failed to insert late record:`, err);
             }
 
-            const lateTemplate = await getTemplate(sql, orgId, 'late');
             const lateMessage = fillTemplate(lateTemplate, {
               '기관명': orgName,
               '학생명': enrollment.student_name,
               '수업명': cls.class_name,
               '예정시간': todaySchedule.start_time,
             });
-            await sendNotification(sql, env, {
+            notifications.push({
               orgId,
               orgName,
               studentId: enrollment.student_id,
@@ -747,7 +770,7 @@ async function processClassAttendance(
           }
         }
 
-        // 이제 결석 처리
+        // 이제 결석 처리 (DB는 순차 처리)
         try {
           if (enrollment.attendance_id) {
             // 기존 레코드(late)가 있으면 absent로 UPDATE
@@ -783,14 +806,14 @@ async function processClassAttendance(
           console.error(`[Class] Failed to process absence:`, err);
         }
 
-        const template = await getTemplate(sql, orgId, 'absent');
-        const message = fillTemplate(template, {
+        // 결석 알림 추가
+        const absentMessage = fillTemplate(absentTemplate, {
           '기관명': orgName,
           '학생명': enrollment.student_name,
           '수업명': cls.class_name,
           '예정시간': todaySchedule.end_time,
         });
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: enrollment.student_id,
@@ -801,7 +824,7 @@ async function processClassAttendance(
           targetDate: todayDate,
           scheduledTime: todaySchedule.end_time,
           recipientPhone: enrollment.parent_phone,
-          message,
+          message: absentMessage,
         });
       }
       // 시작시간+유예시간 지났으면 → 지각 처리 (>=로 정확한 타이밍)
@@ -826,6 +849,7 @@ async function processClassAttendance(
           continue;
         }
 
+        // DB INSERT 순차 처리
         try {
           if (!enrollment.attendance_id) {
             await sql`
@@ -837,15 +861,14 @@ async function processClassAttendance(
           console.error(`[Class] Failed to insert late record:`, err);
         }
 
-        console.log(`[Class] Sending late notification for ${enrollment.student_name} in ${cls.class_name}`);
-        const template = await getTemplate(sql, orgId, 'late');
-        const message = fillTemplate(template, {
+        console.log(`[Class] Will send late notification for ${enrollment.student_name} in ${cls.class_name}`);
+        const message = fillTemplate(lateTemplate, {
           '기관명': orgName,
           '학생명': enrollment.student_name,
           '수업명': cls.class_name,
           '예정시간': todaySchedule.start_time,
         });
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: enrollment.student_id,
@@ -861,11 +884,18 @@ async function processClassAttendance(
       }
     }
   }
+
+  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
+  if (notifications.length > 0) {
+    console.log(`[Class] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
+    await sendNotificationsBatch(sql, env, notifications, 5);
+  }
 }
 
 /**
  * 통학 스케줄 출결 처리 (단일 기관)
  * commute_schedules 테이블 기반 지각/결석 알림
+ * 🔴 병렬 처리: DB 쓰기 없음, 알림만 배치 병렬
  */
 async function processCommuteAttendance(
   sql: postgres.Sql,
@@ -908,6 +938,11 @@ async function processCommuteAttendance(
 
   console.log(`[Commute] Found ${schedules.length} schedules for ${orgName}`);
 
+  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집 + 템플릿 캐시
+  const lateTemplate = await getTemplate(sql, orgId, 'late');
+  const absentTemplate = await getTemplate(sql, orgId, 'absent');
+  const notifications: NotificationParams[] = [];
+
   for (const schedule of schedules) {
     const checkInMinutes = timeToMinutes(schedule.check_in_time);
     const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
@@ -932,16 +967,15 @@ async function processCommuteAttendance(
           LIMIT 1
         `;
 
-        // 지각 알림이 전송된 적 없으면 먼저 전송
+        // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
         if (existingLateNotif.length === 0) {
-          console.log(`[Commute] Sending late notification first for ${schedule.student_name} (before absent)`);
-          const lateTemplate = await getTemplate(sql, orgId, 'late');
+          console.log(`[Commute] Will send late notification first for ${schedule.student_name} (before absent)`);
           const lateMessage = fillTemplate(lateTemplate, {
             '기관명': orgName,
             '학생명': schedule.student_name,
             '예정시간': schedule.check_in_time,
           });
-          await sendNotification(sql, env, {
+          notifications.push({
             orgId,
             orgName,
             studentId: schedule.student_id,
@@ -969,15 +1003,14 @@ async function processCommuteAttendance(
           continue;
         }
 
-        console.log(`[Commute] Sending absent notification for ${schedule.student_name}`);
-        const absentTemplate = await getTemplate(sql, orgId, 'absent');
+        console.log(`[Commute] Will send absent notification for ${schedule.student_name}`);
         const absentMessage = fillTemplate(absentTemplate, {
           '기관명': orgName,
           '학생명': schedule.student_name,
           '예정시간': schedule.check_out_time || schedule.check_in_time,
         });
 
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: schedule.student_id,
@@ -1006,16 +1039,15 @@ async function processCommuteAttendance(
           continue;
         }
 
-        console.log(`[Commute] Sending late notification for ${schedule.student_name} (scheduled: ${schedule.check_in_time})`);
+        console.log(`[Commute] Will send late notification for ${schedule.student_name} (scheduled: ${schedule.check_in_time})`);
 
-        const template = await getTemplate(sql, orgId, 'late');
-        const message = fillTemplate(template, {
+        const message = fillTemplate(lateTemplate, {
           '기관명': orgName,
           '학생명': schedule.student_name,
           '예정시간': schedule.check_in_time,
         });
 
-        await sendNotification(sql, env, {
+        notifications.push({
           orgId,
           orgName,
           studentId: schedule.student_id,
@@ -1028,6 +1060,12 @@ async function processCommuteAttendance(
         });
       }
     }
+  }
+
+  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
+  if (notifications.length > 0) {
+    console.log(`[Commute] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
+    await sendNotificationsBatch(sql, env, notifications, 5);
   }
 }
 
@@ -1061,7 +1099,10 @@ async function processDailyReport(
       AND s.parent_phone IS NOT NULL
   `;
 
-  // 오늘 출석한 학생에게만 알림 발송
+  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집
+  const template = await getTemplate(sql, orgId, 'daily_report');
+  const notifications: NotificationParams[] = [];
+
   for (const record of attendanceRecords) {
     // 과목(완료), 과목(미완료) 형태로 생성 (50자 제한)
     const plans = record.study_plans as Array<{ subject: string; completed: boolean }> || [];
@@ -1102,7 +1143,6 @@ async function processDailyReport(
       ? `${studyHours}시간 ${studyMins}분`
       : `${studyMins}분`;
 
-    const template = await getTemplate(sql, orgId, 'daily_report');
     const message = fillTemplate(template, {
       '기관명': orgName,
       '학생명': record.student_name,
@@ -1111,7 +1151,7 @@ async function processDailyReport(
       '완료과목': completedSubjectsStr,
     });
 
-    await sendNotification(sql, env, {
+    notifications.push({
       orgId,
       orgName,
       studentId: record.student_id,
@@ -1121,7 +1161,18 @@ async function processDailyReport(
       targetDate: todayDate,
       recipientPhone: record.parent_phone,
       message,
+      templateVariables: {
+        '날짜': todayDate,
+        '총학습시간': studyTimeStr,
+        '완료과목': completedSubjectsStr,
+      },
     });
+  }
+
+  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
+  if (notifications.length > 0) {
+    console.log(`[DailyReport] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
+    await sendNotificationsBatch(sql, env, notifications, 5);
   }
 }
 
@@ -1161,6 +1212,10 @@ async function processCommuteAbsence(
       AND cs.weekday = ${weekday}
   `;
 
+  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집
+  const template = await getTemplate(sql, orgId, 'absent');
+  const notifications: NotificationParams[] = [];
+
   for (const student of students) {
     const hasAttendance = Number(student.has_attendance) > 0;
     const hasCheckin = Number(student.has_checkin) > 0;
@@ -1168,20 +1223,21 @@ async function processCommuteAbsence(
     if (hasAttendance || hasCheckin) continue;
 
     try {
+      // DB INSERT는 순차적으로 (트랜잭션 안정성)
       await sql`
         INSERT INTO attendance (org_id, student_id, date, status, class_id)
         VALUES (${orgId}, ${student.student_id}, ${todayDate}::date, 'absent', NULL)
         ON CONFLICT (org_id, class_id, student_id, date) DO NOTHING
       `;
 
-      const template = await getTemplate(sql, orgId, 'absent');
       const message = fillTemplate(template, {
         '기관명': orgName,
         '학생명': student.student_name,
         '예정시간': student.check_in_time || '오늘',
       });
 
-      await sendNotification(sql, env, {
+      // 알림 목록에 추가
+      notifications.push({
         orgId,
         orgName,
         studentId: student.student_id,
@@ -1195,6 +1251,12 @@ async function processCommuteAbsence(
     } catch (insertError) {
       console.error(`[CommuteAbsent] Failed to insert absence record:`, insertError);
     }
+  }
+
+  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
+  if (notifications.length > 0) {
+    console.log(`[CommuteAbsent] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
+    await sendNotificationsBatch(sql, env, notifications, 5);
   }
 }
 
@@ -1257,6 +1319,7 @@ interface NotificationParams {
   scheduledTime?: string;
   recipientPhone?: string;
   message: string;
+  templateVariables?: Record<string, string>; // 🔴 Solapi 템플릿 변수 추가
 }
 
 async function sendNotification(
@@ -1276,6 +1339,7 @@ async function sendNotification(
     scheduledTime,
     recipientPhone,
     message,
+    templateVariables,
   } = params;
 
   // DB에 저장할 때는 context에 맞는 type으로 변환
@@ -1342,6 +1406,7 @@ async function sendNotification(
     const solapiVariables: Record<string, string> = {
       "기관명": orgName,
       "학생명": studentName,
+      ...templateVariables, // 🔴 추가 템플릿 변수 병합 (daily_report의 날짜, 총학습시간, 완료과목 등)
     };
     // 시간 변수 추가 (late, checkin, checkout, study_out, study_return)
     if (scheduledTime) {
@@ -1392,6 +1457,45 @@ async function sendNotification(
       // 무시
     }
   }
+}
+
+/**
+ * 🔴 병렬 알림 발송 헬퍼 함수
+ * 여러 알림을 Promise.allSettled로 병렬 처리하여 병목 방지
+ *
+ * @param sql - postgres.Sql 인스턴스
+ * @param env - 환경 변수
+ * @param notifications - 발송할 알림 목록
+ * @param concurrency - 동시 처리 수 (기본값: 5)
+ */
+async function sendNotificationsBatch(
+  sql: postgres.Sql,
+  env: Env,
+  notifications: NotificationParams[],
+  concurrency: number = 5
+): Promise<{ success: number; failed: number }> {
+  let success = 0;
+  let failed = 0;
+
+  // 배치 단위로 병렬 처리
+  for (let i = 0; i < notifications.length; i += concurrency) {
+    const batch = notifications.slice(i, i + concurrency);
+    const results = await Promise.allSettled(
+      batch.map(params => sendNotification(sql, env, params))
+    );
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        success++;
+      } else {
+        failed++;
+        console.error('[NotificationBatch] Failed:', result.reason);
+      }
+    }
+  }
+
+  console.log(`[NotificationBatch] Completed: ${success} success, ${failed} failed out of ${notifications.length}`);
+  return { success, failed };
 }
 
 async function sendKakaoAlimtalk(
@@ -1538,6 +1642,18 @@ async function processNotificationQueue(
 
   console.log(`[NotificationQueue] Found ${pendingNotifications.length} pending notifications`);
 
+  // 🔴 최적화: config 객체를 루프 바깥에서 한 번만 생성
+  const telegramConfig: TelegramConfig = {
+    botToken: env.TELEGRAM_BOT_TOKEN,
+    chatId: env.TELEGRAM_CHAT_ID,
+  };
+  const solapiConfig: SolapiConfig = {
+    apiKey: env.SOLAPI_API_KEY,
+    apiSecret: env.SOLAPI_API_SECRET,
+    pfId: env.SOLAPI_PF_ID,
+    senderPhone: env.SOLAPI_SENDER_PHONE,
+  };
+
   for (const notification of pendingNotifications) {
     try {
       const studentId = notification.payload.student_id;
@@ -1589,17 +1705,6 @@ async function processNotificationQueue(
         const checkinMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!`;
 
         // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
-
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,
           telegramConfig,
@@ -1679,17 +1784,6 @@ async function processNotificationQueue(
         const checkoutMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다. (총 학습시간: ${studyTimeStr})`;
 
         // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
-
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,
           telegramConfig,
@@ -1733,17 +1827,6 @@ async function processNotificationQueue(
         const outMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 잠시 외출했습니다.`;
 
         // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
-
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,
           telegramConfig,
@@ -1809,17 +1892,6 @@ async function processNotificationQueue(
         const returnMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 외출에서 복귀했습니다.`;
 
         // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
-
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,
           telegramConfig,
@@ -1864,17 +1936,6 @@ async function processNotificationQueue(
         };
 
         const assignmentMessage = `${student.org_name}입니다, 학부모님.\n\n새 과제가 등록되었습니다.\n\n📚 수업: ${payload.class_name || '-'}\n📝 과제: ${payload.title}\n📅 마감일: ${payload.due_date}\n\n과제 제출 잊지 마세요!`;
-
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
 
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,
@@ -1925,17 +1986,6 @@ async function processNotificationQueue(
 
         const scoreStr = `${payload.score}/${payload.total_score}점`;
         const examMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생의 시험 결과를 안내드립니다.\n\n${payload.exam_title}: ${scoreStr}\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다. 궁금하신 점은 편하게 연락 주세요!`;
-
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
 
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,
@@ -1989,17 +2039,6 @@ async function processNotificationQueue(
         };
 
         const lessonMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생의 수업 리포트입니다.\n\n📚 오늘 수업: ${payload.오늘수업 || '-'}\n💡 학습 포인트: ${payload.학습포인트 || '-'}\n👨‍🏫 선생님 코멘트: ${payload.선생님코멘트 || '-'}\n👔 원장님 코멘트: ${payload.원장님코멘트 || '-'}\n📝 숙제: ${payload.숙제 || '-'}\n📖 복습 팁: ${payload.복습팁 || '-'}\n\n오늘도 수고했어요!`;
-
-        const telegramConfig: TelegramConfig = {
-          botToken: env.TELEGRAM_BOT_TOKEN,
-          chatId: env.TELEGRAM_CHAT_ID,
-        };
-        const solapiConfig: SolapiConfig = {
-          apiKey: env.SOLAPI_API_KEY,
-          apiSecret: env.SOLAPI_API_SECRET,
-          pfId: env.SOLAPI_PF_ID,
-          senderPhone: env.SOLAPI_SENDER_PHONE,
-        };
 
         const notificationResult = await sendNotificationWithBalancePostgres({
           sql,

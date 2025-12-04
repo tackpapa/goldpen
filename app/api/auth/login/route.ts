@@ -156,9 +156,11 @@ export async function POST(request: Request) {
     }
 
     // 기타 에러
-    console.error('[Auth Login] Unexpected error:', error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('[Auth Login] Unexpected error:', JSON.stringify({ message: errorMessage, stack: errorStack }))
     return Response.json(
-      { error: '로그인 중 오류가 발생했습니다' },
+      { error: '로그인 중 오류가 발생했습니다', debug: errorMessage },
       { status: 500 }
     )
   }
