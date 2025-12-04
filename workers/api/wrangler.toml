@@ -32,6 +32,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOi
 
 # Secrets (set via CLI or Dashboard):
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY (optional, for admin operations)
+# wrangler secret put SOLAPI_API_KEY (Solapi API Key)
+# wrangler secret put SOLAPI_API_SECRET (Solapi API Secret)
+
+# Solapi 알림톡 설정 (PPURIO 대체)
+# SOLAPI_PF_ID = "" # 카카오 채널 연동 후 발급되는 pfId - secret으로 설정
+# SOLAPI_SENDER_PHONE = "" # 발신번호 - secret으로 설정
+
+# PPURIO 알림톡 설정 (deprecated - Solapi로 대체)
+PPURIO_ACCOUNT = "ekiss"
+PPURIO_SENDER_PROFILE = "@goldpen"
 
 # Production Environment
 [env.production]
@@ -53,6 +63,10 @@ zone_name = "goldpen.kr"
 NEXT_PUBLIC_APP_URL = "https://goldpen.kr"
 NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
 NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkeHh6eWdxampqcHR6bHZncnR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1ODk2NjQsImV4cCI6MjA3OTE2NTY2NH0.kcGWLo6b8NwI5o2JtvGtk6khlDtSzBYSvvDoSfjux44"
+# Solapi는 secret으로 설정: wrangler secret put SOLAPI_API_KEY / SOLAPI_API_SECRET / SOLAPI_PF_ID / SOLAPI_SENDER_PHONE
+# PPURIO 설정 (deprecated)
+PPURIO_ACCOUNT = "ekiss"
+PPURIO_SENDER_PROFILE = "@goldpen"
 
 # Staging Environment
 [env.staging]

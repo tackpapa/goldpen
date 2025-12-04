@@ -34,7 +34,15 @@ import {
   Wallet,
   Plus,
   Minus,
+  ChevronDown,
 } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import {
   Dialog,
@@ -68,6 +76,10 @@ interface OrganizationDetail {
     business_hours?: string
     contact_phone?: string
     address?: string
+    settings?: {
+      use_kakao?: boolean
+      [key: string]: unknown
+    }
   } | null
   owner: {
     id: string
@@ -88,6 +100,9 @@ interface OrganizationDetail {
   class_count: number
   room_count: number
   monthly_revenue: number
+  total_revenue: number
+  available_months: string[]
+  selected_month: string
   kakao_stats: {
     total_count: number
     total_cost: number
@@ -131,6 +146,7 @@ const statusLabels: Record<string, string> = {
 const roleLabels: Record<string, string> = {
   owner: '원장',
   admin: '관리자',
+  manager: '매니저',
   teacher: '강사',
   staff: '직원',
 }
@@ -152,15 +168,25 @@ export default function OrganizationDetailPage({
   // 충전금 타입: 'free' (관리자 무료 부여), 'paid' (유저 직접 결제)
   const [creditPaymentType, setCreditPaymentType] = useState<'free' | 'paid'>('free')
   const [isUpdatingCredit, setIsUpdatingCredit] = useState(false)
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
 
   useEffect(() => {
     loadOrganization()
   }, [id])
 
-  const loadOrganization = async () => {
+  useEffect(() => {
+    if (selectedMonth) {
+      loadOrganization(selectedMonth)
+    }
+  }, [selectedMonth])
+
+  const loadOrganization = async (month?: string) => {
     try {
       setIsLoading(true)
-      const response = await fetch(`/api/admin/organizations/${id}`)
+      const url = month
+        ? `/api/admin/organizations/${id}?month=${month}`
+        : `/api/admin/organizations/${id}`
+      const response = await fetch(url)
 
       if (!response.ok) {
         throw new Error('Failed to load organization')
@@ -314,10 +340,6 @@ export default function OrganizationDetailPage({
             </p>
           </div>
         </div>
-        <Button onClick={() => router.push(`/admin/organizations/${id}/edit` as any)}>
-          <Edit className="mr-2 h-4 w-4" />
-          수정
-        </Button>
       </div>
 
       {/* Stats Cards */}
@@ -351,22 +373,56 @@ export default function OrganizationDetailPage({
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              이번달 매출
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5" />
+                매출
+              </div>
+              <Select
+                value={organization.selected_month}
+                onValueChange={(value) => setSelectedMonth(value)}
+              >
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(organization.available_months?.length > 0
+                    ? organization.available_months
+                    : [organization.selected_month]
+                  ).map((month) => (
+                    <SelectItem key={month} value={month}>
+                      {month.split('-')[0]}년 {Number(month.split('-')[1])}월
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold">
-              {organization.monthly_revenue.toLocaleString()}원
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">
+                  {organization.selected_month?.split('-')[0]}년 {Number(organization.selected_month?.split('-')[1])}월 매출
+                </p>
+                <div className="text-3xl font-bold">
+                  {organization.monthly_revenue.toLocaleString()}원
+                </div>
+              </div>
+              <Separator />
+              <div>
+                <p className="text-sm text-muted-foreground mb-1">누적 매출 (전체)</p>
+                <div className="text-2xl font-bold text-blue-600">
+                  {(organization.total_revenue || 0).toLocaleString()}원
+                </div>
+              </div>
             </div>
             {organization.recent_transactions.length > 0 && (
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 space-y-2 pt-4 border-t">
                 <p className="text-sm font-medium text-muted-foreground">최근 거래</p>
-                {organization.recent_transactions.slice(0, 3).map((tx) => (
+                {organization.recent_transactions.slice(0, 3).map((tx: any) => (
                   <div key={tx.id} className="flex justify-between text-sm">
-                    <span>{tx.description || tx.category}</span>
-                    <span className="font-medium">{tx.amount.toLocaleString()}원</span>
+                    <span>{tx.student_name || tx.revenue_category_name || '결제'}</span>
+                    <span className="font-medium">{tx.amount?.toLocaleString()}원</span>
                   </div>
                 ))}
               </div>
@@ -582,8 +638,8 @@ export default function OrganizationDetailPage({
               <Separator />
               <div className="flex justify-between">
                 <span className="text-muted-foreground">카카오 알림톡</span>
-                <Badge className={organization.org_settings?.kakao_enabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                  {organization.org_settings?.kakao_enabled ? '활성화' : '비활성화'}
+                <Badge className={(organization.org_settings?.settings as any)?.use_kakao ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                  {(organization.org_settings?.settings as any)?.use_kakao ? '활성화' : '비활성화'}
                 </Badge>
               </div>
               {organization.org_settings?.kakao_channel_id && (

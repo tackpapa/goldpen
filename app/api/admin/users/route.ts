@@ -49,7 +49,7 @@ export async function GET(request: Request) {
     const search = searchParams.get('search') || ''
     const offset = (page - 1) * limit
 
-    // 4. 사용자 목록 조회 (Admin 클라이언트로 RLS 우회)
+    // 4. 사용자 목록 조회 (Admin 클라이언트로 RLS 우회, super_admin 제외)
     let query = adminClient
       .from('users')
       .select(
@@ -68,6 +68,7 @@ export async function GET(request: Request) {
       `,
         { count: 'exact' }
       )
+      .neq('role', 'super_admin')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 

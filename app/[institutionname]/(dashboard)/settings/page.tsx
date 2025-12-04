@@ -3,7 +3,8 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { ColumnDef } from '@tanstack/react-table'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -73,8 +74,8 @@ interface KakaoTalkUsage {
   id: string
   date: string
   type: string
-  studentName: string
-  message: string
+  recipient: string
+  count: number
   cost: number
   status: 'success' | 'failed'
 }
@@ -84,7 +85,23 @@ interface ServiceUsage {
   date: string
   type: string
   description: string
+  count: number
   cost: number
+}
+
+interface UsageSummary {
+  type: string
+  count: number
+  cost: number
+}
+
+interface CreditTransaction {
+  id: string
+  date: string
+  type: string
+  amount: number
+  balanceAfter: number
+  description: string
 }
 
 // API 응답 타입
@@ -101,11 +118,75 @@ export default function SettingsPage() {
   usePageAccess('settings')
 
   const { toast } = useToast()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
+
+  // URL 파라미터로 탭 상태 관리 (새로고침 대응)
+  const currentTab = searchParams.get('tab') || 'organization'
+  const currentSubTab = searchParams.get('subtab') || 'kakaotalk-usage'
+
+  // 탭 변경 핸들러
+  const handleTabChange = useCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('tab', value)
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [searchParams, router, pathname])
+
+  // 서브 탭 변경 핸들러 (billing 탭 내부)
+  const handleSubTabChange = useCallback((value: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set('subtab', value)
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [searchParams, router, pathname])
+
   const [organization, setOrganization] = useState<Organization>(defaultOrganization)
   const [institutionName, setInstitutionName] = useState<string>('')
   const [branches, setBranches] = useState<Branch[]>([])
   const [kakaoTalkUsages, setKakaoTalkUsages] = useState<KakaoTalkUsage[]>([])
   const [serviceUsages, setServiceUsages] = useState<ServiceUsage[]>([])
+  const [usageSummary, setUsageSummary] = useState<UsageSummary[]>([])
+  const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([])
+
+  // 탭별 로딩 상태
+  const [billingLoaded, setBillingLoaded] = useState(false)
+  const [billingLoading, setBillingLoading] = useState(false)
+
+  // 무한 스크롤용 표시 개수
+  const [kakaoDisplayCount, setKakaoDisplayCount] = useState(10)
+  const [serviceDisplayCount, setServiceDisplayCount] = useState(10)
+  const [creditDisplayCount, setCreditDisplayCount] = useState(10)
+
+  // 알림 유형 한국어 변환
+  const notificationTypeMap: Record<string, string> = {
+    // 등원/하원
+    'checkin': '등원 알림',
+    'checkout': '하원 알림',
+    // 지각
+    'late': '지각 알림',
+    'academy_late': '학원 지각',
+    'study_late': '스터디 지각',
+    'class_late': '수업 지각',
+    'commute_late': '출근 지각',
+    // 결석
+    'absent': '결석 알림',
+    'academy_absent': '학원 결석',
+    'study_absent': '스터디 결석',
+    'class_absent': '수업 결석',
+    'commute_absent': '출근 결석',
+    // 외출/복귀
+    'out': '외출 알림',
+    'return': '복귀 알림',
+    'study_out': '외출 알림',
+    'study_return': '복귀 알림',
+    // 리포트
+    'study_report': '학습 리포트',
+    'lesson_report': '수업 리포트',
+    'daily_report': '일일 리포트',
+    'exam_result': '시험 결과',
+    'assignment': '과제 알림',
+  }
+  const getNotificationTypeLabel = (type: string) => notificationTypeMap[type] || type
 
   // URL에서 slug 추출
   const slug = typeof window !== 'undefined'
@@ -115,17 +196,15 @@ export default function SettingsPage() {
   // 메뉴 설정 훅 사용
   const { saveSettings: saveMenuSettingsToDb } = useMenuSettings({ orgSlug: slug })
 
-  // Fetch settings data from API
+  // Fetch settings data from API (기본 정보만 - billing 제외)
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await fetch(`/api/settings?orgSlug=${slug}`, { credentials: 'include' })
+        const response = await fetch(`/api/settings?orgSlug=${slug}&excludeBilling=true`, { credentials: 'include' })
         const data = await response.json() as {
-          organization?: Organization
+          organization?: Organization & { credit_balance?: number }
           branches?: Branch[]
           rooms?: Room[]
-          kakaoTalkUsages?: KakaoTalkUsage[]
-          serviceUsages?: ServiceUsage[]
           error?: string
         }
         if (response.ok) {
@@ -147,8 +226,6 @@ export default function SettingsPage() {
           }
           if (data.branches) setBranches(data.branches)
           if (data.rooms) setRooms(data.rooms)
-          if (data.kakaoTalkUsages) setKakaoTalkUsages(data.kakaoTalkUsages)
-          if (data.serviceUsages) setServiceUsages(data.serviceUsages)
         }
       } catch {
         console.error('Failed to fetch settings')
@@ -156,6 +233,39 @@ export default function SettingsPage() {
     }
     fetchSettings()
   }, [])
+
+  // Billing 탭 데이터 로드 (탭 클릭 시에만)
+  const fetchBillingData = useCallback(async () => {
+    if (billingLoaded || billingLoading) return
+    setBillingLoading(true)
+    try {
+      const response = await fetch(`/api/settings?orgSlug=${slug}&billingOnly=true`, { credentials: 'include' })
+      const data = await response.json() as {
+        kakaoTalkUsages?: KakaoTalkUsage[]
+        serviceUsages?: ServiceUsage[]
+        usageSummary?: UsageSummary[]
+        creditTransactions?: CreditTransaction[]
+      }
+      if (response.ok) {
+        if (data.kakaoTalkUsages) setKakaoTalkUsages(data.kakaoTalkUsages)
+        if (data.serviceUsages) setServiceUsages(data.serviceUsages)
+        if (data.usageSummary) setUsageSummary(data.usageSummary)
+        if (data.creditTransactions) setCreditTransactions(data.creditTransactions)
+        setBillingLoaded(true)
+      }
+    } catch {
+      console.error('Failed to fetch billing data')
+    } finally {
+      setBillingLoading(false)
+    }
+  }, [slug, billingLoaded, billingLoading])
+
+  // billing 탭 진입 시 데이터 로드
+  useEffect(() => {
+    if (currentTab === 'billing' && !billingLoaded) {
+      fetchBillingData()
+    }
+  }, [currentTab, billingLoaded, fetchBillingData])
   const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
   const [branchForm, setBranchForm] = useState({
@@ -194,7 +304,6 @@ export default function SettingsPage() {
     'exam_result': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 시험 결과를 안내드립니다.\n\n{{시험명}}: {{점수}}점\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다. 궁금하신 점은 편하게 연락 주세요!',
     // 과제 관련
     'assignment_new': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생에게 새로운 과제가 등록되었습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n차근차근 준비하면 충분히 잘 해낼 수 있습니다. 화이팅!',
-    'assignment_remind': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n제출 전 한 번 더 검토해 보도록 안내해 주시면 감사하겠습니다.',
   }
 
   // 메시지 템플릿 - 학생용 (통합)
@@ -215,7 +324,6 @@ export default function SettingsPage() {
     'exam_result': '{{기관명}}입니다.\n\n{{학생명}}님, 시험 결과가 나왔어요.\n\n{{시험명}}: {{점수}}점\n\n열심히 준비한 거 알아요. 결과에 상관없이 계속 성장하고 있어요! 다음에도 화이팅!',
     // 과제 관련
     'assignment_new': '{{기관명}}입니다.\n\n{{학생명}}님, 새로운 과제가 등록되었어요!\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n차근차근 하면 충분히 할 수 있어요. 화이팅!',
-    'assignment_remind': '{{기관명}}입니다.\n\n{{학생명}}님, 과제 마감일이 다가왔어요!\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n마무리 잘 하고 있죠? 끝까지 화이팅! 제출 전에 한 번 더 검토해 보면 더 좋아요.',
   }
 
   const [messageTemplatesParent, setMessageTemplatesParent] = useState<Record<string, string>>(DEFAULT_TEMPLATES_PARENT)
@@ -236,7 +344,6 @@ export default function SettingsPage() {
     'lesson_report': 'parent',
     'exam_result': 'parent',
     'assignment_new': 'parent',
-    'assignment_remind': 'parent',
   })
   // 일일 학습 리포트 발송 시간 (기본값: 22:00)
   const [dailyReportTime, setDailyReportTime] = useState('22:00')
@@ -257,7 +364,6 @@ export default function SettingsPage() {
     'lesson_report': '수업일지 전송',
     'exam_result': '시험 결과 전송',
     'assignment_new': '새 과제 등록',
-    'assignment_remind': '과제 마감 알림',
   }
 
   const handleOpenTemplateModal = (key: string, target: 'parent' | 'student') => {
@@ -467,8 +573,7 @@ export default function SettingsPage() {
       setRevenueCategories(rev.categories || [])
       setExpenseCategories(exp.categories || [])
       setAccounts(acc.accounts || [])
-      setKakaoTalkUsages([])
-      setServiceUsages([])
+      // kakaoTalkUsages, serviceUsages는 첫 번째 useEffect에서 로드됨 (초기화 제거)
     } catch (e) {
       console.error('설정 로드 실패', e)
       toast({
@@ -1439,7 +1544,7 @@ export default function SettingsPage() {
         <p className="text-muted-foreground">시스템 설정을 관리하세요</p>
       </div>
 
-      <Tabs defaultValue="organization">
+      <Tabs value={currentTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="organization">기관 정보</TabsTrigger>
           <TabsTrigger value="branches">지점 관리</TabsTrigger>
@@ -2508,18 +2613,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['late'] === 'parent' || notificationTargets['late'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('late', notificationTargets['late'] === 'both' ? 'student' : notificationTargets['late'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['late'] === 'student' || notificationTargets['late'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('late', notificationTargets['late'] === 'both' ? 'parent' : notificationTargets['late'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('late', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('late', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('late', 'parent')}>템플릿 설정</Button>
                   </div>
                   <div className="flex items-center justify-between pt-2 border-t">
                     <div className="flex items-center gap-2">
@@ -2552,18 +2647,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['absent'] === 'parent' || notificationTargets['absent'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('absent', notificationTargets['absent'] === 'both' ? 'student' : notificationTargets['absent'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['absent'] === 'student' || notificationTargets['absent'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('absent', notificationTargets['absent'] === 'both' ? 'parent' : notificationTargets['absent'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('absent', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('absent', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('absent', 'parent')}>템플릿 설정</Button>
                   </div>
                 </div>
 
@@ -2577,18 +2662,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['checkin'] === 'parent' || notificationTargets['checkin'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('checkin', notificationTargets['checkin'] === 'both' ? 'student' : notificationTargets['checkin'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['checkin'] === 'student' || notificationTargets['checkin'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('checkin', notificationTargets['checkin'] === 'both' ? 'parent' : notificationTargets['checkin'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkin', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkin', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkin', 'parent')}>템플릿 설정</Button>
                   </div>
                 </div>
 
@@ -2602,18 +2677,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['checkout'] === 'parent' || notificationTargets['checkout'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('checkout', notificationTargets['checkout'] === 'both' ? 'student' : notificationTargets['checkout'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['checkout'] === 'student' || notificationTargets['checkout'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('checkout', notificationTargets['checkout'] === 'both' ? 'parent' : notificationTargets['checkout'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkout', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkout', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkout', 'parent')}>템플릿 설정</Button>
                   </div>
                 </div>
               </div>
@@ -2634,18 +2699,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['study_out'] === 'parent' || notificationTargets['study_out'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_out', notificationTargets['study_out'] === 'both' ? 'student' : notificationTargets['study_out'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['study_out'] === 'student' || notificationTargets['study_out'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_out', notificationTargets['study_out'] === 'both' ? 'parent' : notificationTargets['study_out'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_out', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_out', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_out', 'parent')}>템플릿 설정</Button>
                   </div>
                 </div>
 
@@ -2659,18 +2714,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['study_return'] === 'parent' || notificationTargets['study_return'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_return', notificationTargets['study_return'] === 'both' ? 'student' : notificationTargets['study_return'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['study_return'] === 'student' || notificationTargets['study_return'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('study_return', notificationTargets['study_return'] === 'both' ? 'parent' : notificationTargets['study_return'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_return', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_return', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_return', 'parent')}>템플릿 설정</Button>
                   </div>
                 </div>
               </div>
@@ -2694,18 +2739,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['daily_report'] === 'parent' || notificationTargets['daily_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('daily_report', notificationTargets['daily_report'] === 'both' ? 'student' : notificationTargets['daily_report'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['daily_report'] === 'student' || notificationTargets['daily_report'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('daily_report', notificationTargets['daily_report'] === 'both' ? 'parent' : notificationTargets['daily_report'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('daily_report', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('daily_report', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('daily_report', 'parent')}>템플릿 설정</Button>
                   </div>
                   <div className="flex items-center gap-4 pt-2 border-t">
                     <Label htmlFor="daily-report-time" className="text-sm whitespace-nowrap">
@@ -2770,18 +2805,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['exam_result'] === 'parent' || notificationTargets['exam_result'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('exam_result', notificationTargets['exam_result'] === 'both' ? 'student' : notificationTargets['exam_result'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['exam_result'] === 'student' || notificationTargets['exam_result'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('exam_result', notificationTargets['exam_result'] === 'both' ? 'parent' : notificationTargets['exam_result'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('exam_result', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('exam_result', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('exam_result', 'parent')}>템플릿 설정</Button>
                   </div>
                   <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded">
                     💡 시험 결과는 관리자가 승인 버튼을 눌러야 발송됩니다
@@ -2805,43 +2830,8 @@ export default function SettingsPage() {
                     </div>
                     <Switch defaultChecked />
                   </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['assignment_new'] === 'parent' || notificationTargets['assignment_new'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_new', notificationTargets['assignment_new'] === 'both' ? 'student' : notificationTargets['assignment_new'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['assignment_new'] === 'student' || notificationTargets['assignment_new'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_new', notificationTargets['assignment_new'] === 'both' ? 'parent' : notificationTargets['assignment_new'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_new', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_new', 'student')}>학생 템플릿</Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3 rounded-lg border p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label>과제 마감 알림</Label>
-                      <p className="text-sm text-muted-foreground">
-                        마감일 전 자동 발송
-                      </p>
-                    </div>
-                    <Switch defaultChecked />
-                  </div>
-                  <div className="flex items-center justify-between pt-2 border-t">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">수신자:</span>
-                      <div className="flex gap-1">
-                        <Button type="button" size="sm" variant={notificationTargets['assignment_remind'] === 'parent' || notificationTargets['assignment_remind'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_remind', notificationTargets['assignment_remind'] === 'both' ? 'student' : notificationTargets['assignment_remind'] === 'parent' ? 'both' : 'parent')}>학부모</Button>
-                        <Button type="button" size="sm" variant={notificationTargets['assignment_remind'] === 'student' || notificationTargets['assignment_remind'] === 'both' ? 'default' : 'outline'} className="h-7 text-xs" onClick={() => handleTargetChange('assignment_remind', notificationTargets['assignment_remind'] === 'both' ? 'parent' : notificationTargets['assignment_remind'] === 'student' ? 'both' : 'student')}>학생</Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_remind', 'parent')}>학부모 템플릿</Button>
-                      <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_remind', 'student')}>학생 템플릿</Button>
-                    </div>
+                  <div className="flex items-center justify-end pt-2 border-t">
+                    <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_new', 'parent')}>템플릿 설정</Button>
                   </div>
                 </div>
               </div>
@@ -2855,7 +2845,7 @@ export default function SettingsPage() {
           <div className="grid gap-4 md:grid-cols-3">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">1월 현재 이용료</CardTitle>
+                <CardTitle className="text-sm font-medium">{new Date().getMonth() + 1}월 현재 이용료</CardTitle>
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
@@ -2872,10 +2862,14 @@ export default function SettingsPage() {
                 <WalletIcon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold text-muted-foreground">₩0</div>
+                <div className={`text-2xl font-bold ${(organization.credit_balance || 0) > 0 ? 'text-green-600' : 'text-muted-foreground'}`}>
+                  ₩{(organization.credit_balance || 0).toLocaleString()}
+                </div>
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-xs text-muted-foreground">
-                    충전 내역 없음
+                    {creditTransactions.length > 0
+                      ? `최근 거래: ${creditTransactions[0]?.date || '-'}`
+                      : '충전 내역 없음'}
                   </p>
                   <Button
                     variant="link"
@@ -3083,7 +3077,7 @@ export default function SettingsPage() {
                       <SelectItem value="2023">2023년</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Select defaultValue="01">
+                  <Select defaultValue={String(new Date().getMonth() + 1).padStart(2, '0')}>
                     <SelectTrigger className="w-[90px]">
                       <SelectValue placeholder="월" />
                     </SelectTrigger>
@@ -3106,54 +3100,88 @@ export default function SettingsPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <Tabs defaultValue="kakaotalk-usage">
+              <Tabs value={currentSubTab} onValueChange={handleSubTabChange}>
                 <TabsList>
                   <TabsTrigger value="kakaotalk-usage">알림톡 이용내역</TabsTrigger>
-                  <TabsTrigger value="service-usage">서비스 이용내역</TabsTrigger>
+                  <TabsTrigger value="service-usage">SMS/기타 이용내역</TabsTrigger>
+                  <TabsTrigger value="credit-history">충전/차감 내역</TabsTrigger>
                 </TabsList>
 
                 {/* KakaoTalk Usage History */}
                 <TabsContent value="kakaotalk-usage" className="space-y-4">
+                  {/* 유형별 집계 */}
+                  {usageSummary.length > 0 && (
+                    <div className="grid gap-3 md:grid-cols-5">
+                      {usageSummary.map((summary) => (
+                        <div key={summary.type} className="rounded-lg border p-3">
+                          <div className="text-xs text-muted-foreground">{summary.type}</div>
+                          <div className="flex items-baseline justify-between mt-1">
+                            <span className="text-lg font-semibold">{summary.count}건</span>
+                            <span className="text-sm text-muted-foreground">₩{summary.cost.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="rounded-md border">
                     <div className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50 sticky top-0">
                           <tr className="border-b">
-                            <th className="h-10 px-4 text-left align-middle font-medium">발송일시</th>
-                            <th className="h-10 px-4 text-left align-middle font-medium">타입</th>
-                            <th className="h-10 px-4 text-left align-middle font-medium">학생명</th>
-                            <th className="h-10 px-4 text-left align-middle font-medium">메시지</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">발송일</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">알림 유형</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">수신자</th>
+                            <th className="h-10 px-4 text-right align-middle font-medium">건수</th>
                             <th className="h-10 px-4 text-right align-middle font-medium">비용</th>
                             <th className="h-10 px-4 text-center align-middle font-medium">상태</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {kakaoTalkUsages.map((usage) => (
-                            <tr key={usage.id} className="border-b hover:bg-muted/50">
-                              <td className="p-4 align-middle">{usage.date}</td>
-                              <td className="p-4 align-middle">
-                                <Badge variant="outline">{usage.type}</Badge>
-                              </td>
-                              <td className="p-4 align-middle">{usage.studentName}</td>
-                              <td className="p-4 align-middle text-muted-foreground max-w-md truncate">
-                                {usage.message}
-                              </td>
-                              <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
-                              <td className="p-4 align-middle text-center">
-                                <Badge variant={usage.status === 'success' ? 'default' : 'destructive'}>
-                                  {usage.status === 'success' ? '성공' : '실패'}
-                                </Badge>
+                          {kakaoTalkUsages.length === 0 ? (
+                            <tr>
+                              <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                                알림톡 발송 내역이 없습니다.
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            kakaoTalkUsages.slice(0, kakaoDisplayCount).map((usage) => (
+                              <tr key={usage.id} className="border-b hover:bg-muted/50">
+                                <td className="p-4 align-middle">{usage.date}</td>
+                                <td className="p-4 align-middle">
+                                  <Badge variant="outline">{getNotificationTypeLabel(usage.type)}</Badge>
+                                </td>
+                                <td className="p-4 align-middle text-muted-foreground max-w-xs truncate">
+                                  {usage.recipient?.replace(' (잔액부족)', '') || '-'}
+                                </td>
+                                <td className="p-4 align-middle text-right">{usage.count}</td>
+                                <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
+                                <td className="p-4 align-middle text-center">
+                                  <Badge variant={usage.status === 'success' ? 'default' : 'destructive'}>
+                                    {usage.status === 'success' ? '성공' : usage.recipient?.includes('잔액부족') ? '잔액부족' : '실패'}
+                                  </Badge>
+                                </td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      총 {kakaoTalkUsages.length}건 · 합계: ₩{kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      {kakaoDisplayCount < kakaoTalkUsages.length
+                        ? `${kakaoDisplayCount}건 표시 중 (전체 ${kakaoTalkUsages.length}건)`
+                        : `총 ${kakaoTalkUsages.length}건`} · 합계: ₩{kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                     </p>
+                    {kakaoDisplayCount < kakaoTalkUsages.length && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setKakaoDisplayCount(prev => prev + 10)}
+                      >
+                        더보기 (+10)
+                      </Button>
+                    )}
                   </div>
                 </TabsContent>
 
@@ -3167,28 +3195,116 @@ export default function SettingsPage() {
                             <th className="h-10 px-4 text-left align-middle font-medium">발생일</th>
                             <th className="h-10 px-4 text-left align-middle font-medium">타입</th>
                             <th className="h-10 px-4 text-left align-middle font-medium">설명</th>
+                            <th className="h-10 px-4 text-right align-middle font-medium">건수</th>
                             <th className="h-10 px-4 text-right align-middle font-medium">비용</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {serviceUsages.map((usage) => (
-                            <tr key={usage.id} className="border-b hover:bg-muted/50">
-                              <td className="p-4 align-middle">{usage.date}</td>
-                              <td className="p-4 align-middle">
-                                <Badge variant="secondary">{usage.type}</Badge>
+                          {serviceUsages.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                SMS/기타 서비스 이용 내역이 없습니다.
                               </td>
-                              <td className="p-4 align-middle">{usage.description}</td>
-                              <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
                             </tr>
-                          ))}
+                          ) : (
+                            serviceUsages.slice(0, serviceDisplayCount).map((usage) => (
+                              <tr key={usage.id} className="border-b hover:bg-muted/50">
+                                <td className="p-4 align-middle">{usage.date}</td>
+                                <td className="p-4 align-middle">
+                                  <Badge variant="secondary">{usage.type}</Badge>
+                                </td>
+                                <td className="p-4 align-middle">{usage.description}</td>
+                                <td className="p-4 align-middle text-right">{usage.count}</td>
+                                <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      총 {serviceUsages.length}건 · 합계: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      {serviceDisplayCount < serviceUsages.length
+                        ? `${serviceDisplayCount}건 표시 중 (전체 ${serviceUsages.length}건)`
+                        : `총 ${serviceUsages.length}건`} · 합계: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                     </p>
+                    {serviceDisplayCount < serviceUsages.length && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setServiceDisplayCount(prev => prev + 10)}
+                      >
+                        더보기 (+10)
+                      </Button>
+                    )}
+                  </div>
+                </TabsContent>
+
+                {/* Credit Transaction History */}
+                <TabsContent value="credit-history" className="space-y-4">
+                  <div className="rounded-md border">
+                    <div className="overflow-auto max-h-[600px]">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr className="border-b">
+                            <th className="h-10 px-4 text-left align-middle font-medium">일시</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">구분</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">설명</th>
+                            <th className="h-10 px-4 text-right align-middle font-medium">금액</th>
+                            <th className="h-10 px-4 text-right align-middle font-medium">잔액</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {creditTransactions.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
+                                충전/차감 내역이 없습니다.
+                              </td>
+                            </tr>
+                          ) : (
+                            creditTransactions.slice(0, creditDisplayCount).map((tx) => (
+                              <tr key={tx.id} className="border-b hover:bg-muted/50">
+                                <td className="p-4 align-middle">{tx.date}</td>
+                                <td className="p-4 align-middle">
+                                  <Badge variant={tx.type === 'charge' ? 'default' : tx.type === 'deduction' ? 'secondary' : 'outline'}>
+                                    {tx.type === 'charge' ? '충전' : tx.type === 'deduction' ? '차감' : tx.type}
+                                  </Badge>
+                                </td>
+                                <td className="p-4 align-middle">{tx.description}</td>
+                                <td className={`p-4 align-middle text-right font-medium ${tx.amount > 0 ? 'text-green-600' : tx.amount < 0 ? 'text-red-600' : ''}`}>
+                                  {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()}원
+                                </td>
+                                <td className="p-4 align-middle text-right text-muted-foreground">
+                                  ₩{tx.balanceAfter.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground">
+                      {creditDisplayCount < creditTransactions.length
+                        ? `${creditDisplayCount}건 표시 중 (전체 ${creditTransactions.length}건)`
+                        : `총 ${creditTransactions.length}건`}
+                    </p>
+                    <div className="flex items-center gap-4">
+                      {creditDisplayCount < creditTransactions.length && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setCreditDisplayCount(prev => prev + 10)}
+                        >
+                          더보기 (+10)
+                        </Button>
+                      )}
+                      <p className="text-sm font-medium">
+                        현재 잔액: ₩{(organization.credit_balance || 0).toLocaleString()}
+                      </p>
+                    </div>
                   </div>
                 </TabsContent>
               </Tabs>
@@ -3252,68 +3368,30 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Template Edit Modal */}
+      {/* Template View Modal (Read-only) */}
       <Dialog open={isTemplateModalOpen} onOpenChange={setIsTemplateModalOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {editingTemplateTarget === 'parent' ? '학부모' : '학생'} 템플릿 수정
+              템플릿 미리보기
             </DialogTitle>
             <DialogDescription>
-              {editingTemplateKey && TEMPLATE_LABELS[editingTemplateKey]} - {editingTemplateTarget === 'parent' ? '학부모에게 전송되는 메시지' : '학생에게 전송되는 메시지'}
+              {editingTemplateKey && TEMPLATE_LABELS[editingTemplateKey]} 알림 템플릿
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="template-content">메시지 템플릿</Label>
-              <Textarea
-                id="template-content"
-                value={editingTemplateValue}
-                onChange={(e) => setEditingTemplateValue(e.target.value)}
-                rows={8}
-                className="font-mono text-sm"
-              />
-            </div>
-            <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded space-y-1">
-              <p className="font-medium">사용 가능한 변수:</p>
-              <p>{'{{기관명}}'} - 기관 이름</p>
-              <p>{'{{학생명}}'} - 학생 이름</p>
-              <p>{'{{시간}}'} - 이벤트 발생 시간</p>
-              <p>{'{{예정시간}}'} - 예정된 시간 (지각 알림용)</p>
-              <p>{'{{날짜}}'} - 날짜</p>
-              <p>{'{{과목}}'} - 과목명</p>
-              <p>{'{{강사명}}'} - 강사 이름</p>
-              <p>{'{{수업내용}}'} - 수업 내용</p>
-              <p>{'{{시험명}}'} - 시험 이름</p>
-              <p>{'{{점수}}'} - 시험 점수</p>
-              <p>{'{{과제명}}'} - 과제 이름</p>
-              <p>{'{{마감일}}'} - 과제 마감일</p>
-              <p>{'{{총학습시간}}'} - 총 학습 시간</p>
-              <p>{'{{완료과목}}'} - 완료한 과목</p>
+              <Label>메시지 템플릿</Label>
+              <div className="font-mono text-sm p-3 bg-muted/50 rounded border whitespace-pre-wrap min-h-[200px]">
+                {editingTemplateValue}
+              </div>
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (editingTemplateKey) {
-                  if (editingTemplateTarget === 'parent') {
-                    setEditingTemplateValue(DEFAULT_TEMPLATES_PARENT[editingTemplateKey] || '')
-                  } else {
-                    setEditingTemplateValue(DEFAULT_TEMPLATES_STUDENT[editingTemplateKey] || '')
-                  }
-                }
-              }}
-            >
-              기본값으로 초기화
-            </Button>
+          <DialogFooter>
             <Button variant="outline" onClick={() => setIsTemplateModalOpen(false)}>
-              취소
-            </Button>
-            <Button onClick={handleSaveTemplate}>
-              저장
+              닫기
             </Button>
           </DialogFooter>
         </DialogContent>

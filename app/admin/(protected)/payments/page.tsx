@@ -30,11 +30,9 @@ import {
 import {
   CreditCard,
   ArrowUpCircle,
-  ArrowDownCircle,
   TrendingUp,
   ChevronLeft,
   ChevronRight,
-  Search,
   Calendar
 } from 'lucide-react'
 import { format } from 'date-fns'
@@ -63,7 +61,6 @@ interface PaymentsResponse {
   }
   stats: {
     totalCharged: number
-    totalUsed: number
     paidCharged: number
     freeCharged: number
   }
@@ -140,13 +137,8 @@ export default function PaymentsPage() {
               {type === 'paid' ? '유료 충전' : '무료 부여'}
             </Badge>
           )
-        } else {
-          return (
-            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-              사용
-            </Badge>
-          )
         }
+        return null
       },
     },
     {
@@ -200,12 +192,12 @@ export default function PaymentsPage() {
       <div>
         <h1 className="text-3xl font-bold mb-2">결제내역</h1>
         <p className="text-muted-foreground">
-          조직별 충전금 충전/사용 내역을 확인합니다
+          조직별 충전금 충전 내역을 확인합니다
         </p>
       </div>
 
       {/* 통계 카드 */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">총 충전</CardTitle>
@@ -238,18 +230,6 @@ export default function PaymentsPage() {
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">
               {(data?.stats.freeCharged || 0).toLocaleString()}원
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">총 사용</CardTitle>
-            <ArrowDownCircle className="h-4 w-4 text-red-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">
-              -{(data?.stats.totalUsed || 0).toLocaleString()}원
             </div>
           </CardContent>
         </Card>

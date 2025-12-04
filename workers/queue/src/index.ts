@@ -7,11 +7,26 @@
  * - check_study: 독서실 출결 체크
  * - check_class: 강의 출결 체크
  * - daily_report: 일일 학습 리포트 발송
- * - assignment_remind: 과제 마감 알림
  * - process_commute_absent: 독서실 결석 처리
  */
 
 import postgres from "postgres";
+
+// 공유 알림 라이브러리 (잔액 차감 로직 포함)
+import {
+  sendTelegramWithSolapiFormat,
+  sendSolapiAlimtalk,
+  sendPpurioAlimtalk, // Legacy - 다른 곳에서 아직 사용 중
+  checkAndDeductBalancePostgres,
+  recordTransactionPostgres,
+  recordMessageLogPostgres,
+  sendNotificationWithBalancePostgres,
+  SOLAPI_TEMPLATE_CONFIGS,
+  type TelegramConfig,
+  type SolapiConfig,
+  type PpurioConfig, // Legacy - 다른 곳에서 아직 사용 중
+  type NotificationType as SharedNotificationType,
+} from "../../shared/src/notifications";
 
 interface Env {
   HYPERDRIVE_DB: Hyperdrive;
@@ -21,12 +36,21 @@ interface Env {
   KAKAO_ALIMTALK_SENDER_KEY?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
+  // PPURIO 알림톡 설정 (deprecated - Solapi로 대체)
+  PPURIO_ACCOUNT?: string;
+  PPURIO_PASSWORD?: string;
+  PPURIO_SENDER_KEY?: string;
+  // Solapi 알림톡 설정
+  SOLAPI_API_KEY?: string;
+  SOLAPI_API_SECRET?: string;
+  SOLAPI_PF_ID?: string;
+  SOLAPI_SENDER_PHONE?: string;
   TIMEZONE: string;
 }
 
 // Queue 메시지 타입
 interface AttendanceMessage {
-  type: 'check_academy' | 'check_study' | 'check_class' | 'check_commute' | 'daily_report' | 'assignment_remind' | 'process_commute_absent' | 'process_notification_queue';
+  type: 'check_academy' | 'check_study' | 'check_class' | 'check_commute' | 'daily_report' | 'process_commute_absent' | 'process_notification_queue';
   orgId: string;
   orgName: string;
   orgType: string;
@@ -67,14 +91,23 @@ function timeToMinutes(timeStr: string): number {
   return hours * 60 + minutes;
 }
 
-// 기본 메시지 템플릿 (통합)
+// 기본 메시지 템플릿 (통합 - 모든 알림 타입)
 const DEFAULT_TEMPLATES: Record<string, string> = {
-  // 통합 출결 알림
-  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 등원 일정 시간({{예정시간}})이 지났는데 아직 도착하지 않았습니다. 확인 부탁드립니다.',
-  'absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 등원 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
-  // 기타 알림
-  'daily_report': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 {{날짜}} 학습 현황을 전해드립니다.\n\n오늘 총 {{총학습시간}} 동안 열심히 공부했습니다. 꾸준히 노력하는 모습이 대견합니다!',
-  'assignment_remind': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생의 과제 마감일이 다가왔습니다.\n\n과제: {{과제명}}\n마감일: {{마감일}}\n\n제출 전 한 번 더 검토해 보도록 안내해 주시면 감사하겠습니다.',
+  // 출결 알림
+  'late': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 등원 일정 시간({{예정시간}})이 지났는데 아직 도착하지 않았습니다. 확인 부탁드립니다.',
+  'absent': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 오늘 등원 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
+  'checkin': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!',
+  'checkout': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다.',
+  // 독서실 전용
+  'study_out': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 잠시 외출합니다.',
+  'study_return': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 복귀했습니다.',
+  // 학습 리포트
+  'daily_report': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생의 {{날짜}} 학습 현황을 전해드립니다.\n\n오늘 총 {{총학습시간}} 동안 열심히 공부했고, {{완료과목}} 과목을 완료했습니다. 꾸준히 노력하는 모습이 대견합니다!',
+  // 수업 리포트 (PPURIO 변수: 기관명, 학생명, 오늘수업, 학습포인트, 선생님, 원장님, 숙제, 복습팁)
+  'lesson_report': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생의 수업 리포트입니다.\n\n📚 오늘 수업: {{오늘수업}}\n💡 학습 포인트: {{학습포인트}}\n👨‍🏫 선생님 코멘트: {{선생님}}\n👔 원장님 코멘트: {{원장님}}\n📝 숙제: {{숙제}}\n📖 복습 팁: {{복습팁}}\n\n오늘도 수고했어요!',
+  // 시험/과제 알림
+  'exam_result': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생의 시험 결과를 안내드립니다.\n\n{{시험명}}: {{점수}}\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다!',
+  'assignment': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생에게 새 과제가 등록되었습니다.\n\n📝 과제: {{과제명}}\n📅 마감일: {{마감일}}\n\n과제 제출 잊지 마세요!',
 }
 
 // 템플릿 변수 치환 함수
@@ -158,9 +191,6 @@ export default {
             case 'daily_report':
               await processDailyReport(sql, orgId, orgName, todayDate, env);
               break;
-            case 'assignment_remind':
-              await processAssignmentReminder(sql, orgId, orgName, todayDate, env);
-              break;
             case 'process_commute_absent':
               await processCommuteAbsence(sql, orgId, orgName, weekday, todayDate, env);
               break;
@@ -185,60 +215,80 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    // 테스트 엔드포인트: /test?type=late|absent|daily_report|assignment_remind
+    // 테스트 엔드포인트: /test?type=알림타입&student=학생명&org=기관명&time=시간&phone=전화번호
+    // 지원 타입: late, absent, checkin, checkout, study_out, study_return, daily_report, lesson_report, exam_result, assignment
     if (url.pathname === '/test' && request.method === 'GET') {
       const type = url.searchParams.get('type') || 'late';
       const studentName = url.searchParams.get('student') || '테스트학생';
-      const orgName = url.searchParams.get('org') || '골드펜학원';
-      const scheduledTime = url.searchParams.get('time') || '14:00';
+      const orgName = url.searchParams.get('org') || '골드펜';
+      const currentTime = url.searchParams.get('time') || '14:30';
+      const phone = url.searchParams.get('phone') || '01043934090'; // 테스트용 전화번호
+      const todayDate = new Date().toISOString().split('T')[0];
 
-      // 템플릿으로 메시지 생성
+      // 타입별 변수 설정 (Solapi 템플릿 변수명에 맞춤)
+      const variablesByType: Record<string, Record<string, string>> = {
+        'late': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
+        'absent': { '기관명': orgName, '학생명': studentName },
+        'checkin': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
+        'checkout': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
+        'study_out': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
+        'study_return': { '기관명': orgName, '학생명': studentName, '시간': currentTime },
+        'daily_report': { '기관명': orgName, '학생명': studentName, '날짜': todayDate, '총학습시간': '3시간 25분', '완료과목': '수학, 영어' },
+        'lesson_report': { '기관명': orgName, '학생명': studentName, '오늘수업': '중등 수학 심화반', '학습포인트': '이차방정식 풀이 연습', '선생님코멘트': '오늘 집중력이 좋았어요!', '원장님코멘트': '수학 실력이 늘고 있어요!', '숙제': '교재 45~48페이지 문제풀이', '복습팁': '이차방정식 공식 암기하기' },
+        'exam_result': { '기관명': orgName, '학생명': studentName, '시험명': '11월 모의고사', '점수': '92점' },
+        'assignment': { '기관명': orgName, '학생명': studentName, '과제': '영어 단어 암기 (Unit 5)', '마감일': '12월 10일' },
+      };
+
+      // 템플릿 및 변수 가져오기
+      const variables = variablesByType[type];
+      const template = DEFAULT_TEMPLATES[type];
+
       let message = '';
-      switch (type) {
-        case 'late':
-          message = fillTemplate(DEFAULT_TEMPLATES['late'], {
-            '기관명': orgName,
-            '학생명': studentName,
-            '예정시간': scheduledTime,
-          });
-          break;
-        case 'absent':
-          message = fillTemplate(DEFAULT_TEMPLATES['absent'], {
-            '기관명': orgName,
-            '학생명': studentName,
-            '예정시간': scheduledTime,
-          });
-          break;
-        case 'daily_report':
-          message = fillTemplate(DEFAULT_TEMPLATES['daily_report'], {
-            '기관명': orgName,
-            '학생명': studentName,
-            '날짜': new Date().toISOString().split('T')[0],
-            '총학습시간': '3시간 25분',
-          });
-          break;
-        case 'assignment_remind':
-          message = fillTemplate(DEFAULT_TEMPLATES['assignment_remind'], {
-            '기관명': orgName,
-            '학생명': studentName,
-            '과제명': '수학 문제집 1-20번',
-            '마감일': '2025-12-03 (내일)',
-          });
-          break;
-        default:
-          message = `[테스트] 알 수 없는 타입: ${type}`;
+      if (template && variables) {
+        message = fillTemplate(template, variables);
+      } else {
+        message = `[테스트] 지원하지 않는 타입: ${type}`;
       }
 
-      // 텔레그램으로 전송
-      const telegramResult = await sendTelegram(env, `📱 알림톡 테스트 (${type})\n\n${message}`);
+      // 텔레그램 발송 (모니터링용)
+      const telegramConfig: TelegramConfig = {
+        botToken: env.TELEGRAM_BOT_TOKEN,
+        chatId: env.TELEGRAM_CHAT_ID,
+      };
+
+      let telegramResult: { success: boolean; error?: string } = { success: false, error: 'not sent' };
+      if (telegramConfig.botToken && telegramConfig.chatId) {
+        telegramResult = await sendTelegramWithSolapiFormat(telegramConfig, type as SharedNotificationType, variables, phone);
+        console.log(`[Test] 텔레그램 발송 결과: ${type}`, telegramResult);
+      }
+
+      // Solapi 알림톡 발송
+      let solapiResult: { success: boolean; error?: string; messageId?: string } = { success: false, error: 'skipped' };
+      const solapiConfig: SolapiConfig = {
+        apiKey: env.SOLAPI_API_KEY,
+        apiSecret: env.SOLAPI_API_SECRET,
+        pfId: env.SOLAPI_PF_ID,
+        senderPhone: env.SOLAPI_SENDER_PHONE,
+      };
+
+      if (solapiConfig.apiKey && solapiConfig.apiSecret && solapiConfig.pfId) {
+        solapiResult = await sendSolapiAlimtalk(solapiConfig, {
+          type: type as SharedNotificationType,
+          phone: phone.replace(/[^0-9]/g, ''),
+          recipientName: `${studentName} 학부모`,
+          variables,
+        });
+        console.log(`[Test] Solapi 발송 결과: ${type} -> ${phone}`, solapiResult);
+      }
 
       return new Response(
         JSON.stringify({
-          success: true,
+          success: telegramResult.success || solapiResult.success,
           type,
           message,
           telegram: telegramResult,
-          params: { studentName, orgName, scheduledTime },
+          solapi: solapiResult,
+          params: { studentName, orgName, time: currentTime, phone },
         }),
         { headers: { "Content-Type": "application/json" } }
       );
@@ -255,10 +305,9 @@ export default {
           "check_study",
           "check_class",
           "daily_report",
-          "assignment_remind",
           "process_commute_absent"
         ],
-        testEndpoint: "/test?type=late|absent|daily_report|assignment_remind&student=이름&org=기관명&time=14:00"
+        testEndpoint: "/test?type=late|absent|checkin|checkout|study_out|study_return|daily_report|lesson_report|exam_result|assignment&student=이름&org=기관명&time=14:00"
       }),
       { headers: { "Content-Type": "application/json" } }
     );
@@ -339,6 +388,7 @@ async function processAcademyAttendance(
           });
           await sendNotification(sql, env, {
             orgId,
+            orgName,
             studentId: schedule.student_id,
             studentName: schedule.student_name,
             type: "late",
@@ -359,6 +409,7 @@ async function processAcademyAttendance(
         });
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "absent",
@@ -394,6 +445,7 @@ async function processAcademyAttendance(
         });
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "late",
@@ -476,6 +528,7 @@ async function processStudyRoomAttendance(
           });
           await sendNotification(sql, env, {
             orgId,
+            orgName,
             studentId: schedule.student_id,
             studentName: schedule.student_name,
             type: "late",
@@ -514,6 +567,7 @@ async function processStudyRoomAttendance(
         });
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "absent",
@@ -549,6 +603,7 @@ async function processStudyRoomAttendance(
         });
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "late",
@@ -678,6 +733,7 @@ async function processClassAttendance(
             });
             await sendNotification(sql, env, {
               orgId,
+              orgName,
               studentId: enrollment.student_id,
               studentName: enrollment.student_name,
               type: "late",
@@ -736,6 +792,7 @@ async function processClassAttendance(
         });
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: enrollment.student_id,
           studentName: enrollment.student_name,
           type: "absent",
@@ -790,6 +847,7 @@ async function processClassAttendance(
         });
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: enrollment.student_id,
           studentName: enrollment.student_name,
           type: "late",
@@ -885,6 +943,7 @@ async function processCommuteAttendance(
           });
           await sendNotification(sql, env, {
             orgId,
+            orgName,
             studentId: schedule.student_id,
             studentName: schedule.student_name,
             type: "commute_late",
@@ -920,6 +979,7 @@ async function processCommuteAttendance(
 
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "commute_absent",
@@ -957,6 +1017,7 @@ async function processCommuteAttendance(
 
         await sendNotification(sql, env, {
           orgId,
+          orgName,
           studentId: schedule.student_id,
           studentName: schedule.student_name,
           type: "commute_late",
@@ -971,7 +1032,9 @@ async function processCommuteAttendance(
 }
 
 /**
- * 일일 학습 리포트 발송 (단일 기관)
+ * 일일 학습 리포트 발송 (독서실 전용)
+ * - 오늘 독서실에 출석한 학생만 대상
+ * - 완료과목은 daily_planners.study_plans에서 가져옴
  */
 async function processDailyReport(
   sql: postgres.Sql,
@@ -980,25 +1043,59 @@ async function processDailyReport(
   todayDate: string,
   env: Env
 ): Promise<void> {
+  // 1. 오늘 독서실에 출석한 학생 조회 (daily_planners에서 완료과목 가져옴)
   const attendanceRecords = await sql`
-    SELECT DISTINCT
+    SELECT
       al.student_id,
       s.name as student_name,
       s.parent_phone,
-      al.check_in_time,
-      al.check_out_time,
-      COALESCE(
-        EXTRACT(EPOCH FROM (al.check_out_time - al.check_in_time)) / 60,
-        0
-      )::int as study_minutes
+      COALESCE(EXTRACT(EPOCH FROM (al.check_out_time - al.check_in_time)) / 60, 0)::int as study_minutes,
+      dp.study_plans
     FROM attendance_logs al
     JOIN students s ON s.id = al.student_id
+    LEFT JOIN daily_planners dp ON dp.student_id = al.student_id
+      AND dp.date = ${todayDate}::date
+      AND dp.org_id = ${orgId}
     WHERE al.org_id = ${orgId}
       AND al.check_in_time::date = ${todayDate}::date
       AND s.parent_phone IS NOT NULL
   `;
 
+  // 오늘 출석한 학생에게만 알림 발송
   for (const record of attendanceRecords) {
+    // 과목(완료), 과목(미완료) 형태로 생성 (50자 제한)
+    const plans = record.study_plans as Array<{ subject: string; completed: boolean }> || [];
+    let completedSubjectsStr = '공부'; // 과목이 없으면 "공부"
+
+    if (plans.length > 0) {
+      const subjectList: string[] = [];
+      let totalLength = 0;
+      const MAX_LENGTH = 50;
+
+      for (const plan of plans) {
+        const status = plan.completed ? '완료' : '미완료';
+        const item = `${plan.subject}(${status})`;
+
+        // 다음 항목 추가 시 길이 체크 (쉼표+공백 포함)
+        const newLength = totalLength + (subjectList.length > 0 ? 2 : 0) + item.length;
+
+        if (newLength > MAX_LENGTH) {
+          // 남은 과목 수 표시
+          const remaining = plans.length - subjectList.length;
+          if (remaining > 0) {
+            subjectList.push(`외 ${remaining}개`);
+          }
+          break;
+        }
+
+        subjectList.push(item);
+        totalLength = newLength;
+      }
+
+      completedSubjectsStr = subjectList.join(', ');
+    }
+
+    // 학습 시간 계산
     const studyHours = Math.floor(Number(record.study_minutes) / 60);
     const studyMins = Number(record.study_minutes) % 60;
     const studyTimeStr = studyHours > 0
@@ -1011,79 +1108,18 @@ async function processDailyReport(
       '학생명': record.student_name,
       '날짜': todayDate,
       '총학습시간': studyTimeStr,
+      '완료과목': completedSubjectsStr,
     });
 
     await sendNotification(sql, env, {
       orgId,
+      orgName,
       studentId: record.student_id,
       studentName: record.student_name,
       type: "daily_report",
       context: "study",
       targetDate: todayDate,
       recipientPhone: record.parent_phone,
-      message,
-    });
-  }
-}
-
-/**
- * 과제 마감 알림 (단일 기관)
- */
-async function processAssignmentReminder(
-  sql: postgres.Sql,
-  orgId: string,
-  orgName: string,
-  todayDate: string,
-  env: Env
-): Promise<void> {
-  const tomorrowDate = new Date(todayDate);
-  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-  const tomorrowStr = tomorrowDate.toISOString().split('T')[0];
-
-  const assignments = await sql`
-    SELECT
-      h.id as homework_id,
-      h.title,
-      h.due_date,
-      h.class_id,
-      c.name as class_name,
-      ce.student_id,
-      ce.student_name,
-      s.parent_phone,
-      (
-        SELECT COUNT(*) FROM homework_submissions hs
-        WHERE hs.homework_id = h.id
-          AND hs.student_id = ce.student_id
-      ) as has_submitted
-    FROM homework h
-    JOIN classes c ON c.id = h.class_id
-    JOIN class_enrollments ce ON ce.class_id = h.class_id AND ce.status = 'active'
-    JOIN students s ON s.id = ce.student_id
-    WHERE c.org_id = ${orgId}
-      AND h.due_date::date = ${tomorrowStr}::date
-      AND h.status = 'active'
-  `;
-
-  for (const assignment of assignments) {
-    if (Number(assignment.has_submitted) > 0) continue;
-
-    const template = await getTemplate(sql, orgId, 'assignment_remind');
-    const message = fillTemplate(template, {
-      '기관명': orgName,
-      '학생명': assignment.student_name,
-      '과제명': assignment.title,
-      '마감일': `${assignment.due_date} (내일)`,
-    });
-
-    await sendNotification(sql, env, {
-      orgId,
-      studentId: assignment.student_id,
-      studentName: assignment.student_name,
-      type: "assignment_remind",
-      context: "class",
-      classId: assignment.class_id,
-      targetDate: todayDate,
-      recipientPhone: assignment.parent_phone,
       message,
     });
   }
@@ -1147,6 +1183,7 @@ async function processCommuteAbsence(
 
       await sendNotification(sql, env, {
         orgId,
+        orgName,
         studentId: student.student_id,
         studentName: student.student_name,
         type: "commute_absent",
@@ -1169,7 +1206,6 @@ type NotificationType =
   | "late" | "absent"
   | "checkin" | "checkout"
   | "daily_report"
-  | "assignment_remind"
   | "commute_late" | "commute_absent";
 
 // DB에 저장되는 실제 type (notification_logs_type_check constraint)
@@ -1180,7 +1216,7 @@ type DbNotificationType =
   | "academy_checkin" | "academy_checkout"
   | "study_checkin" | "study_checkout"
   | "study_out" | "study_return"
-  | "lesson_report" | "exam_result" | "assignment_new";
+  | "daily_report" | "lesson_report" | "exam_result" | "assignment_new";
 
 // context에 따라 DB type 변환
 function toDbNotificationType(type: NotificationType, context?: 'class' | 'study' | 'academy' | 'commute'): DbNotificationType {
@@ -1204,16 +1240,14 @@ function toDbNotificationType(type: NotificationType, context?: 'class' | 'study
     return context === 'academy' ? 'academy_checkout' : 'study_checkout';
   }
   if (type === 'daily_report') {
-    return 'lesson_report';
-  }
-  if (type === 'assignment_remind') {
-    return 'assignment_new';
+    return 'daily_report';  // daily_report는 그대로 유지 (lesson_report와 구분)
   }
   return 'study_late'; // fallback
 }
 
 interface NotificationParams {
   orgId: string;
+  orgName: string; // 🔴 잔액 차감 로직용 추가
   studentId: string;
   studentName: string;
   type: NotificationType;
@@ -1232,6 +1266,7 @@ async function sendNotification(
 ): Promise<void> {
   const {
     orgId,
+    orgName,
     studentId,
     studentName,
     type,
@@ -1262,6 +1297,35 @@ async function sendNotification(
       return;
     }
 
+    // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
+    const balanceResult = await checkAndDeductBalancePostgres(sql, orgId, orgName);
+
+    if (!balanceResult.success) {
+      console.log(`[Notification] 잔액 부족으로 건너뜀: ${orgName} - ${studentName} (${dbType})`);
+      // 잔액 부족 시 실패 기록
+      await recordMessageLogPostgres(
+        sql, orgId, dbType as SharedNotificationType, studentName,
+        balanceResult.price, balanceResult.cost,
+        'failed', ' (잔액부족)'
+      );
+      return;
+    }
+
+    // 트랜잭션 기록
+    await recordTransactionPostgres(
+      sql, orgId,
+      balanceResult.price,
+      balanceResult.newBalance!,
+      dbType as SharedNotificationType, studentName
+    );
+
+    // 메시지 로그 기록 (성공)
+    await recordMessageLogPostgres(
+      sql, orgId, dbType as SharedNotificationType, studentName,
+      balanceResult.price, balanceResult.cost,
+      'sent', ''
+    );
+
     await sql`
       INSERT INTO notification_logs (
         org_id, student_id, type, class_id, target_date,
@@ -1272,14 +1336,41 @@ async function sendNotification(
       )
     `;
 
-    console.log(`[Notification] Recorded: ${dbType} for ${studentName}`);
+    console.log(`[Notification] Recorded: ${dbType} for ${studentName} (-${balanceResult.price}원)`);
 
-    // 텔레그램으로 모니터링 알림 전송 (부모님께 가는 메시지 그대로 전송)
-    await sendTelegram(env, message);
+    // Solapi 변수 준비 (type에 따라 다른 변수 필요)
+    const solapiVariables: Record<string, string> = {
+      "기관명": orgName,
+      "학생명": studentName,
+    };
+    // 시간 변수 추가 (late, checkin, checkout, study_out, study_return)
+    if (scheduledTime) {
+      solapiVariables["시간"] = scheduledTime;
+    }
 
+    // 텔레그램으로 Solapi API 형식 전송 (테스트/모니터링용)
+    // TODO: Solapi 템플릿 승인 후 이 블록 제거
+    const telegramConfig: TelegramConfig = {
+      botToken: env.TELEGRAM_BOT_TOKEN,
+      chatId: env.TELEGRAM_CHAT_ID,
+    };
+    await sendTelegramWithSolapiFormat(telegramConfig, dbType as SharedNotificationType, solapiVariables, recipientPhone);
+
+    // Solapi 알림톡 발송
+    // TODO: Solapi 템플릿 승인 후 DRY_RUN 해제 (shared/notifications.ts)
     if (recipientPhone) {
-      const templateCode = type.includes('late') ? 'GOLDPEN_LATE_001' : 'GOLDPEN_ABSENT_001';
-      await sendKakaoAlimtalk(env, recipientPhone, message, templateCode);
+      const solapiConfig: SolapiConfig = {
+        apiKey: env.SOLAPI_API_KEY,
+        apiSecret: env.SOLAPI_API_SECRET,
+        pfId: env.SOLAPI_PF_ID,
+        senderPhone: env.SOLAPI_SENDER_PHONE,
+      };
+      await sendSolapiAlimtalk(solapiConfig, {
+        type: dbType as SharedNotificationType,
+        phone: recipientPhone,
+        recipientName: `${studentName} 학부모`,
+        variables: solapiVariables,
+      });
     }
   } catch (error) {
     console.error(`[Notification] Error for ${studentName}:`, error);
@@ -1494,12 +1585,37 @@ async function processNotificationQueue(
           RETURNING *
         `;
 
-        // 알림 메시지 생성 및 전송
+        // 알림 메시지 생성
         const checkinMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!`;
 
-        await sendTelegram(env, checkinMessage);
-        if (student.parent_phone) {
-          await sendKakaoAlimtalk(env, student.parent_phone, checkinMessage, 'GOLDPEN_CHECKIN_001');
+        // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'checkin',
+          recipientPhone: student.parent_phone,
+          message: checkinMessage,
+          templateVariables: { 시간: timeStr },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Checkin notification failed (${notificationResult.error}): ${student.name}`);
         }
 
         await sql`
@@ -1559,12 +1675,37 @@ async function processNotificationQueue(
           WHERE id = ${checkinRecord[0].id}
         `;
 
-        // 알림 메시지 생성 및 전송
+        // 알림 메시지 생성
         const checkoutMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다. (총 학습시간: ${studyTimeStr})`;
 
-        await sendTelegram(env, checkoutMessage);
-        if (student.parent_phone) {
-          await sendKakaoAlimtalk(env, student.parent_phone, checkoutMessage, 'GOLDPEN_CHECKOUT_001');
+        // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'checkout',
+          recipientPhone: student.parent_phone,
+          message: checkoutMessage,
+          templateVariables: { 시간: timeStr },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Checkout notification failed (${notificationResult.error}): ${student.name}`);
         }
 
         await sql`
@@ -1591,9 +1732,34 @@ async function processNotificationQueue(
 
         const outMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 잠시 외출했습니다.`;
 
-        await sendTelegram(env, outMessage);
-        if (student.parent_phone) {
-          await sendKakaoAlimtalk(env, student.parent_phone, outMessage, 'GOLDPEN_OUT_001');
+        // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'study_out',
+          recipientPhone: student.parent_phone,
+          message: outMessage,
+          templateVariables: { 시간: timeStr },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Out notification failed (${notificationResult.error}): ${student.name}`);
         }
 
         await sql`
@@ -1642,9 +1808,34 @@ async function processNotificationQueue(
 
         const returnMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생이 ${timeStr}에 외출에서 복귀했습니다.`;
 
-        await sendTelegram(env, returnMessage);
-        if (student.parent_phone) {
-          await sendKakaoAlimtalk(env, student.parent_phone, returnMessage, 'GOLDPEN_RETURN_001');
+        // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'study_return',
+          recipientPhone: student.parent_phone,
+          message: returnMessage,
+          templateVariables: { 시간: timeStr },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Return notification failed (${notificationResult.error}): ${student.name}`);
         }
 
         await sql`
@@ -1653,6 +1844,208 @@ async function processNotificationQueue(
           WHERE id = ${notification.id}
         `;
         console.log(`[NotificationQueue] Return completed: ${student.name}`);
+      }
+
+      // ============================================================
+      // 과제 생성 알림 (assignment_new)
+      // ============================================================
+      else if (notification.type === 'assignment_new') {
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        const payload = notification.payload as {
+          student_id: string;
+          class_id?: string;
+          class_name?: string;
+          title: string;
+          due_date: string;
+          description?: string;
+        };
+
+        const assignmentMessage = `${student.org_name}입니다, 학부모님.\n\n새 과제가 등록되었습니다.\n\n📚 수업: ${payload.class_name || '-'}\n📝 과제: ${payload.title}\n📅 마감일: ${payload.due_date}\n\n과제 제출 잊지 마세요!`;
+
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'assignment_new',
+          recipientPhone: student.parent_phone,
+          message: assignmentMessage,
+          templateVariables: {
+            기관명: student.org_name,
+            학생명: student.name,
+            과제: payload.title,
+            마감일: payload.due_date,
+          },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Assignment notification failed (${notificationResult.error}): ${student.name}`);
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Assignment_new completed: ${student.name} - ${payload.title}`);
+      }
+
+      // ============================================================
+      // 시험 결과 알림 (exam_result)
+      // ============================================================
+      else if (notification.type === 'exam_result') {
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        const payload = notification.payload as {
+          student_id: string;
+          exam_id?: string;
+          exam_title: string;
+          score: number;
+          total_score: number;
+        };
+
+        const scoreStr = `${payload.score}/${payload.total_score}점`;
+        const examMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생의 시험 결과를 안내드립니다.\n\n${payload.exam_title}: ${scoreStr}\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다. 궁금하신 점은 편하게 연락 주세요!`;
+
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'exam_result',
+          recipientPhone: student.parent_phone,
+          message: examMessage,
+          templateVariables: {
+            기관명: student.org_name,
+            학생명: student.name,
+            시험명: payload.exam_title,
+            점수: scoreStr,
+          },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Exam result notification failed (${notificationResult.error}): ${student.name}`);
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Exam_result completed: ${student.name} - ${payload.exam_title}`);
+      }
+
+      // ============================================================
+      // 수업일지 알림 (lesson_report)
+      // ============================================================
+      else if (notification.type === 'lesson_report') {
+        await sql`
+          UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
+        `;
+
+        const payload = notification.payload as {
+          student_id: string;
+          lesson_id?: string;
+          class_name?: string;
+          오늘수업?: string;
+          학습포인트?: string;
+          선생님코멘트?: string;
+          원장님코멘트?: string;
+          숙제?: string;
+          복습팁?: string;
+        };
+
+        const lessonMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생의 수업 리포트입니다.\n\n📚 오늘 수업: ${payload.오늘수업 || '-'}\n💡 학습 포인트: ${payload.학습포인트 || '-'}\n👨‍🏫 선생님 코멘트: ${payload.선생님코멘트 || '-'}\n👔 원장님 코멘트: ${payload.원장님코멘트 || '-'}\n📝 숙제: ${payload.숙제 || '-'}\n📖 복습 팁: ${payload.복습팁 || '-'}\n\n오늘도 수고했어요!`;
+
+        const telegramConfig: TelegramConfig = {
+          botToken: env.TELEGRAM_BOT_TOKEN,
+          chatId: env.TELEGRAM_CHAT_ID,
+        };
+        const solapiConfig: SolapiConfig = {
+          apiKey: env.SOLAPI_API_KEY,
+          apiSecret: env.SOLAPI_API_SECRET,
+          pfId: env.SOLAPI_PF_ID,
+          senderPhone: env.SOLAPI_SENDER_PHONE,
+        };
+
+        const notificationResult = await sendNotificationWithBalancePostgres({
+          sql,
+          telegramConfig,
+          solapiConfig,
+          orgId: student.org_id,
+          orgName: student.org_name,
+          studentId,
+          studentName: student.name,
+          type: 'lesson_report',
+          recipientPhone: student.parent_phone,
+          message: lessonMessage,
+          templateVariables: {
+            기관명: student.org_name,
+            학생명: student.name,
+            오늘수업: payload.오늘수업 || '-',
+            학습포인트: payload.학습포인트 || '-',
+            선생님코멘트: payload.선생님코멘트 || '-',
+            원장님코멘트: payload.원장님코멘트 || '-',
+            숙제: payload.숙제 || '-',
+            복습팁: payload.복습팁 || '-',
+          },
+        });
+
+        if (!notificationResult.success) {
+          console.log(`[NotificationQueue] Lesson report notification failed (${notificationResult.error}): ${student.name}`);
+        }
+
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW()
+          WHERE id = ${notification.id}
+        `;
+        console.log(`[NotificationQueue] Lesson_report completed: ${student.name}`);
+      }
+
+      // ============================================================
+      // 알 수 없는 타입
+      // ============================================================
+      else {
+        console.log(`[NotificationQueue] Unknown type: ${notification.type}`);
+        await sql`
+          UPDATE notification_queue
+          SET status = 'failed', error_message = 'Unknown notification type'
+          WHERE id = ${notification.id}
+        `;
       }
 
     } catch (error) {

@@ -54,22 +54,23 @@ interface StudentAttendance {
   status: 'present' | 'absent' | 'late' | 'excused'
 }
 
-// 뿌리오 알림톡 변수 (각 50자 이하)
+// Solapi 알림톡 변수 (각 50자 이하) - Solapi 템플릿 변수명에 맞춤
+// Solapi 등록 변수: 기관명, 학생명, 오늘수업, 학습포인트, 선생님코멘트, 원장님코멘트, 숙제, 복습팁
 interface AlimtalkVariables {
-  수업요약: string
+  오늘수업: string
   학습포인트: string
   선생님코멘트: string
   원장님코멘트: string
-  숙제내용: string
+  숙제: string
   복습팁: string
 }
 
 const ALIMTALK_VARIABLE_LABELS: Record<keyof AlimtalkVariables, string> = {
-  수업요약: '오늘 수업',
+  오늘수업: '오늘 수업',
   학습포인트: '학습 포인트',
   선생님코멘트: '선생님 코멘트',
   원장님코멘트: '원장님 코멘트',
-  숙제내용: '숙제 내용',
+  숙제: '숙제 내용',
   복습팁: '복습 팁',
 }
 
@@ -117,15 +118,20 @@ export default function LessonsPage() {
   const [isGeneratingFinalMessage, setIsGeneratingFinalMessage] = useState(false)
   const [isSendingNotification, setIsSendingNotification] = useState(false)
 
-  // 알림톡 변수 상태 (뿌리오용 - 각 50자 이하)
+  // 알림톡 변수 상태 (Solapi용 - 각 50자 이하, Solapi 변수명에 맞춤)
   const [alimtalkVariables, setAlimtalkVariables] = useState<AlimtalkVariables>({
-    수업요약: '',
+    오늘수업: '',
     학습포인트: '',
     선생님코멘트: '',
     원장님코멘트: '',
-    숙제내용: '',
+    숙제: '',
     복습팁: '',
   })
+
+  // 50자 초과 여부 검사 - 하나라도 초과하면 true
+  const hasOverLimitVariables = Object.values(alimtalkVariables).some(
+    (value) => value.length > MAX_VARIABLE_LENGTH
+  )
   const [isSaved, setIsSaved] = useState(false)
   const [selectedClass, setSelectedClass] = useState<string>('all')
   const [selectedTeacher, setSelectedTeacher] = useState<string>('all')
@@ -278,11 +284,11 @@ export default function LessonsPage() {
     setIsHomeworkExpanded(false)
     setIsSaved(false)
     setAlimtalkVariables({
-      수업요약: '',
+      오늘수업: '',
       학습포인트: '',
       선생님코멘트: '',
       원장님코멘트: '',
-      숙제내용: '',
+      숙제: '',
       복습팁: '',
     })
     setIsDialogOpen(true)
@@ -414,6 +420,8 @@ export default function LessonsPage() {
           content: formData.content || selectedLesson.content,
           homework_assigned: formData.homework_assigned || selectedLesson.homework_assigned,
           final_message: formData.final_message,
+          // PPURIO 알림톡 템플릿 변수 전달
+          templateVariables: alimtalkVariables,
         }),
       })
 
@@ -1830,13 +1838,13 @@ export default function LessonsPage() {
 
 #{학생명} 학부모님 안녕하세요.
 
-📚 오늘 수업: ${alimtalkVariables.수업요약 || '(미입력)'}
+📚 오늘 수업: ${alimtalkVariables.오늘수업 || '(미입력)'}
 📝 학습 포인트: ${alimtalkVariables.학습포인트 || '(미입력)'}
 
 💬 선생님: ${alimtalkVariables.선생님코멘트 || '(미입력)'}${alimtalkVariables.원장님코멘트 ? `
 🏫 원장님: ${alimtalkVariables.원장님코멘트}` : ''}
 
-✏️ 숙제: ${alimtalkVariables.숙제내용 || '(미입력)'}
+✏️ 숙제: ${alimtalkVariables.숙제 || '(미입력)'}
 💡 복습 팁: ${alimtalkVariables.복습팁 || '(미입력)'}
 
 감사합니다.`}
@@ -1869,8 +1877,9 @@ export default function LessonsPage() {
                 {(userRole === 'owner') && (
                   <Button
                     onClick={handleSendNotification}
-                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent}
-                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : "default"}
+                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent || hasOverLimitVariables}
+                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : hasOverLimitVariables ? "destructive" : "default"}
+                    title={hasOverLimitVariables ? "50자를 초과한 항목이 있습니다" : undefined}
                   >
                     {isSendingNotification ? (
                       <>
@@ -1879,6 +1888,8 @@ export default function LessonsPage() {
                       </>
                     ) : (selectedLesson as any)?.notification_sent ? (
                       '발송완료'
+                    ) : hasOverLimitVariables ? (
+                      '50자 초과'
                     ) : (
                       '알림톡 보내기'
                     )}
@@ -1906,8 +1917,9 @@ export default function LessonsPage() {
                 {(userRole === 'owner') && (
                   <Button
                     onClick={handleSendNotification}
-                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent || !isSaved}
-                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : "default"}
+                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent || !isSaved || hasOverLimitVariables}
+                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : hasOverLimitVariables ? "destructive" : "default"}
+                    title={hasOverLimitVariables ? "50자를 초과한 항목이 있습니다" : !isSaved ? "먼저 저장해주세요" : undefined}
                   >
                     {isSendingNotification ? (
                       <>
@@ -1916,6 +1928,8 @@ export default function LessonsPage() {
                       </>
                     ) : (selectedLesson as any)?.notification_sent ? (
                       '발송완료'
+                    ) : hasOverLimitVariables ? (
+                      '50자 초과'
                     ) : (
                       '알림톡 보내기'
                     )}

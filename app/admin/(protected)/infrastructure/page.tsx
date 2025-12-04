@@ -351,7 +351,7 @@ export default function InfrastructurePage() {
       <Card>
         <CardHeader>
           <CardTitle>현재 아키텍처</CardTitle>
-          <CardDescription>GoldPen 인프라 구성</CardDescription>
+          <CardDescription>골드펜 인프라 구성</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2">

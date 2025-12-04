@@ -37,6 +37,8 @@ export async function GET(request: Request) {
     const service = getServiceClient()
     const { searchParams } = new URL(request.url)
     const slug = searchParams.get('orgSlug') || searchParams.get('slug')
+    const excludeBilling = searchParams.get('excludeBilling') === 'true'
+    const billingOnly = searchParams.get('billingOnly') === 'true'
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -84,7 +86,7 @@ export async function GET(request: Request) {
 
     const { data: organization, error: orgError } = await db
       .from('organizations')
-      .select('id, name, slug, logo_url')
+      .select('id, name, slug, logo_url, credit_balance')
       .eq('id', orgId)
       .single()
 
@@ -133,6 +135,136 @@ export async function GET(request: Request) {
       return Response.json({ error: '조직을 찾을 수 없습니다' }, { status: 404 })
     }
 
+    // billingOnly인 경우 billing 데이터만 반환
+    if (billingOnly) {
+      // 알림톡 이용내역 (message_logs)
+      const { data: alimtalkLogs } = await db
+        .from('message_logs')
+        .select('id, message_type, recipient_count, total_price, status, description, created_at')
+        .eq('org_id', orgId)
+        .eq('message_type', 'kakao_alimtalk')
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      const kakaoTalkUsages = (alimtalkLogs || []).map((r: any) => {
+        let dateStr = '-'
+        if (r.created_at) {
+          const date = new Date(r.created_at)
+          const kstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000)
+          dateStr = `${kstDate.getUTCFullYear()}-${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kstDate.getUTCDate()).padStart(2, '0')} ${String(kstDate.getUTCHours()).padStart(2, '0')}:${String(kstDate.getUTCMinutes()).padStart(2, '0')}`
+        }
+        return {
+          id: r.id,
+          date: dateStr,
+          type: r.description?.split(':')[0] || '알림톡',
+          recipient: r.description?.split(':')[1]?.trim() || '-',
+          count: r.recipient_count || 1,
+          cost: r.total_price || 0,
+          status: r.status === 'sent' ? 'success' : 'failed',
+        }
+      })
+
+      // SMS/기타 이용내역
+      const { data: serviceLogs } = await db
+        .from('message_logs')
+        .select('id, message_type, recipient_count, total_price, status, description, created_at')
+        .eq('org_id', orgId)
+        .neq('message_type', 'kakao_alimtalk')
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      const serviceUsages = (serviceLogs || []).map((r: any) => {
+        let dateStr = '-'
+        if (r.created_at) {
+          const date = new Date(r.created_at)
+          const kstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000)
+          dateStr = `${kstDate.getUTCFullYear()}-${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kstDate.getUTCDate()).padStart(2, '0')} ${String(kstDate.getUTCHours()).padStart(2, '0')}:${String(kstDate.getUTCMinutes()).padStart(2, '0')}`
+        }
+        return {
+          id: r.id,
+          date: dateStr,
+          type: r.message_type === 'sms' ? 'SMS' : r.message_type,
+          description: r.description || '-',
+          count: r.recipient_count || 1,
+          cost: r.total_price || 0,
+        }
+      })
+
+      // 이번 달 알림톡 유형별 집계
+      const currentMonth = new Date().toISOString().slice(0, 7)
+      const thisMonthLogs = (alimtalkLogs || []).filter((r: any) =>
+        r.created_at && r.created_at.startsWith(currentMonth)
+      )
+
+      const summaryMap: Record<string, { count: number; cost: number }> = {}
+      for (const log of thisMonthLogs) {
+        const desc = log.description || ''
+        let notificationType: string | null = null
+        // 알림톡 설정 페이지의 TEMPLATE_LABELS와 일치하도록 10개 항목
+        if (desc.startsWith('late:') || desc.includes('_late:')) notificationType = '지각 알림'
+        else if (desc.startsWith('absent:') || desc.includes('_absent:')) notificationType = '결석 알림'
+        else if (desc.startsWith('checkin:')) notificationType = '입실/등원 알림'
+        else if (desc.startsWith('checkout:')) notificationType = '퇴실/하원 알림'
+        else if (desc.startsWith('out:') || desc.startsWith('study_out:')) notificationType = '외출 알림'
+        else if (desc.startsWith('return:') || desc.startsWith('study_return:')) notificationType = '복귀 알림'
+        else if (desc.startsWith('daily_report:') || desc.startsWith('study_report:')) notificationType = '당일 학습 진행 결과'
+        else if (desc.startsWith('lesson_report:')) notificationType = '수업일지 전송'
+        else if (desc.startsWith('exam_result:')) notificationType = '시험 결과'
+        else if (desc.startsWith('assignment_new:') || desc.startsWith('assignment:')) notificationType = '과제 알림'
+
+        // 매칭되지 않는 알림은 집계하지 않음
+        if (!notificationType) continue
+
+        if (!summaryMap[notificationType]) {
+          summaryMap[notificationType] = { count: 0, cost: 0 }
+        }
+        summaryMap[notificationType].count += 1
+        summaryMap[notificationType].cost += log.total_price || 0
+      }
+
+      const usageSummary = Object.entries(summaryMap).map(([type, data]) => ({
+        type,
+        count: data.count,
+        cost: data.cost,
+      })).sort((a, b) => b.count - a.count)
+
+      // 충전/차감 내역
+      const { data: txLogs } = await db
+        .from('credit_transactions')
+        .select('id, type, amount, balance_after, description, created_at')
+        .eq('org_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      const creditTransactions = (txLogs || []).map((r: any) => ({
+        id: r.id,
+        date: r.created_at ? new Date(r.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-',
+        type: r.type,
+        amount: r.amount,
+        balanceAfter: r.balance_after,
+        description: r.description || '-',
+      }))
+
+      return Response.json({
+        kakaoTalkUsages,
+        serviceUsages,
+        usageSummary,
+        creditTransactions,
+      })
+    }
+
+    // excludeBilling이거나 기본 요청인 경우 (billing 제외)
+    // 알림톡 이용내역 (message_logs) - excludeBilling이 아닌 경우에만
+    let kakaoTalkUsages: any[] = []
+    let serviceUsages: any[] = []
+    let usageSummary: any[] = []
+    let creditTransactions: any[] = []
+    let branches: any[] = []
+    let rooms: any[] = []
+
+    // excludeBilling이 false인 경우 billing 데이터도 로드 (하위 호환성)
+    // 주로 excludeBilling=true로 호출되므로 이 블록은 거의 실행되지 않음
+
     return Response.json({
       organization: {
         id: organization.id,
@@ -143,8 +275,16 @@ export async function GET(request: Request) {
         address: orgSettings?.address,
         phone: orgSettings?.phone,
         email: orgSettings?.email,
+        credit_balance: organization.credit_balance || 0,
         settings: orgSettings?.settings || {},
-      }
+      },
+      branches,
+      rooms,
+      // billing 데이터는 billingOnly=true로 별도 요청
+      kakaoTalkUsages,
+      serviceUsages,
+      usageSummary,
+      creditTransactions,
     })
   } catch (error: any) {
     console.error('[Settings GET] Unexpected error:', error)

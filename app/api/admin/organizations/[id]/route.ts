@@ -102,41 +102,90 @@ export async function GET(
       .select('*', { count: 'exact', head: true })
       .eq('org_id', id)
 
-    // Get monthly revenue (current month)
-    const startOfMonth = new Date()
-    startOfMonth.setDate(1)
-    startOfMonth.setHours(0, 0, 0, 0)
+    // Get revenue data - payment_records 테이블에서 completed 상태의 금액 합계
+    // 매출정산 페이지와 동일한 데이터 소스 사용
+    const url = new URL(request.url)
+    const selectedMonth = url.searchParams.get('month') // YYYY-MM format
 
+    const now = new Date()
+    let targetMonth: { year: number; month: number }
+
+    if (selectedMonth) {
+      const [year, month] = selectedMonth.split('-').map(Number)
+      targetMonth = { year, month }
+    } else {
+      targetMonth = { year: now.getFullYear(), month: now.getMonth() + 1 }
+    }
+
+    const startOfMonth = new Date(targetMonth.year, targetMonth.month - 1, 1)
+    const endOfMonth = new Date(targetMonth.year, targetMonth.month, 0) // 해당 월의 마지막 날
+    const startOfMonthStr = startOfMonth.toISOString().split('T')[0]
+    const endOfMonthStr = endOfMonth.toISOString().split('T')[0]
+
+    // 선택된 월의 매출
     const { data: revenueData } = await adminClient
-      .from('billing_transactions')
-      .select('amount, category, created_at')
+      .from('payment_records')
+      .select('amount, payment_date, student_name, revenue_category_name')
       .eq('org_id', id)
-      .gte('created_at', startOfMonth.toISOString())
+      .eq('status', 'completed')
+      .gte('payment_date', startOfMonthStr)
+      .lte('payment_date', endOfMonthStr)
 
     const monthlyRevenue = (revenueData || []).reduce(
       (sum, tx) => sum + (Number(tx.amount) || 0),
       0
     )
 
-    // Get Kakao usage stats
-    const { data: kakaoUsage } = await adminClient
-      .from('kakao_talk_usages')
-      .select('cost, status')
+    // 누적 매출 (전체)
+    const { data: totalRevenueData } = await adminClient
+      .from('payment_records')
+      .select('amount')
       .eq('org_id', id)
-      .gte('sent_at', startOfMonth.toISOString())
+      .eq('status', 'completed')
 
+    const totalRevenue = (totalRevenueData || []).reduce(
+      (sum, tx) => sum + (Number(tx.amount) || 0),
+      0
+    )
+
+    // 월별 데이터가 있는 월 목록 (드롭다운용)
+    const { data: allPayments } = await adminClient
+      .from('payment_records')
+      .select('payment_date')
+      .eq('org_id', id)
+      .eq('status', 'completed')
+      .order('payment_date', { ascending: false })
+
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const monthsFromData = (allPayments || [])
+      .map(p => p.payment_date?.substring(0, 7))
+      .filter(Boolean)
+
+    // 현재 달을 항상 포함 + 데이터가 있는 월들
+    const availableMonths = [...new Set([currentMonth, ...monthsFromData])].sort().reverse()
+
+    // Get Kakao usage stats from notification_logs (Solapi 알림톡)
+    const { data: notificationLogs } = await adminClient
+      .from('notification_logs')
+      .select('type, status')
+      .eq('org_id', id)
+      .gte('created_at', startOfMonth.toISOString())
+
+    const ALIMTALK_PRICE = 100 // 알림톡 판매가 100원
+    const successCount = (notificationLogs || []).filter(n => n.status === 'sent').length
     const kakaoStats = {
-      total_count: kakaoUsage?.length || 0,
-      total_cost: (kakaoUsage || []).reduce((sum, u) => sum + (Number(u.cost) || 0), 0),
-      success_count: (kakaoUsage || []).filter(u => u.status === 'success').length,
+      total_count: notificationLogs?.length || 0,
+      total_cost: successCount * ALIMTALK_PRICE,
+      success_count: successCount,
     }
 
-    // Get recent billing transactions
+    // Get recent payment records (최근 결제 내역) - 매출정산 페이지와 동일
     const { data: recentTransactions } = await adminClient
-      .from('billing_transactions')
-      .select('id, amount, category, description, created_at')
+      .from('payment_records')
+      .select('id, amount, student_name, revenue_category_name, payment_date, status')
       .eq('org_id', id)
-      .order('created_at', { ascending: false })
+      .eq('status', 'completed')
+      .order('payment_date', { ascending: false })
       .limit(10)
 
     return Response.json({
@@ -150,6 +199,9 @@ export async function GET(
         class_count: classCount || 0,
         room_count: roomCount || 0,
         monthly_revenue: monthlyRevenue,
+        total_revenue: totalRevenue,
+        available_months: availableMonths,
+        selected_month: `${targetMonth.year}-${String(targetMonth.month).padStart(2, '0')}`,
         kakao_stats: kakaoStats,
         recent_transactions: recentTransactions || [],
       },

@@ -65,7 +65,7 @@ export default function DemoLoginPage() {
 
       toast({
         title: '데모 로그인 성공',
-        description: 'GoldPen 데모 사이트에 오신 것을 환영합니다!',
+        description: '골드펜 데모 사이트에 오신 것을 환영합니다!',
       })
 
       // 데모 계정은 goldpen org로 이동
@@ -88,7 +88,7 @@ export default function DemoLoginPage() {
         <div className="flex items-center justify-center mb-4">
           <img
             src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png"
-            alt="GoldPen"
+            alt="골드펜"
             className="h-12"
           />
         </div>
@@ -98,7 +98,7 @@ export default function DemoLoginPage() {
           <Sparkles className="h-5 w-5 text-primary" />
         </div>
         <CardDescription className="text-center">
-          아래 버튼을 눌러 GoldPen의 모든 기능을 체험해보세요
+          아래 버튼을 눌러 골드펜의 모든 기능을 체험해보세요
         </CardDescription>
       </CardHeader>
       <CardContent>

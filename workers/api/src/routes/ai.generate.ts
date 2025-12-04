@@ -25,14 +25,18 @@ interface GenerateRequest {
   context?: string;
 }
 
-// 뿌리오 알림톡 변수 (각 50자 이하)
+// Solapi 알림톡 변수 (각 50자 이하) - Solapi 템플릿 변수명에 맞춤
+// Solapi 등록 변수: 기관명, 학생명, 오늘수업, 학습포인트, 선생님코멘트, 원장님코멘트, 숙제, 복습팁
 interface AlimtalkVariables {
-  수업요약: string;      // 오늘 배운 핵심 내용
-  학습포인트: string;    // 집중한 학습 포인트
-  선생님코멘트: string;  // 격려/칭찬 메시지
-  원장님코멘트: string;  // 응원 메시지
-  숙제내용: string;      // 구체적 숙제
+  오늘수업: string;      // 오늘 배운 핵심 내용 (사실 기반)
+  학습포인트: string;    // 학생의 강점/집중 포인트 (AI 창작)
+  선생님코멘트: string;  // 선생님 격려/칭찬 메시지
+  원장님코멘트: string;  // 원장님 응원 메시지
+  숙제: string;          // 구체적 숙제
   복습팁: string;        // 가정학습 조언
+  // 이전 변수명 호환용 (optional)
+  선생님?: string;
+  원장님?: string;
 }
 
 /**
@@ -171,22 +175,32 @@ ${lesson?.homework || "숙제 없음"}${feedbackInfo}
 위 내용을 종합하여 500~800자 메시지를 작성하세요.
 학생 이름 부분은 반드시 {{학생명}}으로 표기하세요!`;
     } else if (type === "alimtalk_variables") {
-      // 뿌리오 알림톡용 변수 생성 (각 50자 이하)
+      // Solapi 알림톡용 변수 생성 (각 50자 이하, 최대한 활용)
       const orgName = lesson?.org_name || "학원";
 
-      // 엄격한 50자 제한 프롬프트
-      systemPrompt = `You are a JSON generator for Korean lesson reports. OUTPUT ONLY VALID JSON.
+      // 50자 최대 활용 프롬프트 - Solapi 템플릿 변수명 사용
+      // JSON 형식 강제 - 설명/사고과정 출력 금지
+      systemPrompt = `당신은 JSON 생성기입니다. 오직 JSON만 출력하세요.
 
-CRITICAL RULES:
-1. Each value MUST be UNDER 45 Korean characters (NOT 50, leave margin)
-2. Each sentence MUST be COMPLETE - end with 요/다/세요/니다
-3. NEVER use "..." or cut off mid-sentence
-4. Keep it short but meaningful
-5. If no director feedback provided: 원장님코멘트 = ""
-6. Warm, encouraging tone in Korean
+[절대 규칙]
+- 설명, 사고과정, 분석 절대 출력 금지
+- 반드시 { 로 시작해서 } 로 끝나는 JSON만 출력
+- 마크다운 코드블록(\`\`\`) 사용 금지
 
-Output format (copy exactly, fill values):
-{"수업요약":"","학습포인트":"","선생님코멘트":"","원장님코멘트":"","숙제내용":"","복습팁":""}`;
+[각 필드 작성법 - 반드시 45-50자로 작성!]
+- 오늘수업: 배운 내용을 구체적으로 (예: "이차함수의 그래프 특성과 꼭짓점 좌표를 구하는 방법을 익혔어요")
+- 학습포인트: 학생 장점 창작, 오늘수업과 다르게! (예: "어려운 문제도 포기하지 않고 끝까지 집중해서 풀어내는 모습이 인상적이었어요")
+- 선생님코멘트: 구체적 칭찬 (예: "오늘 수업에서 질문도 많이 하고 적극적으로 참여해줘서 정말 감사해요")
+- 원장님코멘트: 응원 메시지 (없으면 "")
+- 숙제: 구체적으로 (예: "교재 52페이지부터 55페이지까지의 연습문제를 풀고 오답노트를 정리하세요")
+- 복습팁: 구체적 방법 (예: "오늘 배운 공식을 노트에 3번 적고, 예제 문제를 다시 풀어보는 것이 좋아요")
+
+[중요]
+- 모든 값은 45-50자 한국어로! 너무 짧으면 안됨!
+- ~요, ~어요, ~세요로 끝내기
+
+출력:
+{"오늘수업":"45-50자","학습포인트":"45-50자","선생님코멘트":"45-50자","원장님코멘트":"","숙제":"45-50자","복습팁":"45-50자"}`;
 
       // 피드백 정보 구성
       let feedbackInfo = "";
@@ -197,19 +211,18 @@ Output format (copy exactly, fill values):
         feedbackInfo += `\n원장님 피드백: ${lesson.director_feedback}`;
       }
 
-      prompt = `Generate JSON for this lesson (each value UNDER 45 chars, complete sentences):
-
-수업반: ${lesson?.class_name || "수업"}
-내용: ${lesson?.content || "수업 진행"}
+      prompt = `수업반: ${lesson?.class_name || "수업"}
+수업 내용: ${lesson?.content || "수업 진행"}
 숙제: ${lesson?.homework || "없음"}${feedbackInfo}
 
-Remember: MAX 45 characters per value, complete sentences only!`;
+위 정보로 JSON을 생성하세요. 반드시 { 로 시작하세요.`;
     } else {
       return c.json({ error: "Invalid type. Use 'feedback', 'director_feedback', 'final_message', or 'alimtalk_variables'" }, 400);
     }
 
     // final_message와 alimtalk_variables는 더 긴 응답이 필요
-    const maxTokens = type === "final_message" ? 1536 : type === "alimtalk_variables" ? 1500 : 512;
+    // Qwen3 모델은 thinking 모드로 reasoning이 길어지므로 충분한 토큰 할당
+    const maxTokens = type === "final_message" ? 2048 : type === "alimtalk_variables" ? 2500 : 512;
 
     // alimtalk_variables는 temperature 0으로 일관된 JSON 출력
     const temp = type === "alimtalk_variables" ? 0 : 0.7;
@@ -255,14 +268,32 @@ Remember: MAX 45 characters per value, complete sentences only!`;
           }
           // Qwen3 reasoning models put response in reasoning_content
           else if (typeof message.reasoning_content === "string" && message.reasoning_content) {
-            // Extract actual response from reasoning content (usually at the end)
             const reasoning = message.reasoning_content;
-            // Look for the final answer after reasoning
-            const lines = reasoning.split('\n');
-            // Get the last substantial content
-            generatedText = lines.filter((l: string) => l.trim().length > 10).slice(-3).join('\n').trim();
-            if (!generatedText) {
-              generatedText = reasoning.slice(-500).trim();
+
+            // For alimtalk_variables, try to extract JSON from reasoning
+            if (type === "alimtalk_variables") {
+              // Look for JSON pattern in reasoning content
+              const jsonMatch = reasoning.match(/\{[^{}]*"오늘수업"[^{}]*\}/);
+              if (jsonMatch) {
+                generatedText = jsonMatch[0];
+              } else {
+                // Try to find any JSON-like structure
+                const firstBrace = reasoning.lastIndexOf('{');
+                const lastBrace = reasoning.lastIndexOf('}');
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                  generatedText = reasoning.substring(firstBrace, lastBrace + 1);
+                } else {
+                  // Fallback: get the last part
+                  generatedText = reasoning.slice(-500).trim();
+                }
+              }
+            } else {
+              // For other types, get the last substantial content
+              const lines = reasoning.split('\n');
+              generatedText = lines.filter((l: string) => l.trim().length > 10).slice(-3).join('\n').trim();
+              if (!generatedText) {
+                generatedText = reasoning.slice(-500).trim();
+              }
             }
           }
         } else if (typeof choice.text === "string") {
@@ -303,12 +334,13 @@ Remember: MAX 45 characters per value, complete sentences only!`;
           return text?.trim() || "";
         };
 
+        // 이전 변수명(선생님, 원장님)과 새 변수명(선생님코멘트, 원장님코멘트) 모두 지원
         const validatedVariables: AlimtalkVariables = {
-          수업요약: safeString(variables.수업요약),
+          오늘수업: safeString(variables.오늘수업),
           학습포인트: safeString(variables.학습포인트),
-          선생님코멘트: safeString(variables.선생님코멘트),
-          원장님코멘트: safeString(variables.원장님코멘트),
-          숙제내용: safeString(variables.숙제내용),
+          선생님코멘트: safeString(variables.선생님코멘트 || variables.선생님),
+          원장님코멘트: safeString(variables.원장님코멘트 || variables.원장님),
+          숙제: safeString(variables.숙제),
           복습팁: safeString(variables.복습팁),
         };
 

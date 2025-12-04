@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Building2, Users, TrendingUp, Activity, MessageSquare, Send, Wallet, DollarSign, CreditCard, ArrowUpCircle, ArrowDownCircle, PiggyBank } from 'lucide-react'
+import { Building2, Users, TrendingUp, Activity, MessageSquare, Send, Wallet, DollarSign, CreditCard, ArrowUpCircle, ArrowDownCircle, PiggyBank, Gift, AlertTriangle } from 'lucide-react'
 
 interface Stats {
   totalOrganizations: number
@@ -29,6 +29,8 @@ interface MessageStats {
 
 interface CreditStats {
   totalBalance: number
+  paidBalance: number    // 유료 충전금 잔액 (실제 수익)
+  freeBalance: number    // 무료 제공금 잔액 (부채)
   orgsWithBalance: number
   today: {
     used: number
@@ -84,6 +86,8 @@ export default function AdminDashboard() {
   })
   const [creditStats, setCreditStats] = useState<CreditStats>({
     totalBalance: 0,
+    paidBalance: 0,
+    freeBalance: 0,
     orgsWithBalance: 0,
     today: { used: 0, charged: 0, paidCharged: 0, freeCharged: 0 },
     month: { used: 0, charged: 0, paidCharged: 0, freeCharged: 0, year: 0, month: 0 },
@@ -224,7 +228,7 @@ export default function AdminDashboard() {
       <div>
         <h1 className="text-3xl font-bold mb-2">대시보드</h1>
         <p className="text-muted-foreground">
-          GoldPen 플랫폼의 전체 현황을 한눈에 확인하세요
+          골드펜 플랫폼의 전체 현황을 한눈에 확인하세요
         </p>
       </div>
 
@@ -407,20 +411,37 @@ export default function AdminDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {/* 전체 충전금 잔액 */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+            {/* 유료 충전금 잔액 (실제 수익) */}
             <div className="p-4 border rounded-lg bg-blue-50">
               <div className="flex items-center gap-2 mb-2">
                 <div className="p-2 rounded-lg bg-blue-100">
                   <PiggyBank className="h-4 w-4 text-blue-600" />
                 </div>
-                <span className="text-sm font-medium">전체 잔액</span>
+                <span className="text-sm font-medium">유료 충전금</span>
               </div>
               <div className="text-2xl font-bold text-blue-600">
-                {creditStats.totalBalance.toLocaleString()}원
+                {creditStats.paidBalance.toLocaleString()}원
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                {creditStats.orgsWithBalance}개 조직 보유 중
+                실제 수익 ({creditStats.orgsWithBalance}개 조직)
+              </div>
+            </div>
+
+            {/* 무료 제공금 잔액 (부채) */}
+            <div className="p-4 border rounded-lg bg-yellow-50 border-yellow-200">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="p-2 rounded-lg bg-yellow-100">
+                  <Gift className="h-4 w-4 text-yellow-600" />
+                </div>
+                <span className="text-sm font-medium">무료 제공금</span>
+              </div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {creditStats.freeBalance.toLocaleString()}원
+              </div>
+              <div className="text-xs text-yellow-700 mt-1 flex items-center gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                부채 (미사용 무료 충전)
               </div>
             </div>
 

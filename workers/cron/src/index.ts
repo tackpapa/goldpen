@@ -23,7 +23,7 @@ interface Env {
 
 // Queue 메시지 타입
 interface AttendanceMessage {
-  type: 'check_academy' | 'check_study' | 'check_class' | 'check_commute' | 'daily_report' | 'assignment_remind' | 'process_commute_absent' | 'process_notification_queue';
+  type: 'check_academy' | 'check_study' | 'check_class' | 'check_commute' | 'daily_report' | 'process_commute_absent' | 'process_notification_queue';
   orgId: string;
   orgName: string;
   orgType: string;
@@ -138,7 +138,7 @@ export default {
         });
       }
 
-      // 2. 일일 학습 리포트 발송 (조직별 설정 시간에 발송)
+      // 2. 일일 학습 리포트 발송 (독서실 기능 사용 학생 대상, 조직별 설정 시간에 발송)
       // 현재 시간을 "HH:00" 형식으로 변환 (분이 0일 때만 실행)
       if (nowMinute === 0) {
         const nowTimeStr = `${nowHour.toString().padStart(2, '0')}:00`;
@@ -150,6 +150,7 @@ export default {
           const orgReportTime = (settings.dailyReportTime as string) || '22:00';
 
           // 현재 시간이 조직의 설정 시간과 일치하면 큐에 추가
+          // 모든 기관 대상 (독서실 기능 사용 여부는 Queue에서 판단)
           if (nowTimeStr === orgReportTime) {
             console.log(`[Cron] Queuing daily report for ${org.name} (time: ${orgReportTime})`);
             messages.push({
@@ -168,26 +169,7 @@ export default {
         }
       }
 
-      // 3. 과제 마감 알림 발송 (매일 09:00 KST)
-      if (nowHour === 9 && nowMinute === 0) {
-        console.log(`[Cron] Queuing assignment reminders...`);
-        for (const org of organizations) {
-          messages.push({
-            body: {
-              type: 'assignment_remind',
-              orgId: org.id,
-              orgName: org.name,
-              orgType: org.type,
-              weekday: todayWeekday,
-              todayDate,
-              nowMinutes,
-              timestamp: Date.now(),
-            }
-          });
-        }
-      }
-
-      // 4. 독서실 결석 처리 (매일 23:50 KST)
+      // 3. 독서실 결석 처리 (매일 23:50 KST)
       if (nowHour === 23 && nowMinute === 50) {
         console.log(`[Cron] Queuing commute absence processing...`);
         for (const org of organizations) {
@@ -339,7 +321,6 @@ export default {
           "check_class (매 분, all)",
           "check_commute (매 분, all - 통학 출결)",
           "daily_report (조직별 설정 시간, 기본 22:00 KST)",
-          "assignment_remind (매일 09:00 KST)",
           "process_commute_absent (매일 23:50 KST, study_cafe)"
         ],
         testEndpoint: "POST /test?type=check_class&org_id=xxx"

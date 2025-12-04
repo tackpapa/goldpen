@@ -161,6 +161,14 @@ export async function POST(request: Request) {
     if (orgError) {
       console.error('[Auth Register] Organization creation error:', orgError)
 
+      // 🔴 auth.users 롤백 - organization 생성 실패 시 auth.users 삭제
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+        console.log('[Auth Register] Rolled back auth.users:', authData.user.id)
+      } catch (rollbackError) {
+        console.error('[Auth Register] Failed to rollback auth.users:', rollbackError)
+      }
+
       // 중복 slug 에러 처리
       if (orgError.code === '23505' || orgError.message.includes('duplicate key') || orgError.message.includes('unique')) {
         return Response.json(
@@ -171,10 +179,8 @@ export async function POST(request: Request) {
 
       return Response.json(
         {
-          error: '기관 생성에 실패했습니다',
+          error: '기관 생성에 실패했습니다. 다시 시도해주세요.',
           details: orgError.message,
-          cleanup_required: true,
-          user_id: authData.user.id
         },
         { status: 500 }
       )
@@ -194,14 +200,22 @@ export async function POST(request: Request) {
 
     if (userError) {
       console.error('[Auth Register] User profile creation error:', userError)
+
       // 프로필 생성 실패 시 organizations 삭제 (CASCADE로 인해 관련 데이터 자동 삭제)
       await supabaseAdmin.from('organizations').delete().eq('id', org.id)
+
+      // 🔴 auth.users 롤백
+      try {
+        await supabaseAdmin.auth.admin.deleteUser(authData.user.id)
+        console.log('[Auth Register] Rolled back auth.users:', authData.user.id)
+      } catch (rollbackError) {
+        console.error('[Auth Register] Failed to rollback auth.users:', rollbackError)
+      }
+
       return Response.json(
         {
-          error: '사용자 프로필 생성에 실패했습니다',
+          error: '사용자 프로필 생성에 실패했습니다. 다시 시도해주세요.',
           details: userError.message,
-          cleanup_required: true,
-          user_id: authData.user.id
         },
         { status: 500 }
       )

@@ -6,10 +6,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
-import { sendNotification, createExamResultMessage } from "../lib/notifications";
+import { insertNotificationQueueBatch, type NotificationQueuePayload } from "../lib/notifications";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapScore = (row: any) => ({
   id: row.id,
@@ -123,58 +122,39 @@ app.post("/", async (c) => {
       }
 
       // 알림 발송 (새로 등록된 점수만)
+      // notification_queue에 추가하면 Queue Worker가 1분 내에 처리
       if (sendNotificationFlag && savedScores.length > 0) {
-        for (const scoreRow of savedScores) {
-          try {
-            // 학생 정보 조회
-            const studentRes = await client.query(
-              `SELECT s.*, o.name as org_name
-               FROM students s
-               JOIN organizations o ON o.id = s.org_id
-               WHERE s.id = $1`,
-              [scoreRow.student_id]
-            );
-
-            if (!studentRes.rows[0]) continue;
-
-            const student = studentRes.rows[0];
-
+        try {
+          // 배치로 notification_queue에 추가
+          const queueItems: NotificationQueuePayload[] = savedScores.map((scoreRow: any) => {
             // 해당 학생의 등수 조회
             const rankRow = allScoresRes.rows.find(
               (r: any) => r.student_id === scoreRow.student_id
             );
 
-            const message = createExamResultMessage(
-              student.org_name,
-              student.name,
-              exam.title,
-              scoreRow.score,
-              exam.max_score || 100,
-              rankRow?.rank,
-              totalStudents
-            );
+            return {
+              student_id: scoreRow.student_id,
+              exam_id: examId,
+              exam_title: exam.title,
+              score: scoreRow.score,
+              total_score: exam.max_score || 100,
+              rank: rankRow?.rank,
+              total_students: totalStudents,
+            };
+          });
 
-            await sendNotification(client, c.env, {
-              orgId: DEMO_ORG,
-              orgName: student.org_name,
-              studentId: scoreRow.student_id,
-              studentName: student.name,
-              type: "exam_result",
-              recipientPhone: student.parent_phone,
-              message,
-              metadata: {
-                exam_id: examId,
-                exam_title: exam.title,
-                score: scoreRow.score,
-                max_score: exam.max_score,
-                rank: rankRow?.rank,
-                total_students: totalStudents,
-              },
-            });
-          } catch (notifError) {
-            console.error("[exams/:id/scores] notification error:", notifError);
-            // 알림 실패해도 점수 저장은 성공
+          if (queueItems.length > 0) {
+            const result = await insertNotificationQueueBatch(
+              client,
+              exam.org_id,
+              'exam_result',
+              queueItems
+            );
+            console.log(`[exams/:id/scores] Queued ${result.insertedCount}/${queueItems.length} notifications`);
           }
+        } catch (notifError) {
+          console.error("[exams/:id/scores] notification queue error:", notifError);
+          // 알림 실패해도 점수 저장은 성공
         }
       }
 

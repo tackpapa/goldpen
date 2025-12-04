@@ -87,7 +87,7 @@ export default function AdminLoginPage() {
           </div>
           <CardTitle className="text-2xl text-center">관리자 로그인</CardTitle>
           <CardDescription className="text-center">
-            GoldPen 시스템 관리자 전용 로그인
+            골드펜 시스템 관리자 전용 로그인
           </CardDescription>
         </CardHeader>
         <CardContent>

@@ -71,20 +71,21 @@ export async function POST(request: Request) {
       }
 
       // homework 테이블의 submitted_count 업데이트
-      const { data: submittedCount } = await db
+      const { count: submittedCount } = await db
         .from('homework_submissions')
-        .select('id', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('homework_id', validated.homework_id)
         .in('status', ['submitted', 'late'])
 
       await db
         .from('homework')
-        .update({ submitted_count: submittedCount?.length || 0 })
+        .update({ submitted_count: submittedCount || 0 })
         .eq('id', validated.homework_id)
 
       return Response.json({
         success: true,
         message: `${validated.student_ids.length}명의 제출이 기록되었습니다`,
+        submitted_count: submittedCount || 0,
         data
       })
     } else {
@@ -124,20 +125,21 @@ export async function POST(request: Request) {
       }
 
       // homework 테이블의 submitted_count 업데이트
-      const { data: submittedCount } = await db
+      const { count: submittedCount } = await db
         .from('homework_submissions')
-        .select('id', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('homework_id', validated.homework_id)
         .in('status', ['submitted', 'late'])
 
       await db
         .from('homework')
-        .update({ submitted_count: submittedCount?.length || 0 })
+        .update({ submitted_count: submittedCount || 0 })
         .eq('id', validated.homework_id)
 
       return Response.json({
         success: true,
         message: '제출이 기록되었습니다',
+        submitted_count: submittedCount || 0,
         data
       })
     }

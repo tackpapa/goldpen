@@ -20,14 +20,28 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { MessageSquare, TrendingUp, Building2, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react'
+import {
+  MessageSquare,
+  TrendingUp,
+  Building2,
+  AlertCircle,
+  CheckCircle2,
+  RefreshCw,
+  DollarSign,
+  Wallet,
+  PiggyBank
+} from 'lucide-react'
 import { format } from 'date-fns'
+import { ko } from 'date-fns/locale'
 
 interface Stats {
   total_count: number
-  total_cost: number
   success_count: number
   failed_count: number
+  total_recipients: number
+  total_price: number
+  total_cost: number
+  total_profit: number
 }
 
 interface OrgUsage {
@@ -35,6 +49,7 @@ interface OrgUsage {
   org_name: string
   org_type: string
   count: number
+  recipients: number
   cost: number
 }
 
@@ -47,23 +62,51 @@ interface RecentUsage {
   message: string
   cost: number
   status: string
+  error_message?: string
   sent_at: string
 }
 
 interface DailyStat {
   date: string
   count: number
-  cost: number
+  success: number
+  failed: number
 }
 
+interface TypeBreakdown {
+  type: string
+  total: number
+  success: number
+  failed: number
+}
+
+// 실제 notification_logs의 type에 맞는 레이블 (DB CHECK constraint 기준)
+// 허용된 타입: study_late, study_absent, class_late, class_absent, commute_late, commute_absent,
+//              academy_checkin, academy_checkout, study_checkin, study_checkout,
+//              study_out, study_return, lesson_report, exam_result, assignment_new, daily_report
 const typeLabels: Record<string, string> = {
-  attendance: '출결 알림',
-  payment: '결제 알림',
-  schedule: '일정 알림',
-  homework: '과제 알림',
-  exam: '시험 알림',
-  consultation: '상담 알림',
-  general: '일반 알림',
+  // 등원/하원 (학원)
+  academy_checkin: '학원 등원',
+  academy_checkout: '학원 하원',
+  // 등원/하원 (스터디카페)
+  study_checkin: '스터디 등원',
+  study_checkout: '스터디 하원',
+  // 지각
+  class_late: '수업 지각',
+  study_late: '독서실 지각',
+  commute_late: '출근 지각',
+  // 결석
+  class_absent: '수업 결석',
+  study_absent: '독서실 결석',
+  commute_absent: '출근 결석',
+  // 외출/복귀
+  study_out: '외출',
+  study_return: '복귀',
+  // 리포트
+  lesson_report: '수업 리포트',
+  daily_report: '일일 리포트',
+  exam_result: '시험 결과',
+  assignment_new: '과제 알림',
 }
 
 const orgTypeLabels: Record<string, string> = {
@@ -76,13 +119,17 @@ const orgTypeLabels: Record<string, string> = {
 export default function KakaoPage() {
   const [stats, setStats] = useState<Stats>({
     total_count: 0,
-    total_cost: 0,
     success_count: 0,
     failed_count: 0,
+    total_recipients: 0,
+    total_price: 0,
+    total_cost: 0,
+    total_profit: 0,
   })
   const [orgUsages, setOrgUsages] = useState<OrgUsage[]>([])
   const [recentUsages, setRecentUsages] = useState<RecentUsage[]>([])
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([])
+  const [typeBreakdown, setTypeBreakdown] = useState<TypeBreakdown[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [period, setPeriod] = useState('30')
 
@@ -95,13 +142,20 @@ export default function KakaoPage() {
       setIsLoading(true)
       const response = await fetch(`/api/admin/kakao?period=${period}`)
       if (response.ok) {
-        const data = await response.json() as { stats?: any; organization_usages?: any[]; recent_usages?: any[]; daily_stats?: any[] }
+        const data = await response.json() as {
+          stats?: Stats
+          organization_usages?: OrgUsage[]
+          recent_usages?: RecentUsage[]
+          daily_stats?: DailyStat[]
+          type_breakdown?: TypeBreakdown[]
+        }
         if (data.stats) {
           setStats(data.stats)
         }
         setOrgUsages(data.organization_usages || [])
         setRecentUsages(data.recent_usages || [])
         setDailyStats(data.daily_stats || [])
+        setTypeBreakdown(data.type_breakdown || [])
       }
     } catch (error) {
       console.error('Failed to load kakao data:', error)
@@ -136,12 +190,28 @@ export default function KakaoPage() {
       bgColor: 'bg-red-100',
     },
     {
-      title: '총 비용',
-      value: `${stats.total_cost.toLocaleString()}원`,
-      icon: TrendingUp,
-      description: '예상 비용',
+      title: '총 매출',
+      value: `${stats.total_price.toLocaleString()}원`,
+      icon: DollarSign,
+      description: '기관 청구 금액',
       color: 'text-purple-600',
       bgColor: 'bg-purple-100',
+    },
+    {
+      title: '원가',
+      value: `${stats.total_cost.toLocaleString()}원`,
+      icon: Wallet,
+      description: '실제 발송 비용',
+      color: 'text-orange-600',
+      bgColor: 'bg-orange-100',
+    },
+    {
+      title: '순이익',
+      value: `${stats.total_profit.toLocaleString()}원`,
+      icon: PiggyBank,
+      description: '매출 - 원가',
+      color: 'text-emerald-600',
+      bgColor: 'bg-emerald-100',
     },
   ]
 
@@ -150,8 +220,8 @@ export default function KakaoPage() {
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">카카오 알림톡 모니터링</h1>
         <div className="animate-pulse space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
+          <div className="grid gap-4 md:grid-cols-6">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
               <div key={i} className="h-32 bg-muted rounded"></div>
             ))}
           </div>
@@ -187,7 +257,8 @@ export default function KakaoPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      {/* 통계 카드 - 6개 */}
+      <div className="grid gap-4 md:grid-cols-6">
         {statCards.map((card) => {
           const Icon = card.icon
           return (
@@ -211,7 +282,51 @@ export default function KakaoPage() {
         })}
       </div>
 
+      {/* 알림 유형별 통계 + 기관별 사용량 */}
       <div className="grid gap-4 md:grid-cols-2">
+        {/* 알림 유형별 통계 */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              알림 유형별 통계
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {typeBreakdown.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  데이터가 없습니다
+                </p>
+              ) : (
+                typeBreakdown.map((item) => (
+                  <div key={item.type} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="min-w-[90px] justify-center">
+                        {typeLabels[item.type] || item.type}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-sm text-green-600">
+                        {item.success}건
+                      </span>
+                      {item.failed > 0 && (
+                        <span className="text-sm text-red-600">
+                          실패 {item.failed}건
+                        </span>
+                      )}
+                      <span className="text-sm font-medium w-16 text-right">
+                        {item.total.toLocaleString()}건
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 기관별 사용량 */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -251,42 +366,63 @@ export default function KakaoPage() {
             </div>
           </CardContent>
         </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              일별 발송 추이 (최근 7일)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {dailyStats.map((day) => (
-                <div key={day.date} className="flex items-center justify-between">
-                  <span className="text-sm">{format(new Date(day.date), 'MM/dd (E)')}</span>
-                  <div className="flex-1 mx-4">
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-blue-500 rounded-full"
-                        style={{
-                          width: `${Math.min(
-                            (day.count / Math.max(...dailyStats.map((d) => d.count || 1))) * 100,
-                            100
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <span className="text-sm font-medium w-16 text-right">
-                    {day.count.toLocaleString()}건
-                  </span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
+      {/* 일별 통계 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            일별 발송 추이 (최근 7일)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            {dailyStats.map((day) => (
+              <div key={day.date} className="flex items-center justify-between">
+                <span className="text-sm w-24">
+                  {format(new Date(day.date), 'MM/dd (E)', { locale: ko })}
+                </span>
+                <div className="flex-1 mx-4">
+                  <div className="h-4 bg-muted rounded-full overflow-hidden flex">
+                    <div
+                      className="h-full bg-green-500"
+                      style={{
+                        width: `${
+                          day.count > 0
+                            ? (day.success / Math.max(...dailyStats.map((d) => d.count || 1))) * 100
+                            : 0
+                        }%`,
+                      }}
+                    />
+                    {day.failed > 0 && (
+                      <div
+                        className="h-full bg-red-500"
+                        style={{
+                          width: `${
+                            (day.failed / Math.max(...dailyStats.map((d) => d.count || 1))) * 100
+                          }%`,
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 w-32 justify-end">
+                  <span className="text-sm font-medium text-green-600">
+                    {day.success}
+                  </span>
+                  {day.failed > 0 && (
+                    <span className="text-sm text-red-600">/ {day.failed}</span>
+                  )}
+                  <span className="text-sm text-muted-foreground">건</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 최근 발송 내역 */}
       <Card>
         <CardHeader>
           <CardTitle>최근 발송 내역</CardTitle>
@@ -329,13 +465,18 @@ export default function KakaoPage() {
                       <TableCell>
                         <Badge
                           className={
-                            usage.status === 'success'
+                            usage.status === 'sent'
                               ? 'bg-green-100 text-green-800'
                               : 'bg-red-100 text-red-800'
                           }
                         >
-                          {usage.status === 'success' ? '성공' : '실패'}
+                          {usage.status === 'sent' ? '성공' : '실패'}
                         </Badge>
+                        {usage.error_message && (
+                          <span className="text-xs text-red-500 ml-1" title={usage.error_message}>
+                            (!)
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {usage.cost.toLocaleString()}원

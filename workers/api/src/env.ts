@@ -16,10 +16,21 @@ export interface Env {
   // External APIs
   NEXT_PUBLIC_OPENWEATHER_API_KEY?: string
 
-  // Kakao AlimTalk (Solapi)
+  // Kakao AlimTalk (Solapi) - Legacy, 추후 제거 예정
   KAKAO_ALIMTALK_API_KEY?: string
   KAKAO_ALIMTALK_SECRET_KEY?: string
   KAKAO_ALIMTALK_SENDER_KEY?: string
+
+  // Solapi 알림톡 API (PPURIO 대체)
+  SOLAPI_API_KEY?: string
+  SOLAPI_API_SECRET?: string
+  SOLAPI_PF_ID?: string         // 카카오 채널 pfId
+  SOLAPI_SENDER_PHONE?: string  // 발신번호
+
+  // PPURIO 알림톡 API (deprecated - Solapi로 대체)
+  PPURIO_ACCOUNT?: string
+  PPURIO_AUTH_KEY?: string
+  PPURIO_SENDER_PROFILE?: string
 
   // Telegram (모니터링용)
   TELEGRAM_BOT_TOKEN?: string

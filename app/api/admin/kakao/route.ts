@@ -24,6 +24,7 @@ async function checkSuperAdmin(request: Request) {
 }
 
 // GET /api/admin/kakao - 카카오 알림톡 전체 현황
+// 데이터 소스: notification_logs (발송 기록) + message_logs (비용/손익)
 export async function GET(request: Request) {
   try {
     const adminClient = createAdminClient()
@@ -43,56 +44,104 @@ export async function GET(request: Request) {
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - parseInt(period))
 
-    // 전체 통계
-    let statsQuery = adminClient
-      .from('kakao_talk_usages')
-      .select('cost, status', { count: 'exact' })
-      .gte('sent_at', startDate.toISOString())
+    // ========================================
+    // 1. 전체 통계 - notification_logs 기준 (발송 건수)
+    // ========================================
+    let notifStatsQuery = adminClient
+      .from('notification_logs')
+      .select('status', { count: 'exact' })
+      .gte('created_at', startDate.toISOString())
 
     if (orgId) {
-      statsQuery = statsQuery.eq('org_id', orgId)
+      notifStatsQuery = notifStatsQuery.eq('org_id', orgId)
     }
 
-    const { data: allUsages, count: totalCount } = await statsQuery
+    const { data: notifData, count: totalNotifCount } = await notifStatsQuery
 
-    // 통계 계산
-    const stats = {
-      total_count: totalCount || 0,
-      total_cost: 0,
-      success_count: 0,
-      failed_count: 0,
-    }
-
-    if (allUsages) {
-      allUsages.forEach((usage) => {
-        stats.total_cost += Number(usage.cost) || 0
-        if (usage.status === 'success') {
-          stats.success_count++
-        } else {
-          stats.failed_count++
-        }
+    // 성공/실패 카운트
+    let successCount = 0
+    let failedCount = 0
+    if (notifData) {
+      notifData.forEach((n) => {
+        if (n.status === 'sent') successCount++
+        else failedCount++
       })
     }
 
-    // 기관별 사용량
-    const { data: orgUsages } = await adminClient
-      .from('kakao_talk_usages')
-      .select('org_id, cost')
-      .gte('sent_at', startDate.toISOString())
+    // ========================================
+    // 2. 비용 통계 - message_logs 기준 (kakao_alimtalk만)
+    // ========================================
+    let msgStatsQuery = adminClient
+      .from('message_logs')
+      .select('recipient_count, total_price, total_cost, profit')
+      .eq('message_type', 'kakao_alimtalk')
+      .gte('created_at', startDate.toISOString())
 
-    const orgStats: Record<string, { count: number; cost: number }> = {}
-    if (orgUsages) {
-      orgUsages.forEach((usage) => {
-        if (!orgStats[usage.org_id]) {
-          orgStats[usage.org_id] = { count: 0, cost: 0 }
+    if (orgId) {
+      msgStatsQuery = msgStatsQuery.eq('org_id', orgId)
+    }
+
+    const { data: msgData } = await msgStatsQuery
+
+    let totalRecipients = 0
+    let totalPrice = 0
+    let totalCost = 0
+    let totalProfit = 0
+
+    if (msgData) {
+      msgData.forEach((m) => {
+        totalRecipients += m.recipient_count || 0
+        totalPrice += m.total_price || 0
+        totalCost += m.total_cost || 0
+        totalProfit += m.profit || 0
+      })
+    }
+
+    const stats = {
+      total_count: totalNotifCount || 0,
+      success_count: successCount,
+      failed_count: failedCount,
+      total_recipients: totalRecipients,
+      total_price: totalPrice,    // 총 판매가 (기관에 청구된 금액)
+      total_cost: totalCost,      // 총 원가 (실제 발송 비용)
+      total_profit: totalProfit,  // 순이익
+    }
+
+    // ========================================
+    // 3. 기관별 사용량 - notification_logs 기준
+    // ========================================
+    const { data: orgNotifs } = await adminClient
+      .from('notification_logs')
+      .select('org_id')
+      .gte('created_at', startDate.toISOString())
+
+    const orgCounts: Record<string, number> = {}
+    if (orgNotifs) {
+      orgNotifs.forEach((n) => {
+        orgCounts[n.org_id] = (orgCounts[n.org_id] || 0) + 1
+      })
+    }
+
+    // 기관별 비용 정보 (message_logs)
+    const { data: orgMsgs } = await adminClient
+      .from('message_logs')
+      .select('org_id, recipient_count, total_price')
+      .eq('message_type', 'kakao_alimtalk')
+      .gte('created_at', startDate.toISOString())
+
+    const orgCosts: Record<string, { recipients: number; price: number }> = {}
+    if (orgMsgs) {
+      orgMsgs.forEach((m) => {
+        if (!orgCosts[m.org_id]) {
+          orgCosts[m.org_id] = { recipients: 0, price: 0 }
         }
-        orgStats[usage.org_id].count++
-        orgStats[usage.org_id].cost += Number(usage.cost) || 0
+        orgCosts[m.org_id].recipients += m.recipient_count || 0
+        orgCosts[m.org_id].price += m.total_price || 0
       })
     }
 
     // 기관 정보 가져오기
-    const orgIds = Object.keys(orgStats)
+    const orgIds = [...new Set([...Object.keys(orgCounts), ...Object.keys(orgCosts)])]
     let orgDetails: Record<string, { name: string; type: string }> = {}
 
     if (orgIds.length > 0) {
@@ -108,46 +157,61 @@ export async function GET(request: Request) {
       }
     }
 
-    const organizationUsages = Object.entries(orgStats)
-      .map(([orgId, data]) => ({
+    const organizationUsages = orgIds
+      .map((orgId) => ({
         org_id: orgId,
         org_name: orgDetails[orgId]?.name || 'Unknown',
         org_type: orgDetails[orgId]?.type || 'unknown',
-        count: data.count,
-        cost: data.cost,
+        count: orgCounts[orgId] || 0,
+        recipients: orgCosts[orgId]?.recipients || 0,
+        cost: orgCosts[orgId]?.price || 0,
       }))
       .sort((a, b) => b.count - a.count)
 
-    // 최근 발송 내역
+    // ========================================
+    // 4. 최근 발송 내역 - notification_logs + students JOIN
+    // ========================================
     let recentQuery = adminClient
-      .from('kakao_talk_usages')
+      .from('notification_logs')
       .select(`
         id,
         org_id,
-        student_name,
+        student_id,
         type,
         message,
-        cost,
         status,
-        sent_at
+        error_message,
+        created_at,
+        students!inner(name)
       `)
-      .order('sent_at', { ascending: false })
+      .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
     if (orgId) {
       recentQuery = recentQuery.eq('org_id', orgId)
     }
 
-    const { data: recentUsages } = await recentQuery
+    const { data: recentNotifs } = await recentQuery
 
-    // 기관 정보 추가
-    const recentWithOrg = (recentUsages || []).map((usage) => ({
-      ...usage,
-      org_name: orgDetails[usage.org_id]?.name || 'Unknown',
+    // 기관 이름 매핑
+    const recentWithOrg = (recentNotifs || []).map((n: any) => ({
+      id: n.id,
+      org_id: n.org_id,
+      org_name: orgDetails[n.org_id]?.name || 'Unknown',
+      student_name: n.students?.name || '-',
+      type: n.type,
+      message: n.message,
+      status: n.status,
+      error_message: n.error_message,
+      sent_at: n.created_at,
+      cost: 100, // 기본 건당 비용 (message_pricing에서 조회 가능)
     }))
 
-    // 일별 통계 (최근 7일)
-    const dailyStats: { date: string; count: number; cost: number }[] = []
+    // ========================================
+    // 5. 일별 통계 (최근 7일) - notification_logs 기준
+    // ========================================
+    const dailyStats: { date: string; count: number; success: number; failed: number }[] = []
+
     for (let i = 6; i >= 0; i--) {
       const date = new Date()
       date.setDate(date.getDate() - i)
@@ -157,32 +221,60 @@ export async function GET(request: Request) {
       const dayEnd = new Date(dateStr)
       dayEnd.setDate(dayEnd.getDate() + 1)
 
-      const { data: dayUsages } = await adminClient
-        .from('kakao_talk_usages')
-        .select('cost')
-        .gte('sent_at', dayStart.toISOString())
-        .lt('sent_at', dayEnd.toISOString())
+      const { data: dayNotifs } = await adminClient
+        .from('notification_logs')
+        .select('status')
+        .gte('created_at', dayStart.toISOString())
+        .lt('created_at', dayEnd.toISOString())
 
-      let dayCount = 0
-      let dayCost = 0
-      if (dayUsages) {
-        dayCount = dayUsages.length
-        dayCost = dayUsages.reduce((sum, u) => sum + (Number(u.cost) || 0), 0)
+      let daySuccess = 0
+      let dayFailed = 0
+      if (dayNotifs) {
+        dayNotifs.forEach((n) => {
+          if (n.status === 'sent') daySuccess++
+          else dayFailed++
+        })
       }
 
       dailyStats.push({
         date: dateStr,
-        count: dayCount,
-        cost: dayCost,
+        count: (dayNotifs?.length || 0),
+        success: daySuccess,
+        failed: dayFailed,
       })
     }
+
+    // ========================================
+    // 6. 알림 유형별 통계
+    // ========================================
+    const { data: typeNotifs } = await adminClient
+      .from('notification_logs')
+      .select('type, status')
+      .gte('created_at', startDate.toISOString())
+
+    const typeStats: Record<string, { total: number; success: number; failed: number }> = {}
+    if (typeNotifs) {
+      typeNotifs.forEach((n) => {
+        if (!typeStats[n.type]) {
+          typeStats[n.type] = { total: 0, success: 0, failed: 0 }
+        }
+        typeStats[n.type].total++
+        if (n.status === 'sent') typeStats[n.type].success++
+        else typeStats[n.type].failed++
+      })
+    }
+
+    const typeBreakdown = Object.entries(typeStats)
+      .map(([type, data]) => ({ type, ...data }))
+      .sort((a, b) => b.total - a.total)
 
     return Response.json({
       stats,
       organization_usages: organizationUsages.slice(0, 10),
       recent_usages: recentWithOrg,
       daily_stats: dailyStats,
-      total: totalCount || 0,
+      type_breakdown: typeBreakdown,
+      total: totalNotifCount || 0,
       page,
       limit,
     })

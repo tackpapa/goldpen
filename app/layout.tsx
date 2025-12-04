@@ -7,7 +7,7 @@ import { AuthProvider } from '@/contexts/auth-context'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'GoldPen - 학원/러닝센터 통합 운영 시스템',
+  title: '골드펜 - 학원/러닝센터 통합 운영 시스템',
   description: '상담부터 정산까지, 교육 기관 운영을 자동화하는 올인원 플랫폼',
   icons: {
     icon: 'https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-icon.png',

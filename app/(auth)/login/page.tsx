@@ -80,7 +80,7 @@ export default function LoginPage() {
         <div className="flex items-center justify-center mb-4">
           <img
             src="https://ipqhhqduppzvsqwwzjkp.supabase.co/storage/v1/object/public/assets/branding/goldpen-logo.png"
-            alt="GoldPen"
+            alt="골드펜"
             className="h-12"
           />
         </div>

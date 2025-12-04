@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
-import { sendNotification, createLessonReportMessage } from "../lib/notifications";
+import { insertNotificationQueueBatch, type NotificationQueuePayload } from "../lib/notifications";
 
 const app = new Hono<{ Bindings: Env }>();
-const DEMO_ORG = "dddd0000-0000-0000-0000-000000000000";
 
 const mapLesson = (row: any) => ({
   id: row.id,
@@ -123,17 +122,28 @@ app.delete("/", async (c) => {
 });
 
 // POST /api/lessons/:id/notify - 수업 리포트 알림톡 발송
+// notification_queue에 추가하면 Queue Worker가 1분 내에 처리
 app.post("/notify", async (c) => {
   const id = c.req.param("id");
   try {
     const body = await c.req.json();
     const {
-      class_name,
-      lesson_date,
       content,
       homework_assigned,
-      final_message,
-    } = body || {};
+      // 알림톡 템플릿 변수 (프론트엔드에서 전송)
+      templateVariables,
+    } = body || {} as {
+      content?: string;
+      homework_assigned?: string;
+      templateVariables?: {
+        오늘수업?: string;
+        학습포인트?: string;
+        선생님코멘트?: string;
+        원장님코멘트?: string;
+        숙제?: string;
+        복습팁?: string;
+      };
+    };
 
     const result = await withClient(c.env, async (client) => {
       // 수업일지 조회
@@ -154,7 +164,7 @@ app.post("/notify", async (c) => {
 
       // 해당 수업(반)의 학생들 조회
       const studentsResult = await client.query(
-        `SELECT s.id, s.name, s.parent_phone
+        `SELECT s.id, s.name
          FROM students s
          JOIN class_enrollments ce ON ce.student_id = s.id
          WHERE ce.class_id = $1 AND (ce.status IS NULL OR ce.status = 'active')`,
@@ -162,63 +172,39 @@ app.post("/notify", async (c) => {
       );
 
       if (studentsResult.rows.length === 0) {
-        // 학생이 없으면 테스트용으로 텔레그램만 발송
-        const testMessage = final_message || createLessonReportMessage(
-          lesson.org_name || "GoldPen",
-          "테스트 학생",
-          class_name || lesson.class_name || "수업",
-          lesson_date || lesson.lesson_date,
-          content || lesson.content,
-          homework_assigned || lesson.homework_assigned
-        );
-
-        await sendNotification(client, c.env, {
-          orgId: lesson.org_id,
-          orgName: lesson.org_name || "GoldPen",
-          studentId: "test-student-id",
-          studentName: "테스트 학생",
-          type: "lesson_report",
-          classId: lesson.class_id,
-          className: class_name || lesson.class_name,
-          message: testMessage,
-          metadata: { lesson_id: id, lesson_date, content },
-        });
-
-        return { success: true, telegram_sent: true, students_notified: 0 };
+        return { success: false, error: "해당 반에 등록된 학생이 없습니다" };
       }
 
-      // 각 학생에게 알림 발송
-      let successCount = 0;
-      for (const student of studentsResult.rows as any[]) {
-        // final_message에 {{학생명}} 플레이스홀더가 있으면 실제 학생 이름으로 치환
-        let message = final_message
-          ? final_message.replace(/\{\{학생명\}\}/g, student.name)
-          : createLessonReportMessage(
-              lesson.org_name || "GoldPen",
-              student.name,
-              class_name || lesson.class_name || "수업",
-              lesson_date || lesson.lesson_date,
-              content || lesson.content,
-              homework_assigned || lesson.homework_assigned
-            );
+      // 템플릿 변수 준비
+      const vars = templateVariables || {
+        오늘수업: content || lesson.content || '-',
+        학습포인트: '-',
+        선생님코멘트: '-',
+        원장님코멘트: '-',
+        숙제: homework_assigned || lesson.homework_assigned || '-',
+        복습팁: '-',
+      };
 
-        const notifResult = await sendNotification(client, c.env, {
-          orgId: lesson.org_id,
-          orgName: lesson.org_name || "GoldPen",
-          studentId: student.id,
-          studentName: student.name,
-          type: "lesson_report",
-          classId: lesson.class_id,
-          className: class_name || lesson.class_name,
-          recipientPhone: student.parent_phone,
-          message,
-          metadata: { lesson_id: id, lesson_date, content },
-        });
+      // 배치로 notification_queue에 추가
+      const queueItems: NotificationQueuePayload[] = (studentsResult.rows as any[]).map((student) => ({
+        student_id: student.id,
+        lesson_id: id,
+        오늘수업: vars.오늘수업 || '-',
+        학습포인트: vars.학습포인트 || '-',
+        선생님코멘트: vars.선생님코멘트 || '-',
+        원장님코멘트: vars.원장님코멘트 || '-',
+        숙제: vars.숙제 || '-',
+        복습팁: vars.복습팁 || '-',
+      }));
 
-        if (notifResult.success) {
-          successCount++;
-        }
-      }
+      const queueResult = await insertNotificationQueueBatch(
+        client,
+        lesson.org_id,
+        'lesson_report',
+        queueItems
+      );
+
+      console.log(`[lessons/:id/notify] Queued ${queueResult.insertedCount}/${queueItems.length} notifications`);
 
       // notification_sent 업데이트
       await client.query(
@@ -228,9 +214,9 @@ app.post("/notify", async (c) => {
 
       return {
         success: true,
-        telegram_sent: true,
-        students_notified: successCount,
+        queued: queueResult.insertedCount,
         total_students: studentsResult.rows.length,
+        studentNames: (studentsResult.rows as any[]).map(s => s.name),
       };
     });
 
@@ -238,7 +224,12 @@ app.post("/notify", async (c) => {
       return c.json({ success: false, error: result.error }, 404);
     }
 
-    return c.json(result, 200);
+    return c.json({
+      success: true,
+      message: `${(result as any).queued}명에게 알림이 예약되었습니다. 1분 내에 발송됩니다.`,
+      queued: (result as any).queued,
+      total_students: (result as any).total_students,
+    }, 200);
   } catch (error: any) {
     console.error("[lessons/:id/notify] POST error:", error);
     return c.json({ success: false, error: error.message }, 500);

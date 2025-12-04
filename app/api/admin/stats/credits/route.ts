@@ -70,6 +70,34 @@ export async function GET(request: Request) {
       }
     }
 
+    // 1-1. 전체 충전/사용 내역으로 유료/무료 잔액 계산
+    const { data: allTransactions } = await adminClient
+      .from('credit_transactions')
+      .select('amount, type')
+
+    let totalPaidCharged = 0  // 전체 유료 충전 총액
+    let totalFreeCharged = 0  // 전체 무료 충전 총액
+    let totalUsed = 0         // 전체 사용 총액
+
+    if (allTransactions) {
+      for (const t of allTransactions) {
+        if (t.amount > 0) {
+          if (t.type === 'paid') {
+            totalPaidCharged += t.amount
+          } else {
+            totalFreeCharged += t.amount
+          }
+        } else {
+          totalUsed += Math.abs(t.amount)
+        }
+      }
+    }
+
+    // 무료 먼저 사용 가정: 무료 잔액 = max(0, 무료 충전 - 사용)
+    // 유료 잔액 = 총 잔액 - 무료 잔액
+    const freeBalance = Math.max(0, totalFreeCharged - totalUsed)
+    const paidBalance = totalBalance - freeBalance
+
     // 2. 오늘 사용된 충전금 (음수 amount의 합)
     const { data: todayUsage, error: todayError } = await adminClient
       .from('credit_transactions')
@@ -184,6 +212,8 @@ export async function GET(request: Request) {
 
     return Response.json({
       totalBalance,
+      paidBalance,      // 유료 충전금 잔액 (실제 수익)
+      freeBalance,      // 무료 제공금 잔액 (부채)
       orgsWithBalance,
       today: {
         used: todayUsed,

@@ -26,13 +26,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { MoreHorizontal, Plus, Search } from 'lucide-react'
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Search, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface User {
@@ -54,6 +55,8 @@ export default function UsersPage() {
   const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const limit = 20
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<User | null>(null)
 
   const roleLabels: Record<string, string> = {
     super_admin: '슈퍼 어드민',
@@ -133,33 +136,17 @@ export default function UsersPage() {
         const user = row.original
 
         return (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="h-8 w-8 p-0">
-                <span className="sr-only">메뉴 열기</span>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>작업</DropdownMenuLabel>
-              <DropdownMenuItem
-                onClick={() => router.push(`/admin/users/${user.id}` as any)}
-              >
-                상세 보기
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => router.push(`/admin/users/${user.id}/edit` as any)}
-              >
-                수정
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleDelete(user.id)}
-                className="text-red-600"
-              >
-                삭제
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+            onClick={() => {
+              setUserToDelete(user)
+              setDeleteDialogOpen(true)
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
         )
       },
     },
@@ -205,11 +192,11 @@ export default function UsersPage() {
     }
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('정말로 이 사용자를 삭제하시겠습니까?')) return
+  const handleDelete = async () => {
+    if (!userToDelete) return
 
     try {
-      const response = await fetch(`/api/admin/users/${id}`, {
+      const response = await fetch(`/api/admin/users/${userToDelete.id}`, {
         method: 'DELETE',
       })
 
@@ -218,6 +205,9 @@ export default function UsersPage() {
       }
     } catch (error) {
       console.error('Failed to delete user:', error)
+    } finally {
+      setDeleteDialogOpen(false)
+      setUserToDelete(null)
     }
   }
 
@@ -237,17 +227,11 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">사용자 관리</h1>
-          <p className="text-muted-foreground">
-            전체 {totalCount}명의 사용자를 관리하고 있습니다
-          </p>
-        </div>
-        <Button onClick={() => router.push('/admin/users/new')}>
-          <Plus className="mr-2 h-4 w-4" />
-          사용자 추가
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold mb-2">사용자 관리</h1>
+        <p className="text-muted-foreground">
+          전체 {totalCount}명의 사용자를 관리하고 있습니다
+        </p>
       </div>
 
       <div className="flex items-center gap-4">
@@ -341,6 +325,37 @@ export default function UsersPage() {
           </Button>
         </div>
       </div>
+
+      {/* 삭제 확인 모달 */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>사용자 삭제</DialogTitle>
+            <DialogDescription>
+              정말로 <span className="font-semibold">{userToDelete?.name}</span> 사용자를 삭제하시겠습니까?
+              <br />
+              이 작업은 되돌릴 수 없습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialogOpen(false)
+                setUserToDelete(null)
+              }}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+            >
+              삭제
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

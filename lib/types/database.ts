@@ -318,6 +318,7 @@ export interface Organization {
   subscription_plan?: string
   max_users?: number
   max_students?: number
+  credit_balance?: number // 충전금 잔액
   settings: {
     auto_sms: boolean
     auto_email: boolean

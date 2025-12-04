@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env } from "../env";
 import { withClient } from "../lib/db";
 import { getOrgIdFromRequest } from "../lib/supabase";
-import { sendNotification, createAssignmentNewMessage } from "../lib/notifications";
+import { insertNotificationQueueBatch, type NotificationQueuePayload } from "../lib/notifications";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -81,43 +81,44 @@ app.post("/", async (c) => {
       const homeworkData = rows[0] ? mapHw(rows[0]) : null;
 
       // 과제 생성 알림 발송 (class_id가 있는 경우에만)
+      // notification_queue에 추가하면 Queue Worker가 1분 내에 처리
       if (homeworkData && send_notification && class_id) {
         try {
           // 해당 반의 학생들 조회
           const studentsRes = await client.query(
-            `SELECT ce.student_id, ce.student_name, s.parent_phone, o.name as org_name, c.name as class_name
+            `SELECT ce.student_id, c.name as class_name
              FROM class_enrollments ce
-             JOIN students s ON s.id = ce.student_id
-             JOIN organizations o ON o.id = s.org_id
              JOIN classes c ON c.id = ce.class_id
              WHERE ce.class_id = $1 AND ce.status = 'active'`,
             [class_id]
           );
 
-          for (const student of studentsRes.rows) {
-            const message = createAssignmentNewMessage(
-              student.org_name,
-              student.class_name,
-              title,
-              due_date || "미정",
-              description
-            );
+          // 마감일 포맷팅 (YYYY-MM-DD 또는 미정)
+          const formattedDueDate = due_date
+            ? new Date(due_date).toISOString().split('T')[0]
+            : '미정';
 
-            await sendNotification(client, c.env, {
-              orgId: orgId,
-              orgName: student.org_name,
-              studentId: student.student_id,
-              studentName: student.student_name,
-              type: "assignment_new",
-              classId: class_id,
-              className: student.class_name,
-              recipientPhone: student.parent_phone,
-              message,
-              metadata: { homework_id: homeworkData.id, title, due_date },
-            });
+          // 배치로 notification_queue에 추가
+          const queueItems: NotificationQueuePayload[] = studentsRes.rows.map((student: any) => ({
+            student_id: student.student_id,
+            class_id: class_id,
+            class_name: student.class_name,
+            title: title,
+            due_date: formattedDueDate,
+            description: description || undefined,
+          }));
+
+          if (queueItems.length > 0) {
+            const result = await insertNotificationQueueBatch(
+              client,
+              orgId,
+              'assignment_new',
+              queueItems
+            );
+            console.log(`[homework] Queued ${result.insertedCount}/${queueItems.length} notifications`);
           }
         } catch (notifError) {
-          console.error("[homework] notification error:", notifError);
+          console.error("[homework] notification queue error:", notifError);
           // 알림 실패해도 과제 생성은 성공
         }
       }

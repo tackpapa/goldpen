@@ -560,8 +560,14 @@ export default function HomeworkPage() {
   const totalHomework = homework.length
   const activeHomework = homework.filter((hw) => hw.status === 'active').length
   const completedHomework = homework.filter((hw) => hw.status === 'completed').length
+  // NaN 방지: total_students가 0인 경우 0%로 처리
   const avgSubmissionRate = homework.length > 0
-    ? Math.round(homework.reduce((sum, hw) => sum + (hw.submitted_count / hw.total_students * 100), 0) / homework.length)
+    ? Math.round(
+        homework.reduce((sum, hw) => {
+          const rate = hw.total_students > 0 ? (hw.submitted_count / hw.total_students * 100) : 0
+          return sum + rate
+        }, 0) / homework.length
+      )
     : 0
 
   return (

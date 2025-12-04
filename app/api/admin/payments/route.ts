@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 
     const offset = (page - 1) * limit
 
-    // 기본 쿼리
+    // 기본 쿼리 - 충전 내역만 (amount > 0)
     let query = adminClient
       .from('credit_transactions')
       .select(`
@@ -58,6 +58,7 @@ export async function GET(request: Request) {
         organizations!inner(id, name),
         users(id, name, email)
       `, { count: 'exact' })
+      .gt('amount', 0)
       .order('created_at', { ascending: false })
 
     // 필터 적용
@@ -87,10 +88,11 @@ export async function GET(request: Request) {
       return Response.json({ error: error.message }, { status: 500 })
     }
 
-    // 통계 계산
+    // 통계 계산 - 충전 내역만 (amount > 0)
     let statsQuery = adminClient
       .from('credit_transactions')
       .select('amount, type')
+      .gt('amount', 0)
 
     if (type !== 'all') {
       statsQuery = statsQuery.eq('type', type)
@@ -108,21 +110,16 @@ export async function GET(request: Request) {
     const { data: statsData } = await statsQuery
 
     let totalCharged = 0
-    let totalUsed = 0
     let paidCharged = 0
     let freeCharged = 0
 
     if (statsData) {
       for (const t of statsData) {
-        if (t.amount > 0) {
-          totalCharged += t.amount
-          if (t.type === 'paid') {
-            paidCharged += t.amount
-          } else {
-            freeCharged += t.amount
-          }
+        totalCharged += t.amount
+        if (t.type === 'paid') {
+          paidCharged += t.amount
         } else {
-          totalUsed += Math.abs(t.amount)
+          freeCharged += t.amount
         }
       }
     }
@@ -137,7 +134,6 @@ export async function GET(request: Request) {
       },
       stats: {
         totalCharged,
-        totalUsed,
         paidCharged,
         freeCharged,
       },
