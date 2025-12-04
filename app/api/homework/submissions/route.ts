@@ -77,15 +77,32 @@ export async function POST(request: Request) {
         .eq('homework_id', validated.homework_id)
         .in('status', ['submitted', 'late'])
 
+      // 과제 정보 가져오기 (total_students 확인용)
+      const { data: homework } = await db
+        .from('homework')
+        .select('total_students')
+        .eq('id', validated.homework_id)
+        .single()
+
+      const totalStudents = homework?.total_students || 0
+      const currentSubmitted = submittedCount || 0
+
+      // 제출률 100% 도달 시 자동으로 completed 상태로 변경
+      const isCompleted = totalStudents > 0 && currentSubmitted >= totalStudents
+
       await db
         .from('homework')
-        .update({ submitted_count: submittedCount || 0 })
+        .update({
+          submitted_count: currentSubmitted,
+          ...(isCompleted ? { status: 'completed' } : {})
+        })
         .eq('id', validated.homework_id)
 
       return Response.json({
         success: true,
-        message: `${validated.student_ids.length}명의 제출이 기록되었습니다`,
-        submitted_count: submittedCount || 0,
+        message: `${validated.student_ids.length}명의 제출이 기록되었습니다${isCompleted ? ' (과제 완료!)' : ''}`,
+        submitted_count: currentSubmitted,
+        is_completed: isCompleted,
         data
       })
     } else {
@@ -131,15 +148,32 @@ export async function POST(request: Request) {
         .eq('homework_id', validated.homework_id)
         .in('status', ['submitted', 'late'])
 
+      // 과제 정보 가져오기 (total_students 확인용)
+      const { data: homeworkData } = await db
+        .from('homework')
+        .select('total_students')
+        .eq('id', validated.homework_id)
+        .single()
+
+      const totalStudents = homeworkData?.total_students || 0
+      const currentSubmitted = submittedCount || 0
+
+      // 제출률 100% 도달 시 자동으로 completed 상태로 변경
+      const isCompleted = totalStudents > 0 && currentSubmitted >= totalStudents
+
       await db
         .from('homework')
-        .update({ submitted_count: submittedCount || 0 })
+        .update({
+          submitted_count: currentSubmitted,
+          ...(isCompleted ? { status: 'completed' } : {})
+        })
         .eq('id', validated.homework_id)
 
       return Response.json({
         success: true,
-        message: '제출이 기록되었습니다',
-        submitted_count: submittedCount || 0,
+        message: `제출이 기록되었습니다${isCompleted ? ' (과제 완료!)' : ''}`,
+        submitted_count: currentSubmitted,
+        is_completed: isCompleted,
         data
       })
     }

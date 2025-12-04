@@ -26,7 +26,14 @@ interface UpdateCategoryBody {
     description?: string
     color?: string
     is_active: boolean
+    is_system?: boolean
   }>
+}
+
+// 시스템 카테고리 보호용 - 변경 불가 이름
+const SYSTEM_CATEGORY_NAMES: Record<string, string> = {
+  teacher_salary: '강사급여',
+  manager_salary: '매니저급여',
 }
 
 // GET: 지출 카테고리 목록 조회
@@ -229,12 +236,31 @@ export async function PUT(request: Request) {
 
     // 일괄 업데이트
     if (body.categories && Array.isArray(body.categories)) {
+      // 먼저 시스템 카테고리 정보 조회
+      const { data: existingCategories } = await supabase
+        .from('expense_categories')
+        .select('id, is_system, system_key')
+        .eq('org_id', orgId)
+
+      const systemCatMap = new Map(
+        (existingCategories || [])
+          .filter((c: any) => c.is_system)
+          .map((c: any) => [c.id, c.system_key])
+      )
+
       for (let i = 0; i < body.categories.length; i++) {
         const cat = body.categories[i]
+        const systemKey = systemCatMap.get(cat.id)
+
+        // 시스템 카테고리인 경우 이름은 고정값 사용
+        const categoryName = systemKey
+          ? SYSTEM_CATEGORY_NAMES[systemKey] || cat.name
+          : cat.name
+
         const { error } = await supabase
           .from('expense_categories')
           .update({
-            name: cat.name,
+            name: categoryName,
             description: cat.description,
             color: cat.color,
             is_active: cat.is_active,
@@ -258,8 +284,26 @@ export async function PUT(request: Request) {
       return Response.json({ error: 'ID는 필수입니다' }, { status: 400 })
     }
 
+    // 시스템 카테고리 확인
+    const { data: existingCategory } = await supabase
+      .from('expense_categories')
+      .select('is_system, system_key')
+      .eq('id', id)
+      .eq('org_id', orgId)
+      .single()
+
+    const isSystemCategory = existingCategory?.is_system
+    const systemKey = existingCategory?.system_key
+
     const updateData: any = {}
-    if (name !== undefined) updateData.name = name
+    // 시스템 카테고리는 이름 변경 불가 (고정값 유지)
+    if (name !== undefined) {
+      if (isSystemCategory && systemKey) {
+        updateData.name = SYSTEM_CATEGORY_NAMES[systemKey] || name
+      } else {
+        updateData.name = name
+      }
+    }
     if (description !== undefined) updateData.description = description
     if (color !== undefined) updateData.color = color
     if (is_active !== undefined) updateData.is_active = is_active
@@ -339,6 +383,21 @@ export async function DELETE(request: Request) {
 
     if (!id) {
       return Response.json({ error: 'ID는 필수입니다' }, { status: 400 })
+    }
+
+    // 시스템 카테고리인지 확인
+    const { data: categoryToDelete } = await supabase
+      .from('expense_categories')
+      .select('is_system, name')
+      .eq('id', id)
+      .eq('org_id', orgId)
+      .single()
+
+    if (categoryToDelete?.is_system) {
+      return Response.json(
+        { error: `'${categoryToDelete.name}'은(는) 시스템 카테고리이므로 삭제할 수 없습니다` },
+        { status: 403 }
+      )
     }
 
     const { error } = await supabase

@@ -3,7 +3,7 @@
 export const runtime = 'edge'
 
 
-import { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { ColumnDef } from '@tanstack/react-table'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
@@ -21,6 +21,15 @@ import type { Attendance } from '@/lib/types/database'
 import { StudentPlannerModal } from '@/components/seats/StudentPlannerModal'
 import { addDays, format } from 'date-fns'
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
+
+// KST 기준 오늘 날짜를 얻는 헬퍼 함수
+function getKSTTodayString(): string {
+  const now = new Date()
+  // KST는 UTC+9
+  const kstOffset = 9 * 60 * 60 * 1000
+  const kstDate = new Date(now.getTime() + kstOffset)
+  return kstDate.toISOString().slice(0, 10)
+}
 
 
 // Type definitions
@@ -77,7 +86,9 @@ export default function AttendancePage() {
   const [todayAttendance, setTodayAttendance] = useState<TodayStudent[]>([])
   const [attendanceHistory, setAttendanceHistory] = useState<Attendance[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [selectedDate, setSelectedDate] = useState<string>(format(new Date(), 'yyyy-MM-dd'))
+  // Hydration 에러 방지: 초기값은 빈 문자열, useEffect에서 설정
+  const [selectedDate, setSelectedDate] = useState<string>('')
+  const [isDateInitialized, setIsDateInitialized] = useState(false)
   const [assignedStudentIds, setAssignedStudentIds] = useState<string[]>([])
   const [seatMap, setSeatMap] = useState<Record<string, SeatInfo>>({})
   const [seatNameMap, setSeatNameMap] = useState<Record<string, SeatInfo>>({})
@@ -144,7 +155,7 @@ export default function AttendancePage() {
   }, [selectedDate])
 
   const resetToToday = useCallback(() => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd')
+    const todayStr = getKSTTodayString()
     if (todayStr === selectedDate) return
     setSelectedDate(todayStr)
     setHasMore(true)
@@ -278,7 +289,17 @@ export default function AttendancePage() {
     setHasMore(fetchedCount === HISTORY_PAGE_SIZE)
   }, [HISTORY_PAGE_SIZE, attendanceHistory, computeWeeklyFromHistory])
 
+  // 클라이언트에서만 날짜 초기화 (Hydration 에러 방지)
   useEffect(() => {
+    const today = getKSTTodayString()
+    setSelectedDate(today)
+    setIsDateInitialized(true)
+  }, [])
+
+  useEffect(() => {
+    // 날짜가 초기화되기 전에는 실행하지 않음
+    if (!isDateInitialized || !selectedDate) return
+
     const load = async () => {
       setIsLoading(true)
       try {
@@ -294,7 +315,7 @@ export default function AttendancePage() {
     load()
     // fetchAttendancePage를 의존성에 포함하면 attendanceHistory 변경 시마다 재호출되어 루프가 생겨 제외
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, toast])
+  }, [selectedDate, toast, isDateInitialized])
 
   // 좌석 배정된 학생 목록 불러오기 (학생용 출결 페이지와 동일 엔드포인트 활용)
   useEffect(() => {
@@ -559,15 +580,20 @@ export default function AttendancePage() {
         const todayWeekday = dayNames[today.getDay()]
         const todaySchedule = schedules.find((s) => s.day_of_week === todayWeekday)
 
-        // 등원 시간 확인
+        // 등원 시간 확인 (attendance_logs에서)
         const firstCheckIn = logs.find((l) => l.in)?.in
+
+        // seat_assignments에서 현재 상태 확인
+        const seat = getSeatInfo(studentId, row.original.student_name)
+        const isCurrentlyCheckedIn = seat?.status === 'checked_in'
+
         const now = new Date()
         const nowMinutes = now.getHours() * 60 + now.getMinutes()
 
-        // commute 일정이 없는 경우: 등원 기록으로만 판단
+        // commute 일정이 없는 경우: 등원 기록 또는 현재 체크인 상태로만 판단
         if (!todaySchedule?.start_time) {
-          // 등원 기록이 있으면 출석
-          if (firstCheckIn) {
+          // 등원 기록이 있거나 현재 체크인 상태면 출석
+          if (firstCheckIn || isCurrentlyCheckedIn) {
             return <Badge variant="default" className="bg-green-100 text-green-700">출석</Badge>
           }
           // 등원 기록이 없으면 - 표시 (일정이 없으므로 결석/예정 판단 불가)
@@ -577,9 +603,24 @@ export default function AttendancePage() {
         const [schH, schM] = todaySchedule.start_time.split(':').map(Number)
         const scheduledMinutes = schH * 60 + schM
 
-        if (firstCheckIn) {
-          // 체크인 있음 - 출석/지각 판단
-          const checkInDate = new Date(firstCheckIn)
+        // 체크인 시간 결정: attendance_logs 우선, 없으면 seat_assignments
+        const checkInTimeStr = firstCheckIn || (isCurrentlyCheckedIn ? seat?.checkInTime : null)
+
+        if (checkInTimeStr) {
+          const checkInDate = new Date(checkInTimeStr)
+
+          // 체크인 날짜가 선택된 날짜(오늘)인지 확인
+          // KST 기준으로 날짜 비교
+          const kstOffset = 9 * 60 * 60 * 1000
+          const checkInKST = new Date(checkInDate.getTime() + kstOffset)
+          const checkInDateStr = checkInKST.toISOString().slice(0, 10)
+
+          if (checkInDateStr !== selectedDate) {
+            // 전날 체크인 → 그냥 출석으로 표시 (지각 판단 안 함)
+            return <Badge variant="default" className="bg-blue-100 text-blue-700">출석 (전일)</Badge>
+          }
+
+          // 오늘 체크인 → 지각 여부 판단
           const checkInMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes()
           if (checkInMinutes > scheduledMinutes) {
             return <Badge variant="secondary" className="bg-orange-100 text-orange-700">지각</Badge>
@@ -598,16 +639,32 @@ export default function AttendancePage() {
       id: 'check_in',
       header: '등원 시간',
       cell: ({ row }) => {
-        const logs = dailyLogsByStudent[row.original.student_id] || []
-        // fallback 제거 - 선택된 날짜의 로그만 표시
-        if (logs.length === 0) return <span>-</span>
-        return (
-          <div className="flex flex-col gap-0.5">
-            {logs.map((l, idx) => (
-              <span key={idx}>{formatTime(l.in)}</span>
-            ))}
-          </div>
-        )
+        const studentId = row.original.student_id
+        const logs = dailyLogsByStudent[studentId] || []
+
+        // 선택된 날짜에 로그가 있으면 그 로그 표시
+        if (logs.length > 0) {
+          return (
+            <div className="flex flex-col gap-0.5">
+              {logs.map((l, idx) => (
+                <span key={idx}>{formatTime(l.in)}</span>
+              ))}
+            </div>
+          )
+        }
+
+        // 로그가 없으면 seat_assignments에서 현재 checked_in 상태인지 확인
+        const seat = getSeatInfo(studentId, row.original.student_name)
+        if (seat?.status === 'checked_in' && seat?.checkInTime) {
+          // 현재 체크인 상태면 실제 체크인 시간 표시 (전날 체크인)
+          return (
+            <span className="text-blue-600" title="전날 체크인">
+              {formatTime(seat.checkInTime)}
+            </span>
+          )
+        }
+
+        return <span>-</span>
       },
     },
     {

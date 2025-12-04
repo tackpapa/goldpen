@@ -291,6 +291,11 @@ export async function PUT(request: Request) {
   }
 }
 
+// PATCH: 수입 카테고리 수정 (PUT과 동일한 로직 - 클라이언트 호환용)
+export async function PATCH(request: Request) {
+  return PUT(request)
+}
+
 // DELETE: 수입 카테고리 삭제
 export async function DELETE(request: Request) {
   try {

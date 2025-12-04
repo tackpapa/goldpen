@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react'
 import type { Manager } from './ManagerDetailModal'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Activity, Calendar, Clock, FileText, LogIn, LogOut, Plus, Edit, Trash2, Eye, Download, Loader2 } from 'lucide-react'
+import { Activity, Calendar, Clock, FileText, Plus, Edit, Trash2, Loader2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 interface ActivityLog {
   id: string
-  action_type: 'create' | 'update' | 'delete' | 'login' | 'logout' | 'view' | 'export'
+  action_type: 'create' | 'update' | 'delete'
   entity_type: string
   entity_name: string | null
   description: string
@@ -20,97 +20,23 @@ interface ActivityTabProps {
   institutionName?: string
 }
 
+// 실제로 기록되는 액션만 포함
 const actionIcons: Record<string, React.ElementType> = {
   create: Plus,
   update: Edit,
   delete: Trash2,
-  login: LogIn,
-  logout: LogOut,
-  view: Eye,
-  export: Download,
 }
 
 const actionColors: Record<string, string> = {
   create: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
   update: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   delete: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  login: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  logout: 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400',
-  view: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-  export: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400',
 }
 
 const actionLabels: Record<string, string> = {
   create: '생성',
   update: '수정',
   delete: '삭제',
-  login: '로그인',
-  logout: '로그아웃',
-  view: '조회',
-  export: '내보내기',
-}
-
-// 더미 데이터 생성 함수
-const generateDummyActivities = (managerName: string): ActivityLog[] => {
-  const now = new Date()
-  return [
-    {
-      id: '1',
-      action_type: 'login',
-      entity_type: '시스템',
-      entity_name: null,
-      description: `${managerName}님이 시스템에 로그인했습니다`,
-      created_at: new Date(now.getTime() - 1000 * 60 * 30).toISOString(), // 30분 전
-    },
-    {
-      id: '2',
-      action_type: 'update',
-      entity_type: '학생',
-      entity_name: '홍길동',
-      description: '학생 "홍길동"의 연락처 정보를 수정했습니다',
-      created_at: new Date(now.getTime() - 1000 * 60 * 60 * 2).toISOString(), // 2시간 전
-    },
-    {
-      id: '3',
-      action_type: 'create',
-      entity_type: '상담',
-      entity_name: '김철수 학부모',
-      description: '신규 상담 "김철수 학부모" 상담 일정을 등록했습니다',
-      created_at: new Date(now.getTime() - 1000 * 60 * 60 * 5).toISOString(), // 5시간 전
-    },
-    {
-      id: '4',
-      action_type: 'view',
-      entity_type: '리포트',
-      entity_name: '11월 출결 현황',
-      description: '"11월 출결 현황" 리포트를 조회했습니다',
-      created_at: new Date(now.getTime() - 1000 * 60 * 60 * 24).toISOString(), // 1일 전
-    },
-    {
-      id: '5',
-      action_type: 'export',
-      entity_type: '데이터',
-      entity_name: '학생 목록',
-      description: '학생 목록 데이터를 Excel로 내보냈습니다',
-      created_at: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 2).toISOString(), // 2일 전
-    },
-    {
-      id: '6',
-      action_type: 'update',
-      entity_type: '수업',
-      entity_name: '수학 기초반',
-      description: '"수학 기초반" 수업 시간을 변경했습니다',
-      created_at: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 3).toISOString(), // 3일 전
-    },
-    {
-      id: '7',
-      action_type: 'logout',
-      entity_type: '시스템',
-      entity_name: null,
-      description: `${managerName}님이 시스템에서 로그아웃했습니다`,
-      created_at: new Date(now.getTime() - 1000 * 60 * 60 * 24 * 3 - 1000 * 60 * 30).toISOString(), // 3일 전
-    },
-  ]
 }
 
 export function ActivityTab({ manager, institutionName }: ActivityTabProps) {
@@ -132,18 +58,11 @@ export function ActivityTab({ manager, institutionName }: ActivityTabProps) {
       const result = (await response.json()) as any
       if (!response.ok) throw new Error(result.error || '활동 이력 조회 실패')
 
-      // 실제 데이터가 없으면 더미 데이터 사용
       const logs = result.logs || []
-      if (logs.length === 0) {
-        setActivities(generateDummyActivities(manager.name))
-      } else {
-        setActivities(logs)
-      }
+      setActivities(logs)
     } catch (err) {
       console.error('[ActivityTab] fetch error', err)
-      // 에러 발생 시에도 더미 데이터 표시
-      setActivities(generateDummyActivities(manager.name))
-      setError(null) // 에러 메시지 숨기고 더미 데이터 표시
+      setError('활동 이력을 불러오지 못했습니다.')
     } finally {
       setLoading(false)
     }

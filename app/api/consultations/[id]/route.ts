@@ -84,6 +84,25 @@ export async function PATCH(
       return Response.json({ error: '상담 업데이트 실패', details: error.message }, { status: 500 })
     }
 
+    // 상태가 'waitlist'가 아닌 다른 상태로 변경되면 대기리스트에서 자동 제거
+    if (validated.status && validated.status !== 'waitlist') {
+      const { error: waitlistDeleteError } = await db
+        .from('waitlist_consultations')
+        .delete()
+        .eq('consultation_id', id)
+        .eq('org_id', orgId)
+
+      if (waitlistDeleteError) {
+        console.warn('[Consultations PATCH] Waitlist cleanup warning:', waitlistDeleteError)
+        // 대기리스트 삭제 실패해도 상담 업데이트는 성공으로 처리
+      }
+
+      // waitlists의 consultation_count 업데이트 (트리거가 없다면)
+      await db.rpc('update_waitlist_counts', { p_org_id: orgId }).catch(() => {
+        // RPC가 없어도 무시 (수동으로 count 업데이트 안 함)
+      })
+    }
+
     // 활동 로그 기록
     await logActivityWithContext(
       { orgId, user, role },

@@ -527,6 +527,8 @@ export interface ExpenseCategory {
   order: number // 정렬 순서
   color: string // 차트 색상 (hex)
   created_at: string
+  is_system?: boolean // 시스템 카테고리 여부 (true면 삭제/이름변경 불가)
+  system_key?: 'teacher_salary' | 'manager_salary' | null // 시스템 카테고리 키
 }
 
 export type ExpenseCategoryInsert = Omit<ExpenseCategory, 'id' | 'created_at'>

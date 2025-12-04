@@ -16,7 +16,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare, CreditCard, Wallet as WalletIcon, Check, Zap, Crown } from 'lucide-react'
+import { Building2, Plus, Edit, Trash2, DoorOpen, UserPlus, Shield, Menu, ShieldCheck, DollarSign, GripVertical, ArrowUp, ArrowDown, RotateCcw, ChevronUp, ChevronDown, Upload, X, Image as ImageIcon, MessageSquare, CreditCard, Wallet as WalletIcon, Check, Zap, Crown, Lock } from 'lucide-react'
 import { navigationItems } from '@/lib/config/navigation'
 import { useMenuSettings } from '@/lib/hooks/useMenuSettings'
 import { usePageAccess } from '@/hooks/use-page-access'
@@ -248,6 +248,21 @@ export default function SettingsPage() {
             if (savedGracePeriods) {
               setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
             }
+            // 메뉴 설정 초기화
+            const savedEnabledMenus = org.settings?.enabledMenus as string[] | undefined
+            const savedMenuOrder = org.settings?.menuOrder as string[] | undefined
+            if (savedEnabledMenus && savedEnabledMenus.length > 0) {
+              setEnabledMenus(savedEnabledMenus)
+            } else {
+              // DB에 저장된 값이 없으면 모든 메뉴 활성화 (기본값)
+              setEnabledMenus(navigationItems.map(item => item.id))
+            }
+            if (savedMenuOrder && savedMenuOrder.length > 0) {
+              setMenuOrder(savedMenuOrder)
+            } else {
+              // DB에 저장된 값이 없으면 기본 순서
+              setMenuOrder(navigationItems.map(item => item.id))
+            }
           }
           if (settingsRes.ok && settingsData.branches) setBranches(settingsData.branches)
           if (settingsRes.ok && settingsData.rooms) setRooms(settingsData.rooms)
@@ -286,6 +301,21 @@ export default function SettingsPage() {
               const savedGracePeriods = org.settings?.gracePeriods as Record<string, number> | undefined
               if (savedGracePeriods) {
                 setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
+              }
+              // 메뉴 설정 초기화
+              const savedEnabledMenus = org.settings?.enabledMenus as string[] | undefined
+              const savedMenuOrder = org.settings?.menuOrder as string[] | undefined
+              if (savedEnabledMenus && savedEnabledMenus.length > 0) {
+                setEnabledMenus(savedEnabledMenus)
+              } else {
+                // DB에 저장된 값이 없으면 모든 메뉴 활성화 (기본값)
+                setEnabledMenus(navigationItems.map(item => item.id))
+              }
+              if (savedMenuOrder && savedMenuOrder.length > 0) {
+                setMenuOrder(savedMenuOrder)
+              } else {
+                // DB에 저장된 값이 없으면 기본 순서
+                setMenuOrder(navigationItems.map(item => item.id))
               }
             }
             if (data.branches) setBranches(data.branches)
@@ -596,64 +626,27 @@ export default function SettingsPage() {
     return data as T
   }
 
-  const loadAll = async () => {
+  // 추가 데이터 로드 (organization은 fetchSettings에서 이미 로드됨 - 중복 호출 제거)
+  const loadAdditionalData = async () => {
     try {
-      // slug는 URL에서 추출한 값 사용 (하드코딩 제거)
       setInstitutionName(slug)
-      const [orgRes, roomsRes, branchesRes] = await Promise.all([
-        fetchJson<{ organization?: Organization }>(withSlug(basePath)),
-        fetchJson<{ rooms?: Room[] }>('/api/rooms').catch(() => ({ rooms: [] })),
-        fetchJson<{ branches?: Branch[] }>(withSlug(`${basePath}/branches`)).catch(() => ({ branches: [] })),
-      ])
 
-      if (orgRes.organization) {
-        setOrganization({
-          ...defaultOrganization,
-          ...orgRes.organization,
-          settings: {
-            ...defaultOrganization.settings,
-            ...(orgRes.organization.settings || {}),
-          },
-        })
-        const orgSettings = (orgRes.organization.settings || {}) as Record<string, unknown>
-        setEnabledMenus((orgSettings.enabledMenus as string[]) || navigationItems.map((i) => i.id))
-        setMenuOrder((orgSettings.menuOrder as string[]) || navigationItems.map((i) => i.id))
-        // 메시지 템플릿 로드 (DB에 저장된 값이 있으면 사용, 없으면 기본값 유지)
-        if (orgSettings.messageTemplatesParent) {
-          setMessageTemplatesParent({ ...DEFAULT_TEMPLATES_PARENT, ...(orgSettings.messageTemplatesParent as Record<string, string>) })
-        }
-        if (orgSettings.messageTemplatesStudent) {
-          setMessageTemplatesStudent({ ...DEFAULT_TEMPLATES_STUDENT, ...(orgSettings.messageTemplatesStudent as Record<string, string>) })
-        }
-        if (orgSettings.notificationTargets) {
-          setNotificationTargets(prev => ({ ...prev, ...(orgSettings.notificationTargets as Record<string, "parent" | "student" | "both">) }))
-        }
-        // 일일 학습 리포트 발송 시간 로드
-        if (orgSettings.dailyReportTime) {
-          setDailyReportTime(orgSettings.dailyReportTime as string)
-        }
-      }
-      setBranches(branchesRes.branches || [])
-      setRooms(roomsRes.rooms || [])
-
-      // 페이지 권한 로드 (API에서 가져오기)
-      const pagePermRes = await fetchJson<{ permissions: Record<string, { manager: boolean; teacher: boolean }> }>(
-        withSlug(`${basePath}/page-permissions`)
-      ).catch(() => ({ permissions: {} }))
-      setPagePermissions(pagePermRes.permissions || {})
-
-      // 즉시 수입/지출 카테고리, 계정, 사용량 로드
-      const [rev, exp, acc] = await Promise.all([
+      // 페이지 권한, 카테고리, 계정 로드 (병렬)
+      const [pagePermRes, rev, exp, acc] = await Promise.all([
+        fetchJson<{ permissions: Record<string, { manager: boolean; teacher: boolean }> }>(
+          withSlug(`${basePath}/page-permissions`)
+        ).catch(() => ({ permissions: {} })),
         fetchJson<{ categories: any[] }>(withSlug(`${basePath}/revenue-categories`)).catch(() => ({ categories: [] })),
         fetchJson<{ categories: any[] }>(withSlug(`${basePath}/expense-categories`)).catch(() => ({ categories: [] })),
         fetchJson<{ accounts: Account[] }>(withSlug(`${basePath}/user-accounts`)).catch(() => ({ accounts: [] })),
       ])
+
+      setPagePermissions(pagePermRes.permissions || {})
       setRevenueCategories(rev.categories || [])
       setExpenseCategories(exp.categories || [])
       setAccounts(acc.accounts || [])
-      // kakaoTalkUsages, serviceUsages는 첫 번째 useEffect에서 로드됨 (초기화 제거)
     } catch (e) {
-      console.error('설정 로드 실패', e)
+      console.error('추가 설정 로드 실패', e)
       toast({
         title: '설정 로드 실패',
         description: e instanceof Error ? e.message : undefined,
@@ -664,7 +657,7 @@ export default function SettingsPage() {
 
   // Load accounts and menu settings on mount
   useEffect(() => {
-    loadAll()
+    loadAdditionalData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -822,7 +815,7 @@ export default function SettingsPage() {
       })
       const data = await res.json() as ApiResponse
       if (!res.ok) throw new Error(data.error || '교실 저장 실패')
-      await loadAll()
+      await loadAdditionalData()
       toast({
         title: editingRoom ? '교실 수정 완료' : '교실 추가 완료',
         description: `${roomForm.name} 교실이 ${editingRoom ? '수정' : '추가'}되었습니다.`,
@@ -845,7 +838,7 @@ export default function SettingsPage() {
       })
       const data = await res.json() as ApiResponse
       if (!res.ok) throw new Error(data.error || '교실 삭제 실패')
-      await loadAll()
+      await loadAdditionalData()
       toast({ title: '교실 삭제 완료', description: `${room?.name} 교실이 삭제되었습니다.` })
     } catch (e) {
       toast({ title: '교실 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
@@ -885,7 +878,7 @@ export default function SettingsPage() {
       })
       const data = await res.json() as ApiResponse
       if (!res.ok) throw new Error(data.error || '지점 저장 실패')
-      await loadAll()
+      await loadAdditionalData()
       toast({
         title: editingBranch ? '지점 수정 완료' : '지점 추가 완료',
         description: `${branchForm.name} 지점이 ${editingBranch ? '수정' : '추가'}되었습니다.`,
@@ -908,7 +901,7 @@ export default function SettingsPage() {
       })
       const data = await res.json() as ApiResponse
       if (!res.ok) throw new Error(data.error || '지점 삭제 실패')
-      await loadAll()
+      await loadAdditionalData()
       toast({ title: '지점 삭제 완료', description: `${branch?.name} 지점이 삭제되었습니다.` })
     } catch (e) {
       toast({ title: '지점 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
@@ -1041,7 +1034,7 @@ export default function SettingsPage() {
       })
       const data = await res.json() as ApiResponse
       if (!res.ok) throw new Error(data.error || '계정 저장 실패')
-      await loadAll()
+      await loadAdditionalData()
       toast({
         title: editingAccount ? '계정 수정 완료' : '계정 추가 완료',
         description: `${accountForm.name} 계정이 ${editingAccount ? '수정' : '추가'}되었습니다.`,
@@ -1064,7 +1057,7 @@ export default function SettingsPage() {
       })
       const data = await res.json() as ApiResponse
       if (!res.ok) throw new Error(data.error || '계정 삭제 실패')
-      await loadAll()
+      await loadAdditionalData()
       toast({ title: '계정 삭제 완료', description: `${account?.name} 계정이 삭제되었습니다.` })
     } catch (e) {
       toast({ title: '계정 삭제 실패', description: e instanceof Error ? e.message : undefined, variant: 'destructive' })
@@ -2386,6 +2379,12 @@ export default function SettingsPage() {
                           )}>
                             {category.name}
                           </span>
+                          {category.is_system && (
+                            <Badge variant="outline" className="text-xs border-blue-500 text-blue-600">
+                              <Lock className="mr-1 h-3 w-3" />
+                              시스템
+                            </Badge>
+                          )}
                           <Badge variant={category.is_active ? 'default' : 'secondary'}>
                             {category.is_active ? '활성' : '비활성'}
                           </Badge>
@@ -2404,26 +2403,28 @@ export default function SettingsPage() {
                         checked={category.is_active}
                         onCheckedChange={() => handleToggleExpenseCategory(category.id)}
                       />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEditExpenseCategory(category)}>
-                            <Edit className="mr-2 h-4 w-4" />
-                            수정
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDeleteExpenseCategory(category.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            삭제
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      {!category.is_system && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditExpenseCategory(category)}>
+                              <Edit className="mr-2 h-4 w-4" />
+                              수정
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteExpenseCategory(category.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              삭제
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -3494,7 +3495,14 @@ export default function SettingsPage() {
                 placeholder="예: 강사 급여, 임대료, 관리비"
                 value={expenseCategoryForm.name}
                 onChange={(e) => setExpenseCategoryForm({ ...expenseCategoryForm, name: e.target.value })}
+                disabled={editingExpenseCategory?.is_system}
               />
+              {editingExpenseCategory?.is_system && (
+                <p className="text-xs text-blue-600 flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  시스템 카테고리의 이름은 변경할 수 없습니다
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

@@ -369,6 +369,35 @@ export async function GET(request: Request) {
       )
     }
 
+    // 마감일이 지난 active 과제를 자동으로 completed로 업데이트
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const overdueActiveIds = (homework ?? [])
+      .filter((hw: any) => {
+        if (hw.status !== 'active') return false
+        if (!hw.due_date) return false
+        const dueDate = new Date(hw.due_date)
+        dueDate.setHours(0, 0, 0, 0)
+        return dueDate < today
+      })
+      .map((hw: any) => hw.id)
+
+    if (overdueActiveIds.length > 0) {
+      // 마감일이 지난 과제를 completed로 일괄 업데이트
+      await db
+        .from('homework')
+        .update({ status: 'completed' })
+        .in('id', overdueActiveIds)
+        .eq('org_id', orgId)
+
+      // 조회한 데이터도 업데이트 반영
+      homework?.forEach((hw: any) => {
+        if (overdueActiveIds.includes(hw.id)) {
+          hw.status = 'completed'
+        }
+      })
+    }
+
     const homeworkIds = (homework ?? []).map((hw: any) => hw.id)
 
     let submissions: HomeworkSubmissionRow[] = []
