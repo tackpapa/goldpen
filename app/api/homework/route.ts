@@ -624,11 +624,12 @@ export async function POST(request: Request) {
       return Response.json({ error: '반 정보를 찾을 수 없습니다' }, { status: 404 })
     }
 
+    // class_enrollments 테이블에서 실제 수강생 수 계산 (students.class_id 대신)
     const { count: totalStudents, error: studentCountError } = await db
-      .from('students')
+      .from('class_enrollments')
       .select('id', { count: 'exact', head: true })
-      .eq('org_id', orgId)
       .eq('class_id', validated.class_id)
+      .eq('status', 'active')
 
     if (studentCountError) {
       console.error('[Homework POST] student count error:', studentCountError)

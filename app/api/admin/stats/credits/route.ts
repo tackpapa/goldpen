@@ -93,10 +93,13 @@ export async function GET(request: Request) {
       }
     }
 
-    // 무료 먼저 사용 가정: 무료 잔액 = max(0, 무료 충전 - 사용)
-    // 유료 잔액 = 총 잔액 - 무료 잔액
-    const freeBalance = Math.max(0, totalFreeCharged - totalUsed)
-    const paidBalance = totalBalance - freeBalance
+    // 무료 먼저 사용 가정
+    // 무료 잔액 = max(0, 무료충전 - 사용)
+    // 유료 잔액 = 유료충전 - max(0, 사용 - 무료충전)
+    const usedFromFree = Math.min(totalUsed, totalFreeCharged)
+    const usedFromPaid = Math.max(0, totalUsed - totalFreeCharged)
+    const freeBalance = Math.max(0, totalFreeCharged - usedFromFree)
+    const paidBalance = Math.max(0, totalPaidCharged - usedFromPaid)
 
     // 2. 오늘 사용된 충전금 (음수 amount의 합)
     const { data: todayUsage, error: todayError } = await adminClient
@@ -210,10 +213,40 @@ export async function GET(request: Request) {
       })
     }
 
+    // 7. 메시지 발송 건수로 실제 원가 계산
+    // notification_logs에서 발송 건수 집계
+    const { count: msgCount } = await adminClient
+      .from('notification_logs')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'sent')
+      .gte('created_at', monthStart.toISOString())
+      .lte('created_at', monthEnd.toISOString())
+
+    // message_pricing에서 알림톡 원가 조회
+    const { data: alimtalkPricing } = await adminClient
+      .from('message_pricing')
+      .select('cost')
+      .eq('message_type', 'kakao_alimtalk')
+      .single()
+
+    const alimtalkCost = alimtalkPricing?.cost ?? 13
+    const monthMessageCount = msgCount ?? 0
+    const monthActualCost = monthMessageCount * alimtalkCost
+
+    // 무료/유료 사용 비율 계산 (무료 먼저 사용 가정)
+    const freeUsedAmount = Math.min(monthUsed, totalFreeCharged)
+    const paidUsedAmount = Math.max(0, monthUsed - totalFreeCharged)
+    const freeUsedRatio = monthUsed > 0 ? freeUsedAmount / monthUsed : 0
+    const paidUsedRatio = monthUsed > 0 ? paidUsedAmount / monthUsed : 0
+
+    // 실제 원가 배분
+    const freeActualCost = Math.round(monthActualCost * freeUsedRatio)  // 무료 사용 원가 (마케팅 비용)
+    const paidActualCost = Math.round(monthActualCost * paidUsedRatio)  // 유료 사용 원가
+
     return Response.json({
       totalBalance,
-      paidBalance,      // 유료 충전금 잔액 (실제 수익)
-      freeBalance,      // 무료 제공금 잔액 (부채)
+      paidBalance,      // 유료 충전금 잔액
+      freeBalance,      // 무료 제공금 잔액
       orgsWithBalance,
       today: {
         used: todayUsed,
@@ -222,12 +255,20 @@ export async function GET(request: Request) {
         freeCharged: todayFreeCharged,
       },
       month: {
-        used: monthUsed,
+        used: monthUsed,              // 사용 액면가
         charged: monthCharged,
         paidCharged: monthPaidCharged,
         freeCharged: monthFreeCharged,
         year: selectedMonth.year,
         month: selectedMonth.month,
+        // 실제 원가 기반 통계 (NEW)
+        messageCount: monthMessageCount,
+        actualCost: monthActualCost,      // 전체 실제 원가
+        freeActualCost: freeActualCost,   // 무료 사용 실제 원가 (마케팅 비용)
+        paidActualCost: paidActualCost,   // 유료 사용 실제 원가
+        paidRevenue: monthPaidCharged,    // 유료 충전 매출
+        paidProfit: monthPaidCharged - paidActualCost, // 유료 순이익
+        netProfit: monthPaidCharged - monthActualCost, // 전체 순이익 (매출 - 전체원가)
       },
       monthlyUsage,
     })

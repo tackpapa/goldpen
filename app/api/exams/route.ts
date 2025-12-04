@@ -51,6 +51,31 @@ export async function GET(request: Request) {
       teacher_id: exam.class?.teacher_id || null,
     })) || []
 
+    // 각 시험의 반별 총 학생 수 조회 (class_enrollments 기반)
+    const classIds = [...new Set(normalizedExams.map((e: any) => e.class_id).filter(Boolean))]
+    const studentCounts: Record<string, number> = {}
+
+    if (classIds.length > 0) {
+      const { data: enrollmentCounts, error: countError } = await db
+        .from('class_enrollments')
+        .select('class_id')
+        .in('class_id', classIds)
+        .eq('status', 'active')
+
+      if (!countError && enrollmentCounts) {
+        // 반별 학생 수 집계
+        for (const enrollment of enrollmentCounts) {
+          studentCounts[enrollment.class_id] = (studentCounts[enrollment.class_id] || 0) + 1
+        }
+      }
+    }
+
+    // total_students 추가
+    const examsWithStudentCount = normalizedExams.map((exam: any) => ({
+      ...exam,
+      total_students: studentCounts[exam.class_id] || 0,
+    }))
+
     // 각 시험별 점수 조회
     const examIds = normalizedExams.map((e: any) => e.id)
     const scores: Record<string, any[]> = {}
@@ -82,7 +107,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return Response.json({ exams: normalizedExams, scores, count: normalizedExams.length }, {
+    return Response.json({ exams: examsWithStudentCount, scores, count: examsWithStudentCount.length }, {
       headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=60' }
     })
   } catch (error: any) {

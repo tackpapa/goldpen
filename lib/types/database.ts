@@ -234,6 +234,7 @@ export interface Exam {
   class_name?: string
   teacher_name?: string
   teacher_id?: string
+  total_students?: number
 }
 
 export interface ExamScore {

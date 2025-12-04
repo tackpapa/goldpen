@@ -225,6 +225,11 @@ export default function ExamsPage() {
         const exam = row.original
         const hasScores = scores[exam.id]
 
+        // 모든 학생이 채점되었는지 확인 (total_students가 있고, 점수 수가 총 학생 수 이상)
+        const isFullyGraded = hasScores && hasScores.length > 0 &&
+                              exam.total_students && exam.total_students > 0 &&
+                              hasScores.length >= exam.total_students
+
         return (
           <div className="flex gap-1 flex-wrap">
             {/* 시험 시작 시간이 지난 경우 채점 버튼 표시 */}
@@ -241,12 +246,12 @@ export default function ExamsPage() {
               return now >= examDate
             })() && (
               <Button
-                variant={hasScores && hasScores.length > 0 ? "default" : "outline"}
+                variant={isFullyGraded ? "default" : "outline"}
                 size="sm"
                 onClick={() => handleOpenGrading(exam)}
               >
                 <PenSquare className="mr-1 h-3 w-3" />
-                {hasScores && hasScores.length > 0 ? '채점완료' : '채점'}
+                {isFullyGraded ? '채점완료' : '채점'}
               </Button>
             )}
             {hasScores && hasScores.length > 0 && (
