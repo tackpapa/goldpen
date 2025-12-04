@@ -135,17 +135,49 @@ export async function GET(request: Request) {
       return Response.json({ error: '조직을 찾을 수 없습니다' }, { status: 404 })
     }
 
-    // billingOnly인 경우 billing 데이터만 반환
+    // billingOnly인 경우 billing 데이터만 반환 (병렬 쿼리로 최적화)
     if (billingOnly) {
-      // 알림톡 이용내역 (message_logs)
-      const { data: alimtalkLogs } = await db
-        .from('message_logs')
-        .select('id, message_type, recipient_count, total_price, status, description, created_at')
-        .eq('org_id', orgId)
-        .eq('message_type', 'kakao_alimtalk')
-        .order('created_at', { ascending: false })
-        .limit(100)
+      const now = new Date()
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
 
+      // 4개 쿼리 병렬 실행 (순차 실행 대비 ~75% 시간 단축)
+      const [alimtalkResult, serviceResult, thisMonthResult, txResult] = await Promise.all([
+        // 알림톡 이용내역 (최근 100건)
+        db.from('message_logs')
+          .select('id, message_type, recipient_count, total_price, status, description, created_at')
+          .eq('org_id', orgId)
+          .eq('message_type', 'kakao_alimtalk')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        // SMS/기타 이용내역 (최근 100건)
+        db.from('message_logs')
+          .select('id, message_type, recipient_count, total_price, status, description, created_at')
+          .eq('org_id', orgId)
+          .neq('message_type', 'kakao_alimtalk')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        // 이번 달 알림톡 유형별 집계 (전체)
+        db.from('message_logs')
+          .select('description, total_price')
+          .eq('org_id', orgId)
+          .eq('message_type', 'kakao_alimtalk')
+          .gte('created_at', monthStart)
+          .lte('created_at', monthEnd),
+        // 충전/차감 내역 (최근 50건)
+        db.from('credit_transactions')
+          .select('id, type, amount, balance_after, description, created_at')
+          .eq('org_id', orgId)
+          .order('created_at', { ascending: false })
+          .limit(50),
+      ])
+
+      const alimtalkLogs = alimtalkResult.data
+      const serviceLogs = serviceResult.data
+      const thisMonthLogs = thisMonthResult.data
+      const txLogs = txResult.data
+
+      // 알림톡 데이터 변환
       const kakaoTalkUsages = (alimtalkLogs || []).map((r: any) => {
         let dateStr = '-'
         if (r.created_at) {
@@ -164,15 +196,7 @@ export async function GET(request: Request) {
         }
       })
 
-      // SMS/기타 이용내역
-      const { data: serviceLogs } = await db
-        .from('message_logs')
-        .select('id, message_type, recipient_count, total_price, status, description, created_at')
-        .eq('org_id', orgId)
-        .neq('message_type', 'kakao_alimtalk')
-        .order('created_at', { ascending: false })
-        .limit(100)
-
+      // SMS 데이터 변환
       const serviceUsages = (serviceLogs || []).map((r: any) => {
         let dateStr = '-'
         if (r.created_at) {
@@ -190,17 +214,11 @@ export async function GET(request: Request) {
         }
       })
 
-      // 이번 달 알림톡 유형별 집계
-      const currentMonth = new Date().toISOString().slice(0, 7)
-      const thisMonthLogs = (alimtalkLogs || []).filter((r: any) =>
-        r.created_at && r.created_at.startsWith(currentMonth)
-      )
-
+      // 이번 달 집계
       const summaryMap: Record<string, { count: number; cost: number }> = {}
-      for (const log of thisMonthLogs) {
+      for (const log of (thisMonthLogs || [])) {
         const desc = log.description || ''
         let notificationType: string | null = null
-        // 알림톡 설정 페이지의 TEMPLATE_LABELS와 일치하도록 10개 항목
         if (desc.startsWith('late:') || desc.includes('_late:')) notificationType = '지각 알림'
         else if (desc.startsWith('absent:') || desc.includes('_absent:')) notificationType = '결석 알림'
         else if (desc.startsWith('checkin:')) notificationType = '입실/등원 알림'
@@ -211,10 +229,7 @@ export async function GET(request: Request) {
         else if (desc.startsWith('lesson_report:')) notificationType = '수업일지 전송'
         else if (desc.startsWith('exam_result:')) notificationType = '시험 결과'
         else if (desc.startsWith('assignment_new:') || desc.startsWith('assignment:')) notificationType = '과제 알림'
-
-        // 매칭되지 않는 알림은 집계하지 않음
         if (!notificationType) continue
-
         if (!summaryMap[notificationType]) {
           summaryMap[notificationType] = { count: 0, cost: 0 }
         }
@@ -228,14 +243,11 @@ export async function GET(request: Request) {
         cost: data.cost,
       })).sort((a, b) => b.count - a.count)
 
-      // 충전/차감 내역
-      const { data: txLogs } = await db
-        .from('credit_transactions')
-        .select('id, type, amount, balance_after, description, created_at')
-        .eq('org_id', orgId)
-        .order('created_at', { ascending: false })
-        .limit(50)
+      // 이번 달 총합 계산 (요약 카드용)
+      const totalAlimtalkCount = usageSummary.reduce((sum, s) => sum + s.count, 0)
+      const totalAlimtalkCost = usageSummary.reduce((sum, s) => sum + s.cost, 0)
 
+      // 충전 내역 변환
       const creditTransactions = (txLogs || []).map((r: any) => ({
         id: r.id,
         date: r.created_at ? new Date(r.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '-',
@@ -250,6 +262,9 @@ export async function GET(request: Request) {
         serviceUsages,
         usageSummary,
         creditTransactions,
+        // 이번 달 총합 (요약 카드용)
+        totalAlimtalkCount,
+        totalAlimtalkCost,
       })
     }
 

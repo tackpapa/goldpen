@@ -505,19 +505,18 @@ export default function AttendancePage() {
     return () => observer.disconnect()
   }, [hasMoreToday])
 
-  const todayStats = {
-    total: teacherFilteredAttendance.length,
-    scheduled: teacherFilteredAttendance.filter((r) => r.status === 'scheduled').length,
-    present: teacherFilteredAttendance.filter((r) => r.status === 'present').length,
-    late: teacherFilteredAttendance.filter((r) => r.status === 'late').length,
-    absent: teacherFilteredAttendance.filter((r) => r.status === 'absent').length,
-    excused: teacherFilteredAttendance.filter((r) => r.status === 'excused').length,
-    rate: Math.round(
-      (teacherFilteredAttendance.filter((r) => r.status === 'present' || r.status === 'excused').length /
-        teacherFilteredAttendance.length) *
-        100
-    ),
-  }
+  // 통계 계산 최적화: 매 렌더링마다 재계산하지 않고 메모이제이션
+  const todayStats = useMemo(() => {
+    const total = teacherFilteredAttendance.length
+    const scheduled = teacherFilteredAttendance.filter((r) => r.status === 'scheduled').length
+    const present = teacherFilteredAttendance.filter((r) => r.status === 'present').length
+    const late = teacherFilteredAttendance.filter((r) => r.status === 'late').length
+    const absent = teacherFilteredAttendance.filter((r) => r.status === 'absent').length
+    const excused = teacherFilteredAttendance.filter((r) => r.status === 'excused').length
+    const rate = total > 0 ? Math.round(((present + excused) / total) * 100) : 0
+
+    return { total, scheduled, present, late, absent, excused, rate }
+  }, [teacherFilteredAttendance])
 
   return (
     <div className="space-y-6 p-4 md:p-6">

@@ -11,7 +11,8 @@ export const runtime = 'edge'
  * - 향후: 로그인한 강사 본인이 담당하는 학생의 시험만 필터링
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useTransition } from 'react'
+import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { useAuth } from '@/contexts/auth-context'
@@ -48,8 +49,16 @@ import {
 } from '@/components/ui/select'
 import type { Exam, ExamScore, Organization } from '@/lib/types/database'
 import { format } from 'date-fns'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+// Dynamic import for chart components (heavy library - ~200KB)
+const ExamsCharts = dynamic(
+  () => import('@/components/charts/ExamsCharts').then((mod) => mod.ExamsCharts),
+  {
+    ssr: false,
+    loading: () => <div className="h-[250px] flex items-center justify-center text-muted-foreground bg-muted/50 rounded-lg">차트 로딩중...</div>
+  }
+)
 import { Textarea } from '@/components/ui/textarea'
 
 // 기본 시험 결과 템플릿 (설정에서 가져오지 못할 경우 fallback)
@@ -283,7 +292,7 @@ export default function ExamsPage() {
     },
   ]
 
-  const handleDeleteExam = async (exam: Exam) => {
+  const handleDeleteExam = useCallback(async (exam: Exam) => {
     if (!confirm(`시험 "${exam.title || exam.subject}"을 삭제할까요?`)) return
     try {
       const res = await fetch(`/api/exams/${exam.id}`, { method: 'DELETE', credentials: 'include' })
@@ -296,26 +305,26 @@ export default function ExamsPage() {
     } catch (e) {
       toast({ title: '삭제 실패', description: '서버 통신 오류', variant: 'destructive' })
     }
-  }
+  }, [toast, setExams])
 
-  const handleViewScores = (exam: Exam) => {
+  const handleViewScores = useCallback((exam: Exam) => {
     setSelectedExam(exam)
     setIsScoresDialogOpen(true)
-  }
+  }, [])
 
-  const handleViewStats = (exam: Exam) => {
+  const handleViewStats = useCallback((exam: Exam) => {
     setSelectedExam(exam)
     setIsStatsDialogOpen(true)
-  }
+  }, [])
 
-  const handleEnterScores = (exam: Exam) => {
+  const handleEnterScores = useCallback((exam: Exam) => {
     setSelectedExam(exam)
     setManualScores({})
     setManualFeedbacks({})
     setBulkScoresText('')
     setScoreEntryTab('manual')
     setIsScoreEntryDialogOpen(true)
-  }
+  }, [])
 
   const handleSendNotification = async (exam: Exam) => {
     setSelectedExam(exam)
@@ -1087,15 +1096,7 @@ export default function ExamsPage() {
                     <CardDescription>구간별 학생 수</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <ResponsiveContainer width="100%" height={250}>
-                      <BarChart data={stats.distribution}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="range" />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="count" fill="hsl(var(--primary))" radius={[8, 8, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                    <ExamsCharts scoreDistribution={stats.distribution} />
                   </CardContent>
                 </Card>
               </div>

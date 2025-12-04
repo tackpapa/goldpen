@@ -27,7 +27,6 @@ import {
 } from '@dnd-kit/sortable'
 
 export default function OverviewPage() {
-  const [currentTime, setCurrentTime] = useState(new Date())
   const [widgets, setWidgets] = useState<Widget[]>([])
   const [widgetManagerOpen, setWidgetManagerOpen] = useState(false)
   const [widgetData, setWidgetData] = useState<WidgetData>(emptyWidgetData)
@@ -80,8 +79,8 @@ export default function OverviewPage() {
 
     fetchWidgetData()
 
-    // 30초마다 데이터 갱신
-    const refreshInterval = setInterval(fetchWidgetData, 30000)
+    // 2분마다 데이터 갱신 (30초 → 120초로 변경하여 불필요한 API 호출 감소)
+    const refreshInterval = setInterval(fetchWidgetData, 120000)
     return () => clearInterval(refreshInterval)
   }, [])
 
@@ -92,14 +91,6 @@ export default function OverviewPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgetSettingsLoading, widgetSettings])
-
-  // 1초마다 시간 업데이트 (기존 로직 유지)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [])
 
   // 드래그 종료 핸들러
   const handleDragEnd = (event: DragEndEvent) => {
@@ -208,7 +199,6 @@ export default function OverviewPage() {
                   key={widget.id}
                   widget={widget}
                   onRemove={() => handleRemoveWidget(widget.id)}
-                  currentTime={currentTime}
                   data={widgetData}
                 />
               ))}

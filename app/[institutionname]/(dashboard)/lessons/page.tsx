@@ -12,8 +12,9 @@ export const runtime = 'edge'
  *   예: .eq('teacher_id', currentTeacherId)
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useTransition } from 'react'
 import { useParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { ColumnDef } from '@tanstack/react-table'
 import { usePageAccess } from '@/hooks/use-page-access'
 import { Button } from '@/components/ui/button'
@@ -38,7 +39,6 @@ import type { LessonNote } from '@/lib/types/database'
 import { Checkbox } from '@/components/ui/checkbox'
 import { format } from 'date-fns'
 import { ko } from 'date-fns/locale'
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import {
   Select,
   SelectContent,
@@ -47,6 +47,20 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAuth } from '@/contexts/auth-context'
+
+// Dynamic import for chart components (heavy library - ~200KB)
+const LessonsCharts = dynamic(
+  () => import('@/components/charts/LessonsCharts').then((mod) => mod.LessonsCharts),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="h-80 flex items-center justify-center text-muted-foreground bg-muted/50 rounded-lg">차트 로딩중...</div>
+        <div className="h-80 flex items-center justify-center text-muted-foreground bg-muted/50 rounded-lg">차트 로딩중...</div>
+      </div>
+    )
+  }
+)
 
 interface StudentAttendance {
   student_id: string
@@ -1209,48 +1223,10 @@ export default function LessonsPage() {
 
         {/* Statistics Tab */}
         <TabsContent value="stats" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>월별 수업 진행률</CardTitle>
-                <CardDescription>계획 대비 실제 진행된 수업 수</CardDescription>
-              </CardHeader>
-              <CardContent className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={monthlyProgressData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="planned" fill="#94a3b8" name="계획" />
-                    <Bar dataKey="lessons" fill="#3b82f6" name="실제" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>주차별 이해도 트렌드</CardTitle>
-                <CardDescription>학생들의 이해도 분포 변화</CardDescription>
-              </CardHeader>
-              <CardContent className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={comprehensionTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="week" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="high" stroke="#22c55e" name="상" strokeWidth={2} />
-                    <Line type="monotone" dataKey="medium" stroke="#eab308" name="중" strokeWidth={2} />
-                    <Line type="monotone" dataKey="low" stroke="#ef4444" name="하" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+          <LessonsCharts
+            monthlyProgressData={monthlyProgressData}
+            comprehensionTrendData={comprehensionTrendData}
+          />
         </TabsContent>
       </Tabs>
 

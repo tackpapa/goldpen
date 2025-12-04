@@ -147,9 +147,11 @@ export default function SettingsPage() {
   const [serviceUsages, setServiceUsages] = useState<ServiceUsage[]>([])
   const [usageSummary, setUsageSummary] = useState<UsageSummary[]>([])
   const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([])
+  // 이번 달 총합 (요약 카드용)
+  const [totalAlimtalkCount, setTotalAlimtalkCount] = useState(0)
+  const [totalAlimtalkCost, setTotalAlimtalkCost] = useState(0)
 
   // 탭별 로딩 상태
-  const [billingLoaded, setBillingLoaded] = useState(false)
   const [billingLoading, setBillingLoading] = useState(false)
 
   // 무한 스크롤용 표시 개수
@@ -196,20 +198,44 @@ export default function SettingsPage() {
   // 메뉴 설정 훅 사용
   const { saveSettings: saveMenuSettingsToDb } = useMenuSettings({ orgSlug: slug })
 
-  // Fetch settings data from API (기본 정보만 - billing 제외)
+  // 초기 billing 로드 여부 추적 (URL에서 ?tab=billing으로 직접 접속 시)
+  const [initialBillingLoaded, setInitialBillingLoaded] = useState(false)
+
+  // Fetch settings data from API
+  // ?tab=billing으로 직접 접속 시 두 API를 병렬로 호출하여 5초 → 3초로 단축
   useEffect(() => {
     const fetchSettings = async () => {
+      const isBillingTab = currentTab === 'billing'
+
       try {
-        const response = await fetch(`/api/settings?orgSlug=${slug}&excludeBilling=true`, { credentials: 'include' })
-        const data = await response.json() as {
-          organization?: Organization & { credit_balance?: number }
-          branches?: Branch[]
-          rooms?: Room[]
-          error?: string
-        }
-        if (response.ok) {
-          if (data.organization) {
-            const org = data.organization as Organization
+        if (isBillingTab) {
+          // billing 탭으로 직접 접속: 두 API 병렬 호출 (5초 → 3초)
+          setBillingLoading(true)
+          const [settingsRes, billingRes] = await Promise.all([
+            fetch(`/api/settings?orgSlug=${slug}&excludeBilling=true`, { credentials: 'include' }),
+            fetch(`/api/settings?orgSlug=${slug}&billingOnly=true`, { credentials: 'include' })
+          ])
+
+          const [settingsData, billingData] = await Promise.all([
+            settingsRes.json() as Promise<{
+              organization?: Organization & { credit_balance?: number }
+              branches?: Branch[]
+              rooms?: Room[]
+              error?: string
+            }>,
+            billingRes.json() as Promise<{
+              kakaoTalkUsages?: KakaoTalkUsage[]
+              serviceUsages?: ServiceUsage[]
+              usageSummary?: UsageSummary[]
+              creditTransactions?: CreditTransaction[]
+              totalAlimtalkCount?: number
+              totalAlimtalkCost?: number
+            }>
+          ])
+
+          // settings 데이터 설정
+          if (settingsRes.ok && settingsData.organization) {
+            const org = settingsData.organization as Organization
             setOrganization({
               ...defaultOrganization,
               ...org,
@@ -218,54 +244,106 @@ export default function SettingsPage() {
                 ...(org.settings || {}),
               },
             })
-            // 알림 유예 시간 설정 로드
             const savedGracePeriods = org.settings?.gracePeriods as Record<string, number> | undefined
             if (savedGracePeriods) {
               setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
             }
           }
-          if (data.branches) setBranches(data.branches)
-          if (data.rooms) setRooms(data.rooms)
+          if (settingsRes.ok && settingsData.branches) setBranches(settingsData.branches)
+          if (settingsRes.ok && settingsData.rooms) setRooms(settingsData.rooms)
+
+          // billing 데이터 설정
+          if (billingRes.ok) {
+            if (billingData.kakaoTalkUsages) setKakaoTalkUsages(billingData.kakaoTalkUsages)
+            if (billingData.serviceUsages) setServiceUsages(billingData.serviceUsages)
+            if (billingData.usageSummary) setUsageSummary(billingData.usageSummary)
+            if (billingData.creditTransactions) setCreditTransactions(billingData.creditTransactions)
+            if (billingData.totalAlimtalkCount !== undefined) setTotalAlimtalkCount(billingData.totalAlimtalkCount)
+            if (billingData.totalAlimtalkCost !== undefined) setTotalAlimtalkCost(billingData.totalAlimtalkCost)
+            setInitialBillingLoaded(true)
+          }
+          setBillingLoading(false)
+        } else {
+          // 다른 탭으로 접속: 기존처럼 settings만 로드
+          const response = await fetch(`/api/settings?orgSlug=${slug}&excludeBilling=true`, { credentials: 'include' })
+          const data = await response.json() as {
+            organization?: Organization & { credit_balance?: number }
+            branches?: Branch[]
+            rooms?: Room[]
+            error?: string
+          }
+          if (response.ok) {
+            if (data.organization) {
+              const org = data.organization as Organization
+              setOrganization({
+                ...defaultOrganization,
+                ...org,
+                settings: {
+                  ...defaultOrganization.settings,
+                  ...(org.settings || {}),
+                },
+              })
+              const savedGracePeriods = org.settings?.gracePeriods as Record<string, number> | undefined
+              if (savedGracePeriods) {
+                setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
+              }
+            }
+            if (data.branches) setBranches(data.branches)
+            if (data.rooms) setRooms(data.rooms)
+          }
         }
       } catch {
         console.error('Failed to fetch settings')
+        setBillingLoading(false)
       }
     }
     fetchSettings()
   }, [])
 
-  // Billing 탭 데이터 로드 (탭 클릭 시에만)
+  // Billing 탭 데이터 로드 (탭 진입 시 항상 새로 로드, 중복 호출 제거됨)
   const fetchBillingData = useCallback(async () => {
-    if (billingLoaded || billingLoading) return
+    if (billingLoading) return
     setBillingLoading(true)
     try {
-      const response = await fetch(`/api/settings?orgSlug=${slug}&billingOnly=true`, { credentials: 'include' })
-      const data = await response.json() as {
+      // billing 데이터만 가져오기 (organization은 이미 페이지 로드 시 가져옴)
+      const billingRes = await fetch(`/api/settings?orgSlug=${slug}&billingOnly=true`, { credentials: 'include' })
+
+      const billingData = await billingRes.json() as {
         kakaoTalkUsages?: KakaoTalkUsage[]
         serviceUsages?: ServiceUsage[]
         usageSummary?: UsageSummary[]
         creditTransactions?: CreditTransaction[]
+        totalAlimtalkCount?: number
+        totalAlimtalkCost?: number
       }
-      if (response.ok) {
-        if (data.kakaoTalkUsages) setKakaoTalkUsages(data.kakaoTalkUsages)
-        if (data.serviceUsages) setServiceUsages(data.serviceUsages)
-        if (data.usageSummary) setUsageSummary(data.usageSummary)
-        if (data.creditTransactions) setCreditTransactions(data.creditTransactions)
-        setBillingLoaded(true)
+
+      if (billingRes.ok) {
+        if (billingData.kakaoTalkUsages) setKakaoTalkUsages(billingData.kakaoTalkUsages)
+        if (billingData.serviceUsages) setServiceUsages(billingData.serviceUsages)
+        if (billingData.usageSummary) setUsageSummary(billingData.usageSummary)
+        if (billingData.creditTransactions) setCreditTransactions(billingData.creditTransactions)
+        // 이번 달 총합 (요약 카드용)
+        if (billingData.totalAlimtalkCount !== undefined) setTotalAlimtalkCount(billingData.totalAlimtalkCount)
+        if (billingData.totalAlimtalkCost !== undefined) setTotalAlimtalkCost(billingData.totalAlimtalkCost)
       }
     } catch {
       console.error('Failed to fetch billing data')
     } finally {
       setBillingLoading(false)
     }
-  }, [slug, billingLoaded, billingLoading])
+  }, [slug, billingLoading])
 
-  // billing 탭 진입 시 데이터 로드
+  // billing 탭 진입 시 데이터 로드 (다른 탭에서 이동 시에만)
+  // 초기 로드에서 이미 billing 데이터를 가져왔으면 중복 호출하지 않음
   useEffect(() => {
-    if (currentTab === 'billing' && !billingLoaded) {
+    if (currentTab === 'billing' && !initialBillingLoaded) {
       fetchBillingData()
     }
-  }, [currentTab, billingLoaded, fetchBillingData])
+    // initialBillingLoaded 플래그 리셋 (다음 탭 전환 시 새로 로드할 수 있도록)
+    if (currentTab !== 'billing') {
+      setInitialBillingLoaded(false)
+    }
+  }, [currentTab, fetchBillingData, initialBillingLoaded])
   const [isBranchDialogOpen, setIsBranchDialogOpen] = useState(false)
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null)
   const [branchForm, setBranchForm] = useState({
@@ -2554,49 +2632,6 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* 메시지 발송 방식 선택 */}
-              <div className="space-y-3">
-                <Label className="text-sm font-medium">메시지 발송 방식</Label>
-                <div className="flex gap-3">
-                  <Button
-                    type="button"
-                    variant={organization.settings.use_sms ? 'default' : 'outline'}
-                    className="gap-2"
-                    onClick={() => {
-                      const nextSettings = {
-                        ...organization.settings,
-                        use_sms: true,
-                        use_kakao: false,
-                      }
-                      setOrganization({ ...organization, settings: nextSettings })
-                      persistOrganization({ settings: nextSettings })
-                      toast({ title: '설정 변경', description: 'SMS 사용으로 변경되었습니다.' })
-                    }}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    SMS 사용하기
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={organization.settings.use_kakao ? 'default' : 'outline'}
-                    className="gap-2"
-                    onClick={() => {
-                      const nextSettings = {
-                        ...organization.settings,
-                        use_sms: false,
-                        use_kakao: true,
-                      }
-                      setOrganization({ ...organization, settings: nextSettings })
-                      persistOrganization({ settings: nextSettings })
-                      toast({ title: '설정 변경', description: '카카오메세지 사용으로 변경되었습니다.' })
-                    }}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    카카오메세지 사용하기
-                  </Button>
-                </div>
-              </div>
-
               {/* 출결 알림 (통합) */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">
@@ -2849,9 +2884,9 @@ export default function SettingsPage() {
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">₩{(kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0) + serviceUsages.reduce((sum, item) => sum + item.cost, 0)).toLocaleString()}</div>
+                <div className="text-2xl font-bold">₩{(totalAlimtalkCost + serviceUsages.reduce((sum, item) => sum + item.cost, 0)).toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  알림톡: ₩{kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()} / 서비스: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                  알림톡: ₩{totalAlimtalkCost.toLocaleString()} / 서비스: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                 </p>
               </CardContent>
             </Card>

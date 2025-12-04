@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Widget } from '@/lib/types/widget'
 import { WidgetData, emptyWidgetData } from '@/lib/types/widget-data'
 import {
@@ -48,7 +49,6 @@ import { ArrowUp, ArrowDown } from 'lucide-react'
 interface WidgetRendererProps {
   widget: Widget
   onRemove: () => void
-  currentTime?: Date
   data?: WidgetData
 }
 
@@ -83,7 +83,70 @@ function getCurrentClasses(currentTime: Date, todayClasses: WidgetData['todayCla
   })
 }
 
-export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRendererProps) {
+// 자체 타이머를 관리하는 실시간 현황 위젯 (매분 업데이트)
+function RealtimeStatusWidget({
+  todayClasses,
+  seatStatus,
+  todayAttendance,
+  onRemove,
+}: {
+  todayClasses: WidgetData['todayClasses']
+  seatStatus: WidgetData['seatStatus']
+  todayAttendance: WidgetData['todayAttendance']
+  onRemove: () => void
+}) {
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  useEffect(() => {
+    // 매분마다 업데이트 (60초 → 1초 대신, 수업 시작/종료 시간이 분 단위이므로 충분)
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 60000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const currentClasses = getCurrentClasses(currentTime, todayClasses)
+
+  return (
+    <WidgetWrapper
+      title="실시간 현황"
+      icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+      onRemove={onRemove}
+    >
+      <div className="space-y-4">
+        <div className="grid grid-cols-3 gap-4 justify-items-center text-center">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">{seatStatus.occupied}</div>
+            <div className="text-xs text-muted-foreground">독서실 이용</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-blue-600">{currentClasses.length}</div>
+            <div className="text-xs text-muted-foreground">진행 중 수업</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-purple-600">{todayAttendance.present}</div>
+            <div className="text-xs text-muted-foreground">오늘 출석</div>
+          </div>
+        </div>
+        {currentClasses.length > 0 && (
+          <div className="mt-4">
+            <div className="text-xs font-medium mb-2">진행 중인 수업</div>
+            <div className="space-y-2">
+              {currentClasses.slice(0, 3).map((cls) => (
+                <div key={cls.id} className="text-xs p-2 bg-muted rounded">
+                  <div className="font-medium">{cls.name}</div>
+                  <div className="text-muted-foreground">{cls.teacher} • {cls.room}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </WidgetWrapper>
+  )
+}
+
+export function WidgetRenderer({ widget, onRemove, data }: WidgetRendererProps) {
   // Use provided data or empty defaults
   const widgetData = data || emptyWidgetData
 
@@ -116,43 +179,13 @@ export function WidgetRenderer({ widget, onRemove, currentTime, data }: WidgetRe
 
   switch (widget.type) {
     case 'realtime-status':
-      const currentClasses = currentTime ? getCurrentClasses(currentTime, todayClasses) : []
       return (
-        <WidgetWrapper
-          title="실시간 현황"
-          icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+        <RealtimeStatusWidget
+          todayClasses={todayClasses}
+          seatStatus={seatStatus}
+          todayAttendance={todayAttendance}
           onRemove={onRemove}
-        >
-          <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-4 justify-items-center text-center">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{seatStatus.occupied}</div>
-                <div className="text-xs text-muted-foreground">독서실 이용</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{currentClasses.length}</div>
-                <div className="text-xs text-muted-foreground">진행 중 수업</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">{todayAttendance.present}</div>
-                <div className="text-xs text-muted-foreground">오늘 출석</div>
-              </div>
-            </div>
-            {currentClasses.length > 0 && (
-              <div className="mt-4">
-                <div className="text-xs font-medium mb-2">진행 중인 수업</div>
-                <div className="space-y-2">
-                  {currentClasses.slice(0, 3).map((cls) => (
-                    <div key={cls.id} className="text-xs p-2 bg-muted rounded">
-                      <div className="font-medium">{cls.name}</div>
-                      <div className="text-muted-foreground">{cls.teacher} • {cls.room}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </WidgetWrapper>
+        />
       )
 
     case 'students-total':

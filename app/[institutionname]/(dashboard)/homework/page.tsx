@@ -557,6 +557,24 @@ export default function HomeworkPage() {
     return classHomeworkStats.filter((cls) => teacherClassNames.has(cls.class_name))
   }, [isTeacherRole, teacherClassNames, classHomeworkStats])
 
+  // 학생별 그룹핑 연산 메모이제이션 (학생별 뷰에서 사용)
+  // filteredStudents가 변경될 때만 재계산
+  const groupedStudents = useMemo(() => {
+    return filteredStudents.reduce((acc, student) => {
+      const existing = acc.find(g => g.student_id === student.student_id)
+      if (existing) {
+        existing.classes.push(student)
+      } else {
+        acc.push({
+          student_id: student.student_id,
+          student_name: student.student_name,
+          classes: [student]
+        })
+      }
+      return acc
+    }, [] as { student_id: string; student_name: string; classes: typeof filteredStudents }[])
+  }, [filteredStudents])
+
   const totalHomework = homework.length
   const activeHomework = homework.filter((hw) => hw.status === 'active').length
   const completedHomework = homework.filter((hw) => hw.status === 'completed').length
@@ -679,24 +697,8 @@ export default function HomeworkPage() {
               )}
 
               <div className="space-y-3">
-                {/* 학생 ID별로 그룹핑 */}
-                {(() => {
-                  // 학생별로 그룹핑
-                  const groupedStudents = filteredStudents.reduce((acc, student) => {
-                    const existing = acc.find(g => g.student_id === student.student_id)
-                    if (existing) {
-                      existing.classes.push(student)
-                    } else {
-                      acc.push({
-                        student_id: student.student_id,
-                        student_name: student.student_name,
-                        classes: [student]
-                      })
-                    }
-                    return acc
-                  }, [] as { student_id: string; student_name: string; classes: typeof filteredStudents }[])
-
-                  return groupedStudents.map((group) => (
+                {/* 학생 ID별로 그룹핑 (useMemo로 최적화됨) */}
+                {groupedStudents.map((group) => (
                     <div
                       key={group.student_id}
                       className="flex items-center p-4 border rounded-lg hover:bg-muted/50 transition-colors"
@@ -777,8 +779,7 @@ export default function HomeworkPage() {
                         )}
                       </div>
                     </div>
-                  ))
-                })()}
+                  ))}
               </div>
             </CardContent>
           </Card>

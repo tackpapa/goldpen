@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { PagePermissions, PageId, UserRole } from '@/lib/types/permissions'
 import { DEFAULT_PERMISSIONS } from '@/lib/types/permissions'
 
@@ -15,16 +15,52 @@ interface PermissionsResponse {
   error?: string
 }
 
+// 글로벌 캐시: 동일 slug에 대한 중복 요청 방지
+const globalCache: Map<string, {
+  data: PagePermissions
+  timestamp: number
+  promise?: Promise<PagePermissions>
+}> = new Map()
+
+const CACHE_TTL = 30000 // 30초 캐시
+
 export function usePagePermissions(options: UsePagePermissionsOptions = {}) {
   const [permissions, setPermissions] = useState<PagePermissions>(DEFAULT_PERMISSIONS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const mountedRef = useRef(true)
 
-  const fetchPermissions = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
+  const cacheKey = options.orgSlug || '__default__'
 
+  const fetchPermissions = useCallback(async (forceRefresh = false) => {
+    const now = Date.now()
+    const cached = globalCache.get(cacheKey)
+
+    // 캐시가 유효하면 캐시 데이터 사용
+    if (!forceRefresh && cached && (now - cached.timestamp) < CACHE_TTL) {
+      if (mountedRef.current) {
+        setPermissions(cached.data)
+        setLoading(false)
+      }
+      return cached.data
+    }
+
+    // 이미 진행 중인 요청이 있으면 해당 Promise 재사용
+    if (cached?.promise) {
+      try {
+        const data = await cached.promise
+        if (mountedRef.current) {
+          setPermissions(data)
+          setLoading(false)
+        }
+        return data
+      } catch {
+        // 실패 시 새로운 요청 시도
+      }
+    }
+
+    // 새로운 요청 시작
+    const fetchPromise = (async (): Promise<PagePermissions> => {
       const params = new URLSearchParams()
       if (options.orgSlug) params.set('orgSlug', options.orgSlug)
 
@@ -47,19 +83,46 @@ export function usePagePermissions(options: UsePagePermissionsOptions = {}) {
           }
         }
       }
-      setPermissions(merged)
+      return merged
+    })()
+
+    // 캐시에 Promise 저장 (다른 컴포넌트가 재사용할 수 있도록)
+    globalCache.set(cacheKey, { data: DEFAULT_PERMISSIONS, timestamp: 0, promise: fetchPromise })
+
+    try {
+      if (mountedRef.current) {
+        setLoading(true)
+        setError(null)
+      }
+
+      const merged = await fetchPromise
+
+      // 캐시 업데이트
+      globalCache.set(cacheKey, { data: merged, timestamp: Date.now(), promise: undefined })
+
+      if (mountedRef.current) {
+        setPermissions(merged)
+      }
+      return merged
     } catch (err: any) {
-      setError(err.message)
+      globalCache.delete(cacheKey)
+      if (mountedRef.current) {
+        setError(err.message)
+        setPermissions(DEFAULT_PERMISSIONS)
+      }
       console.error('[usePagePermissions] Error:', err)
-      // 에러 시 기본 권한 사용
-      setPermissions(DEFAULT_PERMISSIONS)
+      return DEFAULT_PERMISSIONS
     } finally {
-      setLoading(false)
+      if (mountedRef.current) {
+        setLoading(false)
+      }
     }
-  }, [options.orgSlug])
+  }, [options.orgSlug, cacheKey])
 
   useEffect(() => {
+    mountedRef.current = true
     fetchPermissions()
+    return () => { mountedRef.current = false }
   }, [fetchPermissions])
 
   const updatePermission = async (
@@ -88,6 +151,8 @@ export function usePagePermissions(options: UsePagePermissionsOptions = {}) {
         throw new Error(result.error || '권한 수정 실패')
       }
 
+      // 캐시 업데이트
+      globalCache.set(cacheKey, { data: updatedPermissions, timestamp: Date.now(), promise: undefined })
       setPermissions(updatedPermissions)
       return true
     } catch (err: any) {
@@ -110,6 +175,8 @@ export function usePagePermissions(options: UsePagePermissionsOptions = {}) {
         throw new Error(result.error || '권한 저장 실패')
       }
 
+      // 캐시 업데이트
+      globalCache.set(cacheKey, { data: newPermissions, timestamp: Date.now(), promise: undefined })
       setPermissions(newPermissions)
       return true
     } catch (err: any) {

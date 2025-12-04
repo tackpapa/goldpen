@@ -1,5 +1,6 @@
 'use client'
 
+import { memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Widget, WidgetType, widgetSizeClasses } from '@/lib/types/widget'
@@ -10,11 +11,12 @@ import { GripVertical } from 'lucide-react'
 interface DraggableWidgetProps {
   widget: Widget
   onRemove: () => void
-  currentTime: Date
   data?: WidgetData
 }
 
-export function DraggableWidget({ widget, onRemove, currentTime, data }: DraggableWidgetProps) {
+// React.memo로 감싸 불필요한 리렌더링 방지
+// 위젯 ID, 타입, 데이터가 동일하면 리렌더링 스킵
+function DraggableWidgetComponent({ widget, onRemove, data }: DraggableWidgetProps) {
   const {
     attributes,
     listeners,
@@ -71,9 +73,23 @@ export function DraggableWidget({ widget, onRemove, currentTime, data }: Draggab
       <WidgetRenderer
         widget={widget}
         onRemove={onRemove}
-        currentTime={currentTime}
         data={data}
       />
     </div>
   )
 }
+
+// 커스텀 비교 함수: widget.id와 data 참조만 비교
+function arePropsEqual(
+  prevProps: DraggableWidgetProps,
+  nextProps: DraggableWidgetProps
+): boolean {
+  return (
+    prevProps.widget.id === nextProps.widget.id &&
+    prevProps.widget.type === nextProps.widget.type &&
+    prevProps.widget.size === nextProps.widget.size &&
+    prevProps.data === nextProps.data
+  )
+}
+
+export const DraggableWidget = memo(DraggableWidgetComponent, arePropsEqual)

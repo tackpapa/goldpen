@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { navigationItems, type NavigationItem } from '@/lib/config/navigation'
 
 interface MenuSetting {
@@ -24,16 +24,52 @@ interface MenuSettingsResponse {
   error?: string
 }
 
+// 글로벌 캐시: 동일 slug에 대한 중복 요청 방지
+const globalCache: Map<string, {
+  data: MenuSetting[]
+  timestamp: number
+  promise?: Promise<MenuSetting[]>
+}> = new Map()
+
+const CACHE_TTL = 30000 // 30초 캐시
+
 export function useMenuSettings(options: UseMenuSettingsOptions = {}) {
   const [settings, setSettings] = useState<MenuSetting[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const mountedRef = useRef(true)
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      setLoading(true)
-      setError(null)
+  const cacheKey = options.orgSlug || '__default__'
 
+  const fetchSettings = useCallback(async (forceRefresh = false) => {
+    const now = Date.now()
+    const cached = globalCache.get(cacheKey)
+
+    // 캐시가 유효하면 캐시 데이터 사용
+    if (!forceRefresh && cached && (now - cached.timestamp) < CACHE_TTL) {
+      if (mountedRef.current) {
+        setSettings(cached.data)
+        setLoading(false)
+      }
+      return cached.data
+    }
+
+    // 이미 진행 중인 요청이 있으면 해당 Promise 재사용
+    if (cached?.promise) {
+      try {
+        const data = await cached.promise
+        if (mountedRef.current) {
+          setSettings(data)
+          setLoading(false)
+        }
+        return data
+      } catch {
+        // 실패 시 새로운 요청 시도
+      }
+    }
+
+    // 새로운 요청 시작
+    const fetchPromise = (async (): Promise<MenuSetting[]> => {
       const params = new URLSearchParams()
       if (options.orgSlug) params.set('orgSlug', options.orgSlug)
 
@@ -47,22 +83,49 @@ export function useMenuSettings(options: UseMenuSettingsOptions = {}) {
       }
 
       const data = await res.json() as MenuSettingsResponse
-      const mapped = (data.settings || []).map((s) => ({
+      return (data.settings || []).map((s) => ({
         menuId: s.menu_id,
         isEnabled: s.is_enabled,
         displayOrder: s.display_order
       }))
-      setSettings(mapped)
+    })()
+
+    // 캐시에 Promise 저장 (다른 컴포넌트가 재사용할 수 있도록)
+    globalCache.set(cacheKey, { data: [], timestamp: 0, promise: fetchPromise })
+
+    try {
+      if (mountedRef.current) {
+        setLoading(true)
+        setError(null)
+      }
+
+      const mapped = await fetchPromise
+
+      // 캐시 업데이트
+      globalCache.set(cacheKey, { data: mapped, timestamp: Date.now(), promise: undefined })
+
+      if (mountedRef.current) {
+        setSettings(mapped)
+      }
+      return mapped
     } catch (err: any) {
-      setError(err.message)
+      globalCache.delete(cacheKey)
+      if (mountedRef.current) {
+        setError(err.message)
+      }
       console.error('[useMenuSettings] Error:', err)
+      return []
     } finally {
-      setLoading(false)
+      if (mountedRef.current) {
+        setLoading(false)
+      }
     }
-  }, [options.orgSlug])
+  }, [options.orgSlug, cacheKey])
 
   useEffect(() => {
+    mountedRef.current = true
     fetchSettings()
+    return () => { mountedRef.current = false }
   }, [fetchSettings])
 
   const saveSettings = async (
@@ -85,7 +148,9 @@ export function useMenuSettings(options: UseMenuSettingsOptions = {}) {
         throw new Error(result.error || '메뉴 설정 저장 실패')
       }
 
-      await fetchSettings()
+      // 캐시 무효화 후 새로 로드
+      globalCache.delete(cacheKey)
+      await fetchSettings(true)
       return true
     } catch (err: any) {
       setError(err.message)
