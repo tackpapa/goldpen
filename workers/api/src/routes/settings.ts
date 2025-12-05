@@ -64,7 +64,7 @@ app.get("/", async (c) => {
         status: r.status,
       }));
 
-      // 알림톡 이용내역 (message_logs에서 kakao_alimtalk 타입만)
+      // 알림톡 이용내역 (message_logs에서 kakao_alimtalk 타입만) - 전체 조회
       const { rows: alimtalkRows } = await client.query(
         `SELECT
           id,
@@ -77,10 +77,16 @@ app.get("/", async (c) => {
           created_at
         FROM message_logs
         WHERE org_id = $1 AND message_type = 'kakao_alimtalk'
-        ORDER BY created_at DESC
-        LIMIT 100`,
+        ORDER BY created_at DESC`,
         [orgId],
       );
+
+      // 알림톡 전체 카운트
+      const { rows: alimtalkCountRows } = await client.query(
+        `SELECT COUNT(*)::int as total FROM message_logs WHERE org_id = $1 AND message_type = 'kakao_alimtalk'`,
+        [orgId],
+      );
+      const kakaoTalkUsagesTotal = alimtalkCountRows[0]?.total || 0;
       const kakaoTalkUsages = alimtalkRows.map((r: any) => ({
         id: r.id,
         date: r.date,
@@ -91,7 +97,7 @@ app.get("/", async (c) => {
         status: r.status === 'sent' ? 'success' : 'failed',
       }));
 
-      // SMS 이용내역 (알림톡과 동일한 구조)
+      // SMS 이용내역 (알림톡과 동일한 구조) - 전체 조회
       const { rows: smsRows } = await client.query(
         `SELECT
           id,
@@ -104,10 +110,17 @@ app.get("/", async (c) => {
           created_at
         FROM message_logs
         WHERE org_id = $1 AND message_type = 'sms'
-        ORDER BY created_at DESC
-        LIMIT 100`,
+        ORDER BY created_at DESC`,
         [orgId],
       );
+
+      // SMS 전체 카운트
+      const { rows: smsCountRows } = await client.query(
+        `SELECT COUNT(*)::int as total FROM message_logs WHERE org_id = $1 AND message_type = 'sms'`,
+        [orgId],
+      );
+      const smsUsagesTotal = smsCountRows[0]?.total || 0;
+
       const smsUsages = smsRows.map((r: any) => ({
         id: r.id,
         date: r.date,
@@ -118,19 +131,19 @@ app.get("/", async (c) => {
         status: r.status === 'sent' ? 'success' : 'failed',
       }));
 
-      // SMS 유형별 집계 (이번 달)
+      // SMS 유형별 집계 (이번 달) - TEMPLATE_LABELS와 동일한 이름 사용
       const { rows: smsSummaryRows } = await client.query(
         `SELECT
           CASE
-            WHEN description LIKE 'late:%' THEN '지각 알림'
-            WHEN description LIKE 'absent:%' THEN '결석 알림'
-            WHEN description LIKE 'checkin:%' THEN '등원 알림'
-            WHEN description LIKE 'checkout:%' THEN '하원 알림'
-            WHEN description LIKE 'study_out:%' THEN '외출 알림'
-            WHEN description LIKE 'study_return:%' THEN '복귀 알림'
-            WHEN description LIKE 'study_report:%' THEN '학습 리포트'
-            WHEN description LIKE 'lesson_report:%' THEN '수업 리포트'
-            WHEN description LIKE 'exam_result:%' THEN '시험 결과'
+            WHEN description LIKE 'late:%' OR description LIKE '%_late:%' THEN '지각 알림'
+            WHEN description LIKE 'absent:%' OR description LIKE '%_absent:%' THEN '결석 알림'
+            WHEN description LIKE 'checkin:%' THEN '입실/등원 알림'
+            WHEN description LIKE 'checkout:%' THEN '퇴실/하원 알림'
+            WHEN description LIKE 'study_out:%' OR description LIKE 'out:%' THEN '외출 알림'
+            WHEN description LIKE 'study_return:%' OR description LIKE 'return:%' THEN '복귀 알림'
+            WHEN description LIKE 'daily_report:%' OR description LIKE 'study_report:%' THEN '당일 학습 진행 결과'
+            WHEN description LIKE 'lesson_report:%' THEN '수업일지 전송'
+            WHEN description LIKE 'exam_result:%' THEN '시험 결과 전송'
             WHEN description LIKE 'assignment:%' THEN '과제 알림'
             ELSE '기타 알림'
           END as notification_type,
@@ -142,15 +155,15 @@ app.get("/", async (c) => {
           AND created_at >= DATE_TRUNC('month', CURRENT_DATE)
         GROUP BY
           CASE
-            WHEN description LIKE 'late:%' THEN '지각 알림'
-            WHEN description LIKE 'absent:%' THEN '결석 알림'
-            WHEN description LIKE 'checkin:%' THEN '등원 알림'
-            WHEN description LIKE 'checkout:%' THEN '하원 알림'
-            WHEN description LIKE 'study_out:%' THEN '외출 알림'
-            WHEN description LIKE 'study_return:%' THEN '복귀 알림'
-            WHEN description LIKE 'study_report:%' THEN '학습 리포트'
-            WHEN description LIKE 'lesson_report:%' THEN '수업 리포트'
-            WHEN description LIKE 'exam_result:%' THEN '시험 결과'
+            WHEN description LIKE 'late:%' OR description LIKE '%_late:%' THEN '지각 알림'
+            WHEN description LIKE 'absent:%' OR description LIKE '%_absent:%' THEN '결석 알림'
+            WHEN description LIKE 'checkin:%' THEN '입실/등원 알림'
+            WHEN description LIKE 'checkout:%' THEN '퇴실/하원 알림'
+            WHEN description LIKE 'study_out:%' OR description LIKE 'out:%' THEN '외출 알림'
+            WHEN description LIKE 'study_return:%' OR description LIKE 'return:%' THEN '복귀 알림'
+            WHEN description LIKE 'daily_report:%' OR description LIKE 'study_report:%' THEN '당일 학습 진행 결과'
+            WHEN description LIKE 'lesson_report:%' THEN '수업일지 전송'
+            WHEN description LIKE 'exam_result:%' THEN '시험 결과 전송'
             WHEN description LIKE 'assignment:%' THEN '과제 알림'
             ELSE '기타 알림'
           END
@@ -189,19 +202,19 @@ app.get("/", async (c) => {
         cost: r.cost || 0,
       }));
 
-      // 알림톡 유형별 집계 (이번 달)
+      // 알림톡 유형별 집계 (이번 달) - TEMPLATE_LABELS와 동일한 이름 사용
       const { rows: usageSummaryRows } = await client.query(
         `SELECT
           CASE
-            WHEN description LIKE 'late:%' THEN '지각 알림'
-            WHEN description LIKE 'absent:%' THEN '결석 알림'
-            WHEN description LIKE 'checkin:%' THEN '등원 알림'
-            WHEN description LIKE 'checkout:%' THEN '하원 알림'
-            WHEN description LIKE 'study_out:%' THEN '외출 알림'
-            WHEN description LIKE 'study_return:%' THEN '복귀 알림'
-            WHEN description LIKE 'study_report:%' THEN '학습 리포트'
-            WHEN description LIKE 'lesson_report:%' THEN '수업 리포트'
-            WHEN description LIKE 'exam_result:%' THEN '시험 결과'
+            WHEN description LIKE 'late:%' OR description LIKE '%_late:%' THEN '지각 알림'
+            WHEN description LIKE 'absent:%' OR description LIKE '%_absent:%' THEN '결석 알림'
+            WHEN description LIKE 'checkin:%' THEN '입실/등원 알림'
+            WHEN description LIKE 'checkout:%' THEN '퇴실/하원 알림'
+            WHEN description LIKE 'study_out:%' OR description LIKE 'out:%' THEN '외출 알림'
+            WHEN description LIKE 'study_return:%' OR description LIKE 'return:%' THEN '복귀 알림'
+            WHEN description LIKE 'daily_report:%' OR description LIKE 'study_report:%' THEN '당일 학습 진행 결과'
+            WHEN description LIKE 'lesson_report:%' THEN '수업일지 전송'
+            WHEN description LIKE 'exam_result:%' THEN '시험 결과 전송'
             WHEN description LIKE 'assignment:%' THEN '과제 알림'
             ELSE '기타 알림'
           END as notification_type,
@@ -213,15 +226,15 @@ app.get("/", async (c) => {
           AND created_at >= DATE_TRUNC('month', CURRENT_DATE)
         GROUP BY
           CASE
-            WHEN description LIKE 'late:%' THEN '지각 알림'
-            WHEN description LIKE 'absent:%' THEN '결석 알림'
-            WHEN description LIKE 'checkin:%' THEN '등원 알림'
-            WHEN description LIKE 'checkout:%' THEN '하원 알림'
-            WHEN description LIKE 'study_out:%' THEN '외출 알림'
-            WHEN description LIKE 'study_return:%' THEN '복귀 알림'
-            WHEN description LIKE 'study_report:%' THEN '학습 리포트'
-            WHEN description LIKE 'lesson_report:%' THEN '수업 리포트'
-            WHEN description LIKE 'exam_result:%' THEN '시험 결과'
+            WHEN description LIKE 'late:%' OR description LIKE '%_late:%' THEN '지각 알림'
+            WHEN description LIKE 'absent:%' OR description LIKE '%_absent:%' THEN '결석 알림'
+            WHEN description LIKE 'checkin:%' THEN '입실/등원 알림'
+            WHEN description LIKE 'checkout:%' THEN '퇴실/하원 알림'
+            WHEN description LIKE 'study_out:%' OR description LIKE 'out:%' THEN '외출 알림'
+            WHEN description LIKE 'study_return:%' OR description LIKE 'return:%' THEN '복귀 알림'
+            WHEN description LIKE 'daily_report:%' OR description LIKE 'study_report:%' THEN '당일 학습 진행 결과'
+            WHEN description LIKE 'lesson_report:%' THEN '수업일지 전송'
+            WHEN description LIKE 'exam_result:%' THEN '시험 결과 전송'
             WHEN description LIKE 'assignment:%' THEN '과제 알림'
             ELSE '기타 알림'
           END
@@ -234,8 +247,8 @@ app.get("/", async (c) => {
         cost: r.total_cost || 0,
       }));
 
-      // 충전/차감 내역 (credit_transactions)
-      const { rows: transactionRows } = await client.query(
+      // 충전내역만 (free, paid 타입) - 전체 조회
+      const { rows: chargeRows } = await client.query(
         `SELECT
           id,
           TO_CHAR(created_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD HH24:MI') as date,
@@ -244,12 +257,11 @@ app.get("/", async (c) => {
           balance_after::int,
           description
         FROM credit_transactions
-        WHERE org_id = $1
-        ORDER BY created_at DESC
-        LIMIT 50`,
+        WHERE org_id = $1 AND type IN ('free', 'paid')
+        ORDER BY created_at DESC`,
         [orgId],
       );
-      const creditTransactions = transactionRows.map((r: any) => ({
+      const creditCharges = chargeRows.map((r: any) => ({
         id: r.id,
         date: r.date,
         type: r.type,
@@ -258,16 +270,64 @@ app.get("/", async (c) => {
         description: r.description || '-',
       }));
 
+      // 충전내역 전체 카운트
+      const { rows: chargeCountRows } = await client.query(
+        `SELECT COUNT(*)::int as total FROM credit_transactions WHERE org_id = $1 AND type IN ('free', 'paid')`,
+        [orgId],
+      );
+      const creditChargesTotal = chargeCountRows[0]?.total || 0;
+
+      // 이번 달 알림톡 전체 카운트 및 합계
+      const { rows: alimtalkMonthRows } = await client.query(
+        `SELECT
+          COUNT(*)::int as total_count,
+          COALESCE(SUM(recipient_count), 0)::int as total_recipients,
+          COALESCE(SUM(total_price), 0)::int as total_cost
+        FROM message_logs
+        WHERE org_id = $1
+          AND message_type = 'kakao_alimtalk'
+          AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+        [orgId],
+      );
+      const alimtalkMonthStats = {
+        totalCount: alimtalkMonthRows[0]?.total_count || 0,
+        totalRecipients: alimtalkMonthRows[0]?.total_recipients || 0,
+        totalCost: alimtalkMonthRows[0]?.total_cost || 0,
+      };
+
+      // 이번 달 SMS 전체 카운트 및 합계
+      const { rows: smsMonthRows } = await client.query(
+        `SELECT
+          COUNT(*)::int as total_count,
+          COALESCE(SUM(recipient_count), 0)::int as total_recipients,
+          COALESCE(SUM(total_price), 0)::int as total_cost
+        FROM message_logs
+        WHERE org_id = $1
+          AND message_type = 'sms'
+          AND created_at >= DATE_TRUNC('month', CURRENT_DATE)`,
+        [orgId],
+      );
+      const smsMonthStats = {
+        totalCount: smsMonthRows[0]?.total_count || 0,
+        totalRecipients: smsMonthRows[0]?.total_recipients || 0,
+        totalCost: smsMonthRows[0]?.total_cost || 0,
+      };
+
       return {
         organization: org,
         branches,
         rooms,
         kakaoTalkUsages,
+        kakaoTalkUsagesTotal,
         smsUsages,
+        smsUsagesTotal,
         smsSummary,
         serviceUsages,
         usageSummary,
-        creditTransactions,
+        creditCharges,
+        creditChargesTotal,
+        alimtalkMonthStats,
+        smsMonthStats,
       };
     });
 

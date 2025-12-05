@@ -159,10 +159,18 @@ export default function SettingsPage() {
   const [smsSummary, setSmsSummary] = useState<UsageSummary[]>([])
   const [serviceUsages, setServiceUsages] = useState<ServiceUsage[]>([])
   const [usageSummary, setUsageSummary] = useState<UsageSummary[]>([])
-  const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([])
+  const [creditCharges, setCreditCharges] = useState<CreditTransaction[]>([])
+  const [creditChargesTotal, setCreditChargesTotal] = useState(0)
+  // 전체 카운트 및 합계 (무한 스크롤용)
+  const [kakaoTalkUsagesTotal, setKakaoTalkUsagesTotal] = useState(0)
+  const [kakaoTalkUsagesTotalCost, setKakaoTalkUsagesTotalCost] = useState(0)
+  const [smsUsagesTotal, setSmsUsagesTotal] = useState(0)
+  const [smsUsagesTotalCost, setSmsUsagesTotalCost] = useState(0)
   // 이번 달 총합 (요약 카드용)
   const [totalAlimtalkCount, setTotalAlimtalkCount] = useState(0)
   const [totalAlimtalkCost, setTotalAlimtalkCost] = useState(0)
+  const [totalSmsCount, setTotalSmsCount] = useState(0)
+  const [totalSmsCost, setTotalSmsCost] = useState(0)
 
   // 탭별 로딩 상태
   const [billingLoading, setBillingLoading] = useState(false)
@@ -173,36 +181,168 @@ export default function SettingsPage() {
   const [serviceDisplayCount, setServiceDisplayCount] = useState(10)
   const [creditDisplayCount, setCreditDisplayCount] = useState(10)
 
-  // 알림 유형 한국어 변환
+  // IntersectionObserver refs for infinite scroll
+  const kakaoSentinelRef = useRef<HTMLDivElement>(null)
+  const smsSentinelRef = useRef<HTMLDivElement>(null)
+  const creditSentinelRef = useRef<HTMLDivElement>(null)
+  // Scroll container refs for IntersectionObserver root
+  const kakaoScrollRef = useRef<HTMLDivElement>(null)
+  const smsScrollRef = useRef<HTMLDivElement>(null)
+  const creditScrollRef = useRef<HTMLDivElement>(null)
+
+  // IntersectionObserver for Kakao (infinite scroll)
+  useEffect(() => {
+    const sentinel = kakaoSentinelRef.current
+    const scrollContainer = kakaoScrollRef.current
+    if (!sentinel || !scrollContainer) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && kakaoDisplayCount < kakaoTalkUsages.length) {
+          setKakaoDisplayCount(prev => Math.min(prev + 20, kakaoTalkUsages.length))
+        }
+      },
+      { threshold: 0.1, root: scrollContainer }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [kakaoDisplayCount, kakaoTalkUsages.length])
+
+  // IntersectionObserver for SMS (infinite scroll)
+  useEffect(() => {
+    const sentinel = smsSentinelRef.current
+    const scrollContainer = smsScrollRef.current
+    if (!sentinel || !scrollContainer) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && smsDisplayCount < smsUsages.length) {
+          setSmsDisplayCount(prev => Math.min(prev + 20, smsUsages.length))
+        }
+      },
+      { threshold: 0.1, root: scrollContainer }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [smsDisplayCount, smsUsages.length])
+
+  // IntersectionObserver for Credit (infinite scroll)
+  useEffect(() => {
+    const sentinel = creditSentinelRef.current
+    const scrollContainer = creditScrollRef.current
+    if (!sentinel || !scrollContainer) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && creditDisplayCount < creditCharges.length) {
+          setCreditDisplayCount(prev => Math.min(prev + 20, creditCharges.length))
+        }
+      },
+      { threshold: 0.1, root: scrollContainer }
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [creditDisplayCount, creditCharges.length])
+
+  // 알림 유형 한국어 변환 (TEMPLATE_LABELS와 동일한 이름 사용)
   const notificationTypeMap: Record<string, string> = {
-    // 등원/하원
-    'checkin': '등원 알림',
-    'checkout': '하원 알림',
-    // 지각
+    // 등원/하원 (TEMPLATE_LABELS: '입실/등원 알림', '퇴실/하원 알림')
+    'checkin': '입실/등원 알림',
+    'checkout': '퇴실/하원 알림',
+    // 지각 (TEMPLATE_LABELS: '지각 알림')
     'late': '지각 알림',
-    'academy_late': '학원 지각',
-    'study_late': '스터디 지각',
-    'class_late': '수업 지각',
-    'commute_late': '출근 지각',
-    // 결석
+    'academy_late': '지각 알림',
+    'study_late': '지각 알림',
+    'class_late': '지각 알림',
+    'commute_late': '지각 알림',
+    // 결석 (TEMPLATE_LABELS: '결석 알림')
     'absent': '결석 알림',
-    'academy_absent': '학원 결석',
-    'study_absent': '스터디 결석',
-    'class_absent': '수업 결석',
-    'commute_absent': '출근 결석',
-    // 외출/복귀
+    'academy_absent': '결석 알림',
+    'study_absent': '결석 알림',
+    'class_absent': '결석 알림',
+    'commute_absent': '결석 알림',
+    // 외출/복귀 (TEMPLATE_LABELS: '외출 알림', '복귀 알림')
     'out': '외출 알림',
     'return': '복귀 알림',
     'study_out': '외출 알림',
     'study_return': '복귀 알림',
-    // 리포트
-    'study_report': '학습 리포트',
-    'lesson_report': '수업 리포트',
-    'daily_report': '일일 리포트',
-    'exam_result': '시험 결과',
+    // 리포트 (TEMPLATE_LABELS: '당일 학습 진행 결과', '수업일지 전송')
+    'study_report': '당일 학습 진행 결과',
+    'daily_report': '당일 학습 진행 결과',
+    'lesson_report': '수업일지 전송',
+    // 기타 (TEMPLATE_LABELS: '시험 결과 전송', '과제 알림')
+    'exam_result': '시험 결과 전송',
     'assignment': '과제 알림',
   }
   const getNotificationTypeLabel = (type: string) => notificationTypeMap[type] || type
+
+  // 차감 내역 description 한글 변환
+  // 입력: "알림톡 발송: checkout - 김하늘" 또는 "SMS 발송: daily_report - 오지훈"
+  // 출력: "하원 알림 - 김하늘" (채널 정보는 Badge로 별도 표시)
+  const formatCreditDescription = (description: string) => {
+    if (!description) return '-'
+
+    // "알림톡 발송: type - name" 또는 "SMS 발송: type - name" 형식 파싱
+    const match = description.match(/^(알림톡 발송|SMS 발송):\s*(\w+)\s*-\s*(.+)$/)
+    if (match) {
+      const [, , type, name] = match
+      const koreanType = notificationTypeMap[type] || type
+      return `${koreanType} - ${name.trim()}`
+    }
+
+    // 매칭 안되면 원본 반환 (영어 type만이라도 변환 시도)
+    for (const [eng, kor] of Object.entries(notificationTypeMap)) {
+      if (description.includes(eng)) {
+        return description.replace(eng, kor)
+      }
+    }
+
+    return description
+  }
+
+  // 차감 내역에서 채널(SMS/알림톡) 구분
+  // description 기반으로 우선 판단 (recordTransactionPostgres에서 채널명 저장)
+  // 기존 데이터 호환: description으로 판단 불가 시 금액 기반 폴백
+  const getCreditChannel = (description: string, amount: number): 'sms' | 'kakao' | 'other' => {
+    // 1. description 기반으로 우선 판단 (새 데이터)
+    if (description?.includes('SMS 발송')) return 'sms'
+    if (description?.includes('알림톡 발송')) return 'kakao'
+    // 2. 기존 데이터 호환: 금액 기반 폴백
+    const absAmount = Math.abs(amount)
+    if (absAmount === 55 || absAmount === 20) return 'sms' // SMS 단가
+    if (absAmount === 100 || absAmount === 9) return 'kakao' // 알림톡 단가
+    return 'other'
+  }
+
+  // SMS/알림톡 전체 카테고리 목록 (TEMPLATE_LABELS와 동일한 10개 항목)
+  const allNotificationCategories = [
+    '지각 알림',
+    '결석 알림',
+    '입실/등원 알림',
+    '퇴실/하원 알림',
+    '외출 알림',
+    '복귀 알림',
+    '당일 학습 진행 결과',
+    '수업일지 전송',
+    '시험 결과 전송',
+    '과제 알림',
+  ]
+
+  // smsSummary를 전체 카테고리로 확장 (없는 항목은 0건)
+  const fullSmsSummary = useMemo(() => {
+    return allNotificationCategories.map(category => {
+      const found = smsSummary.find(s => s.type === category)
+      return found || { type: category, count: 0, cost: 0 }
+    })
+  }, [smsSummary])
+
+  // usageSummary(알림톡)도 동일하게 전체 카테고리로 확장
+  const fullUsageSummary = useMemo(() => {
+    return allNotificationCategories.map(category => {
+      const found = usageSummary.find(s => s.type === category)
+      return found || { type: category, count: 0, cost: 0 }
+    })
+  }, [usageSummary])
 
   // URL에서 slug 추출
   const slug = typeof window !== 'undefined'
@@ -243,9 +383,10 @@ export default function SettingsPage() {
               usageSummary?: UsageSummary[]
               smsUsages?: SmsUsage[]
               smsSummary?: UsageSummary[]
-              creditTransactions?: CreditTransaction[]
-              totalAlimtalkCount?: number
-              totalAlimtalkCost?: number
+              creditCharges?: CreditTransaction[]
+              creditChargesTotal?: number
+              alimtalkMonthStats?: { totalCount: number; totalRecipients: number; totalCost: number }
+              smsMonthStats?: { totalCount: number; totalRecipients: number; totalCost: number }
             }>
           ])
 
@@ -290,9 +431,17 @@ export default function SettingsPage() {
             if (billingData.smsSummary) setSmsSummary(billingData.smsSummary)
             if (billingData.serviceUsages) setServiceUsages(billingData.serviceUsages)
             if (billingData.usageSummary) setUsageSummary(billingData.usageSummary)
-            if (billingData.creditTransactions) setCreditTransactions(billingData.creditTransactions)
-            if (billingData.totalAlimtalkCount !== undefined) setTotalAlimtalkCount(billingData.totalAlimtalkCount)
-            if (billingData.totalAlimtalkCost !== undefined) setTotalAlimtalkCost(billingData.totalAlimtalkCost)
+            if (billingData.creditCharges) setCreditCharges(billingData.creditCharges)
+            if (billingData.creditChargesTotal !== undefined) setCreditChargesTotal(billingData.creditChargesTotal)
+            // 이번 달 알림톡/SMS 월별 통계
+            if (billingData.alimtalkMonthStats) {
+              setTotalAlimtalkCount(billingData.alimtalkMonthStats.totalCount)
+              setTotalAlimtalkCost(billingData.alimtalkMonthStats.totalCost)
+            }
+            if (billingData.smsMonthStats) {
+              setTotalSmsCount(billingData.smsMonthStats.totalCount)
+              setTotalSmsCost(billingData.smsMonthStats.totalCost)
+            }
             setInitialBillingLoaded(true)
           }
           setBillingLoading(false)
@@ -358,23 +507,41 @@ export default function SettingsPage() {
 
       const billingData = await billingRes.json() as {
         kakaoTalkUsages?: KakaoTalkUsage[]
+        kakaoTalkUsagesTotal?: number
+        kakaoTalkUsagesTotalCost?: number
         serviceUsages?: ServiceUsage[]
         usageSummary?: UsageSummary[]
         smsUsages?: SmsUsage[]
+        smsUsagesTotal?: number
+        smsUsagesTotalCost?: number
         smsSummary?: UsageSummary[]
-        creditTransactions?: CreditTransaction[]
-        totalAlimtalkCount?: number
-        totalAlimtalkCost?: number
+        creditCharges?: CreditTransaction[]
+        creditChargesTotal?: number
+        alimtalkMonthStats?: { totalCount: number; totalRecipients: number; totalCost: number }
+        smsMonthStats?: { totalCount: number; totalRecipients: number; totalCost: number }
       }
 
       if (billingRes.ok) {
         if (billingData.kakaoTalkUsages) setKakaoTalkUsages(billingData.kakaoTalkUsages)
+        if (billingData.kakaoTalkUsagesTotal !== undefined) setKakaoTalkUsagesTotal(billingData.kakaoTalkUsagesTotal)
+        if (billingData.kakaoTalkUsagesTotalCost !== undefined) setKakaoTalkUsagesTotalCost(billingData.kakaoTalkUsagesTotalCost)
+        if (billingData.smsUsages) setSmsUsages(billingData.smsUsages)
+        if (billingData.smsUsagesTotal !== undefined) setSmsUsagesTotal(billingData.smsUsagesTotal)
+        if (billingData.smsUsagesTotalCost !== undefined) setSmsUsagesTotalCost(billingData.smsUsagesTotalCost)
+        if (billingData.smsSummary) setSmsSummary(billingData.smsSummary)
         if (billingData.serviceUsages) setServiceUsages(billingData.serviceUsages)
         if (billingData.usageSummary) setUsageSummary(billingData.usageSummary)
-        if (billingData.creditTransactions) setCreditTransactions(billingData.creditTransactions)
-        // 이번 달 총합 (요약 카드용)
-        if (billingData.totalAlimtalkCount !== undefined) setTotalAlimtalkCount(billingData.totalAlimtalkCount)
-        if (billingData.totalAlimtalkCost !== undefined) setTotalAlimtalkCost(billingData.totalAlimtalkCost)
+        if (billingData.creditCharges) setCreditCharges(billingData.creditCharges)
+        if (billingData.creditChargesTotal !== undefined) setCreditChargesTotal(billingData.creditChargesTotal)
+        // 이번 달 알림톡/SMS 월별 통계
+        if (billingData.alimtalkMonthStats) {
+          setTotalAlimtalkCount(billingData.alimtalkMonthStats.totalCount)
+          setTotalAlimtalkCost(billingData.alimtalkMonthStats.totalCost)
+        }
+        if (billingData.smsMonthStats) {
+          setTotalSmsCount(billingData.smsMonthStats.totalCount)
+          setTotalSmsCost(billingData.smsMonthStats.totalCost)
+        }
       }
     } catch {
       console.error('Failed to fetch billing data')
@@ -2971,8 +3138,8 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-xs text-muted-foreground">
-                    {creditTransactions.length > 0
-                      ? `최근 거래: ${creditTransactions[0]?.date || '-'}`
+                    {creditCharges.length > 0
+                      ? `최근 충전: ${creditCharges[0]?.date || '-'}`
                       : '충전 내역 없음'}
                   </p>
                   <Button
@@ -3208,27 +3375,28 @@ export default function SettingsPage() {
                 <TabsList>
                   <TabsTrigger value="kakaotalk-usage">알림톡 이용내역</TabsTrigger>
                   <TabsTrigger value="service-usage">SMS 이용내역</TabsTrigger>
-                  <TabsTrigger value="credit-history">충전/차감 내역</TabsTrigger>
+                  <TabsTrigger value="credit-history">충전내역</TabsTrigger>
                 </TabsList>
 
                 {/* KakaoTalk Usage History */}
                 <TabsContent value="kakaotalk-usage" className="space-y-4">
-                  {/* 유형별 집계 */}
-                  {usageSummary.length > 0 && (
-                    <div className="grid gap-3 md:grid-cols-5">
-                      {usageSummary.map((summary) => (
-                        <div key={summary.type} className="rounded-lg border p-3">
-                          <div className="text-xs text-muted-foreground">{summary.type}</div>
-                          <div className="flex items-baseline justify-between mt-1">
-                            <span className="text-lg font-semibold">{summary.count}건</span>
-                            <span className="text-sm text-muted-foreground">₩{summary.cost.toLocaleString()}</span>
-                          </div>
+                  {/* 유형별 집계 - 10개 카테고리 항상 표시 */}
+                  <div className="grid gap-3 md:grid-cols-5">
+                    {fullUsageSummary.map((summary) => (
+                      <div key={summary.type} className={cn(
+                        "rounded-lg border p-3",
+                        summary.count === 0 && "opacity-50"
+                      )}>
+                        <div className="text-xs text-muted-foreground">{summary.type}</div>
+                        <div className="flex items-baseline justify-between mt-1">
+                          <span className="text-lg font-semibold">{summary.count}건</span>
+                          <span className="text-sm text-muted-foreground">₩{summary.cost.toLocaleString()}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
                   <div className="rounded-md border">
-                    <div className="overflow-auto max-h-[600px]">
+                    <div ref={kakaoScrollRef} className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50 sticky top-0">
                           <tr className="border-b">
@@ -3269,44 +3437,38 @@ export default function SettingsPage() {
                           )}
                         </tbody>
                       </table>
+                      {/* Sentinel for infinite scroll */}
+                      <div ref={kakaoSentinelRef} className="h-4" />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      {kakaoDisplayCount < kakaoTalkUsages.length
-                        ? `${kakaoDisplayCount}건 표시 중 (전체 ${kakaoTalkUsages.length}건)`
-                        : `총 ${kakaoTalkUsages.length}건`} · 합계: ₩{kakaoTalkUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      {kakaoDisplayCount < kakaoTalkUsagesTotal
+                        ? `${kakaoDisplayCount}건 표시 중 (전체 ${kakaoTalkUsagesTotal}건) - 스크롤하여 더 보기`
+                        : `총 ${kakaoTalkUsagesTotal}건`} · 합계: ₩{kakaoTalkUsagesTotalCost.toLocaleString()}
                     </p>
-                    {kakaoDisplayCount < kakaoTalkUsages.length && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setKakaoDisplayCount(prev => prev + 10)}
-                      >
-                        더보기 (+10)
-                      </Button>
-                    )}
                   </div>
                 </TabsContent>
 
                 {/* SMS Usage History */}
                 <TabsContent value="service-usage" className="space-y-4">
-                  {/* 유형별 집계 */}
-                  {smsSummary.length > 0 && (
-                    <div className="grid gap-3 md:grid-cols-5">
-                      {smsSummary.map((summary) => (
-                        <div key={summary.type} className="rounded-lg border p-3">
-                          <div className="text-xs text-muted-foreground">{summary.type}</div>
-                          <div className="flex items-baseline justify-between mt-1">
-                            <span className="text-lg font-semibold">{summary.count}건</span>
-                            <span className="text-sm text-muted-foreground">₩{summary.cost.toLocaleString()}</span>
-                          </div>
+                  {/* 유형별 집계 - 10개 카테고리 항상 표시 */}
+                  <div className="grid gap-3 md:grid-cols-5">
+                    {fullSmsSummary.map((summary) => (
+                      <div key={summary.type} className={cn(
+                        "rounded-lg border p-3",
+                        summary.count === 0 && "opacity-50"
+                      )}>
+                        <div className="text-xs text-muted-foreground">{summary.type}</div>
+                        <div className="flex items-baseline justify-between mt-1">
+                          <span className="text-lg font-semibold">{summary.count}건</span>
+                          <span className="text-sm text-muted-foreground">₩{summary.cost.toLocaleString()}</span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
                   <div className="rounded-md border">
-                    <div className="overflow-auto max-h-[600px]">
+                    <div ref={smsScrollRef} className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50 sticky top-0">
                           <tr className="border-b">
@@ -3347,30 +3509,23 @@ export default function SettingsPage() {
                           )}
                         </tbody>
                       </table>
+                      {/* Sentinel for infinite scroll */}
+                      <div ref={smsSentinelRef} className="h-4" />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      {smsDisplayCount < smsUsages.length
-                        ? `${smsDisplayCount}건 표시 중 (전체 ${smsUsages.length}건)`
-                        : `총 ${smsUsages.length}건`} · 합계: ₩{smsUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      {smsDisplayCount < smsUsagesTotal
+                        ? `${smsDisplayCount}건 표시 중 (전체 ${smsUsagesTotal}건) - 스크롤하여 더 보기`
+                        : `총 ${smsUsagesTotal}건`} · 합계: ₩{smsUsagesTotalCost.toLocaleString()}
                     </p>
-                    {smsDisplayCount < smsUsages.length && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSmsDisplayCount(prev => prev + 10)}
-                      >
-                        더보기 (+10)
-                      </Button>
-                    )}
                   </div>
                 </TabsContent>
 
-                {/* Credit Transaction History */}
+                {/* Credit Charge History (충전내역만) */}
                 <TabsContent value="credit-history" className="space-y-4">
                   <div className="rounded-md border">
-                    <div className="overflow-auto max-h-[600px]">
+                    <div ref={creditScrollRef} className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50 sticky top-0">
                           <tr className="border-b">
@@ -3382,24 +3537,24 @@ export default function SettingsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {creditTransactions.length === 0 ? (
+                          {creditCharges.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                충전/차감 내역이 없습니다.
+                                충전 내역이 없습니다.
                               </td>
                             </tr>
                           ) : (
-                            creditTransactions.slice(0, creditDisplayCount).map((tx) => (
+                            creditCharges.slice(0, creditDisplayCount).map((tx) => (
                               <tr key={tx.id} className="border-b hover:bg-muted/50">
                                 <td className="p-4 align-middle">{tx.date}</td>
                                 <td className="p-4 align-middle">
-                                  <Badge variant={tx.type === 'charge' ? 'default' : tx.type === 'deduction' ? 'secondary' : 'outline'}>
-                                    {tx.type === 'charge' ? '충전' : tx.type === 'deduction' ? '차감' : tx.type}
+                                  <Badge variant="default">
+                                    {tx.type === 'free' ? '무료충전' : tx.type === 'paid' ? '유료충전' : tx.type}
                                   </Badge>
                                 </td>
-                                <td className="p-4 align-middle">{tx.description}</td>
-                                <td className={`p-4 align-middle text-right font-medium ${tx.amount > 0 ? 'text-green-600' : tx.amount < 0 ? 'text-red-600' : ''}`}>
-                                  {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString()}원
+                                <td className="p-4 align-middle">{formatCreditDescription(tx.description)}</td>
+                                <td className="p-4 align-middle text-right font-medium text-green-600">
+                                  +{tx.amount.toLocaleString()}원
                                 </td>
                                 <td className="p-4 align-middle text-right text-muted-foreground">
                                   ₩{tx.balanceAfter.toLocaleString()}
@@ -3409,28 +3564,19 @@ export default function SettingsPage() {
                           )}
                         </tbody>
                       </table>
+                      {/* Sentinel for infinite scroll */}
+                      <div ref={creditSentinelRef} className="h-4" />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      {creditDisplayCount < creditTransactions.length
-                        ? `${creditDisplayCount}건 표시 중 (전체 ${creditTransactions.length}건)`
-                        : `총 ${creditTransactions.length}건`}
+                      {creditDisplayCount < creditCharges.length
+                        ? `${creditDisplayCount}건 표시 중 (전체 ${creditChargesTotal}건) - 스크롤하여 더 보기`
+                        : `총 ${creditChargesTotal}건`}
                     </p>
-                    <div className="flex items-center gap-4">
-                      {creditDisplayCount < creditTransactions.length && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setCreditDisplayCount(prev => prev + 10)}
-                        >
-                          더보기 (+10)
-                        </Button>
-                      )}
-                      <p className="text-sm font-medium">
-                        현재 잔액: ₩{(organization.credit_balance || 0).toLocaleString()}
-                      </p>
-                    </div>
+                    <p className="text-sm font-medium">
+                      현재 잔액: ₩{(organization.credit_balance || 0).toLocaleString()}
+                    </p>
                   </div>
                 </TabsContent>
               </Tabs>

@@ -975,12 +975,13 @@ async function sendNotification(
       return;
     }
 
-    // 트랜잭션 기록
+    // 트랜잭션 기록 - messageType 전달
     await recordTransactionPostgres(
       sql, orgId,
       balanceResult.price,
       balanceResult.newBalance!,
-      dbType as SharedNotificationType, studentName
+      dbType as SharedNotificationType, studentName,
+      messageType
     );
 
     // 메시지 로그 기록 (성공) - messageType 전달

@@ -367,3 +367,173 @@ export function getAllTemplates(): Record<NotificationType, TemplateConfig> {
 
 // PPURIO 함수와의 호환성을 위해 동일한 인터페이스 export
 export const sendPpurioAlimtalk = sendSolapiAlimtalk;
+
+// ============================================================
+// SMS 발송
+// ============================================================
+
+/**
+ * SMS 메시지 템플릿 (알림톡 템플릿과 유사한 형태)
+ * #{변수명} 형태로 정의
+ */
+export const SMS_TEMPLATES: Record<NotificationType, string> = {
+  late: "[#{기관명}] #{학생명} 학생이 #{시간} 기준 아직 등원하지 않았습니다. 확인 부탁드립니다.",
+  absent: "[#{기관명}] #{학생명} 학생이 오늘 결석했습니다.",
+  checkin: "[#{기관명}] #{학생명} 학생이 #{시간}에 등원했습니다.",
+  checkout: "[#{기관명}] #{학생명} 학생이 #{시간}에 하원했습니다.",
+  study_out: "[#{기관명}] #{학생명} 학생이 #{시간}에 외출했습니다.",
+  study_return: "[#{기관명}] #{학생명} 학생이 #{시간}에 복귀했습니다.",
+  study_report: "[#{기관명}] #{학생명} 학생 #{날짜} 학습 결과\n총 학습시간: #{총학습시간}\n완료 과목: #{완료과목}",
+  daily_report: "[#{기관명}] #{학생명} 학생 #{날짜} 학습 결과\n총 학습시간: #{총학습시간}\n완료 과목: #{완료과목}",
+  lesson_report: "[#{기관명}] #{학생명} 학생 수업일지\n📚 오늘수업: #{오늘수업}\n💡 학습포인트: #{학습포인트}\n✍️ 선생님: #{선생님코멘트}\n📝 숙제: #{숙제}",
+  exam_result: "[#{기관명}] #{학생명} 학생 #{시험명} 결과: #{점수}점",
+  assignment: "[#{기관명}] #{학생명} 학생 새 과제: #{과제}\n마감일: #{마감일}",
+};
+
+/**
+ * SMS 템플릿에 변수 대입
+ */
+function fillSmsTemplate(type: NotificationType, variables: Record<string, string>): string {
+  let template = SMS_TEMPLATES[type];
+  if (!template) {
+    // 템플릿이 없으면 기본 메시지 생성
+    template = `[#{기관명}] #{학생명} 학생 알림`;
+  }
+
+  // #{변수명} 형태를 실제 값으로 대체
+  for (const [key, value] of Object.entries(variables)) {
+    template = template.replace(new RegExp(`#\\{${key}\\}`, 'g'), value || '');
+  }
+
+  return template;
+}
+
+export interface SendSmsParams {
+  type: NotificationType;
+  phone: string;
+  recipientName?: string;
+  variables: Record<string, string>; // { '기관명': '골든펜', '학생명': '김철수', ... }
+}
+
+export interface SendSmsResult {
+  success: boolean;
+  messageId?: string;
+  groupId?: string;
+  error?: string;
+}
+
+/**
+ * Solapi SMS 발송
+ * 알림톡 대신 일반 SMS/LMS로 메시지 발송
+ * sendSolapiAlimtalk와 동일한 인터페이스 사용
+ *
+ * @param env - 환경 변수
+ * @param params - 발송 파라미터
+ * @returns 발송 결과
+ *
+ * @example
+ * ```ts
+ * const result = await sendSolapiSms(env, {
+ *   type: "checkin",
+ *   phone: "01012345678",
+ *   recipientName: "김철수 학부모",
+ *   variables: {
+ *     "기관명": "골든펜 학원",
+ *     "학생명": "김철수",
+ *     "시간": "14:30",
+ *   },
+ * });
+ * ```
+ */
+export async function sendSolapiSms(
+  env: Env,
+  params: SendSmsParams
+): Promise<SendSmsResult> {
+  const { type, phone, recipientName, variables } = params;
+
+  // 템플릿에서 메시지 생성
+  const message = fillSmsTemplate(type, variables);
+
+  // 환경 변수 확인
+  const apiKey = env.SOLAPI_API_KEY;
+  const apiSecret = env.SOLAPI_API_SECRET;
+  const senderPhone = env.SOLAPI_SENDER_PHONE;
+
+  if (!apiKey || !apiSecret || !senderPhone) {
+    console.log(`[Solapi SMS] Dev mode - Would send SMS to ${phone}`);
+    return {
+      success: true,
+      messageId: `mock_sms_${Date.now()}`,
+    };
+  }
+
+  // 전화번호 정규화 (하이픈 제거)
+  const normalizedPhone = phone.replace(/[^0-9]/g, "");
+
+  // SMS vs LMS 결정 (90자 초과 시 LMS)
+  const messageType = message.length > 90 ? "LMS" : "SMS";
+
+  // 요청 바디 구성
+  const requestBody = {
+    message: {
+      to: normalizedPhone,
+      from: senderPhone,
+      text: message,
+      type: messageType,
+    },
+  };
+
+  console.log(`[Solapi SMS] ========== SMS 발송 준비 ==========`);
+  console.log(`[Solapi SMS] 타입: ${type}`);
+  console.log(`[Solapi SMS] 수신자: ${normalizedPhone}`);
+  console.log(`[Solapi SMS] 메시지 길이: ${message.length}자 (${messageType})`);
+  console.log(`[Solapi SMS] 메시지: ${message.substring(0, 50)}...`);
+  console.log(`[Solapi SMS] =========================================`);
+
+  try {
+    const authHeader = await createAuthHeader(apiKey, apiSecret);
+
+    const response = await fetch(`${SOLAPI_BASE_URL}/messages/v4/send`, {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const result = await response.json() as {
+      groupId?: string;
+      messageId?: string;
+      statusCode?: string;
+      statusMessage?: string;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+
+    if (!response.ok || result.errorCode) {
+      console.error("[Solapi SMS] Send failed:", result);
+      return {
+        success: false,
+        error: result.errorMessage || result.statusMessage || `API 오류`,
+      };
+    }
+
+    console.log(`[Solapi SMS] Sent successfully:`, {
+      groupId: result.groupId,
+      messageId: result.messageId,
+    });
+
+    return {
+      success: true,
+      messageId: result.messageId,
+      groupId: result.groupId,
+    };
+  } catch (error) {
+    console.error("[Solapi SMS] Error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}

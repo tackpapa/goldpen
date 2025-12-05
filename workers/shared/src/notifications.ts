@@ -750,14 +750,16 @@ export async function recordTransactionPostgres(
   price: number,
   newBalance: number,
   type: NotificationType,
-  studentName: string
+  studentName: string,
+  messageType: 'sms' | 'kakao_alimtalk' = 'kakao_alimtalk'
 ): Promise<void> {
   try {
+    const channelName = messageType === 'sms' ? 'SMS 발송' : '알림톡 발송';
     await sql`
       INSERT INTO credit_transactions (
         org_id, type, amount, balance_after, description
       ) VALUES (
-        ${orgId}, 'deduction', ${-price}, ${newBalance}, ${`알림톡 발송: ${type} - ${studentName}`}
+        ${orgId}, 'deduction', ${-price}, ${newBalance}, ${`${channelName}: ${type} - ${studentName}`}
       )
     `;
   } catch (error) {
@@ -858,7 +860,8 @@ export async function sendNotificationWithBalancePostgres(
     sql, orgId,
     balanceResult.price,
     balanceResult.newBalance!,
-    type, studentName
+    type, studentName,
+    messageType
   );
 
   // 3. 메시지 로그 기록 (성공)

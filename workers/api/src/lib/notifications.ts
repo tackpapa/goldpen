@@ -15,6 +15,7 @@
 import type { Env } from "../env";
 import {
   sendSolapiAlimtalk,
+  sendSolapiSms,
   type NotificationType as SolapiNotificationType,
 } from "./solapi";
 
@@ -296,20 +297,37 @@ export async function sendNotification(
     }
 
     // ============================================================
+    // use_sms 설정 조회 (SMS vs 알림톡 결정)
+    // ============================================================
+    const orgSettingsResult = await client.query(
+      `SELECT settings FROM organizations WHERE id = $1`,
+      [orgId]
+    );
+    const orgSettings = (orgSettingsResult.rows[0] as { settings?: { use_sms?: boolean } })?.settings;
+    const useSms = orgSettings?.use_sms === true;
+    const messageType: 'sms' | 'kakao_alimtalk' = useSms ? 'sms' : 'kakao_alimtalk';
+    console.log(`[Notification] 메시지 채널: ${messageType} (use_sms=${useSms})`);
+
+    // ============================================================
     // 잔액 확인 및 차감 로직
     // ============================================================
     console.log(`[Notification] 잔액 차감 로직 시작: ${orgName} - ${studentName} (${type})`);
 
-    // 1. 알림톡 가격 조회
+    // 1. 메시지 타입별 가격 조회
     const pricingResult = await client.query(
       `SELECT price, cost FROM message_pricing
-       WHERE message_type = 'kakao_alimtalk' AND is_active = true
-       LIMIT 1`
+       WHERE message_type = $1 AND is_active = true
+       LIMIT 1`,
+      [messageType]
     );
     const pricing = pricingResult.rows[0] as { price: number; cost: number } | undefined;
-    const price = pricing?.price ?? 100; // 기본값 100원
-    const cost = pricing?.cost ?? 12;    // 기본값 12원
-    console.log(`[Notification] 가격 조회: price=${price}, cost=${cost}`);
+    if (!pricing) {
+      console.error(`[Notification] message_pricing 테이블에서 ${messageType} 가격을 찾을 수 없음`);
+      return { success: false, error: `${messageType} 가격 정보 없음` };
+    }
+    const price = pricing.price;
+    const cost = pricing.cost;
+    console.log(`[Notification] 가격 조회 (${messageType}): price=${price}원, cost=${cost}원`);
 
     // 2. 현재 잔액 확인
     const balanceResult = await client.query(
@@ -331,8 +349,8 @@ export async function sendNotification(
             price_per_message, cost_per_message,
             total_price, total_cost, profit,
             status, description
-          ) VALUES ($1, 'kakao_alimtalk', 1, $2, $3, $2, $3, $4, 'failed', $5)`,
-          [orgId, price, cost, price - cost, `${type}: ${studentName} (잔액부족)`]
+          ) VALUES ($1, $2, 1, $3, $4, $3, $4, $5, 'failed', $6)`,
+          [orgId, messageType, price, cost, price - cost, `${type}: ${studentName} (잔액부족)`]
         );
       } catch (logError) {
         console.error(`[MessageLog] Failed to record insufficient balance:`, logError);
@@ -360,12 +378,13 @@ export async function sendNotification(
     console.log(`[Notification] 잔액 차감: ${orgName} (${currentBalance} -> ${newBalance}원, -${price}원)`);
 
     // 5. credit_transactions에 차감 내역 기록
+    const messageTypeLabel = useSms ? 'SMS' : '알림톡';
     try {
       await client.query(
         `INSERT INTO credit_transactions (
           org_id, type, amount, balance_after, description
         ) VALUES ($1, 'deduction', $2, $3, $4)`,
-        [orgId, -price, newBalance, `알림톡 발송: ${type} - ${studentName}`]
+        [orgId, -price, newBalance, `${messageTypeLabel} 발송: ${type} - ${studentName}`]
       );
     } catch (txError) {
       console.error(`[CreditTransaction] Failed to record deduction:`, txError);
@@ -408,15 +427,15 @@ export async function sendNotification(
           price_per_message, cost_per_message,
           total_price, total_cost, profit,
           status, description
-        ) VALUES ($1, 'kakao_alimtalk', 1, $2, $3, $2, $3, $4, 'sent', $5)`,
-        [orgId, price, cost, price - cost, `${type}: ${studentName}`]
+        ) VALUES ($1, $2, 1, $3, $4, $3, $4, $5, 'sent', $6)`,
+        [orgId, messageType, price, cost, price - cost, `${type}: ${studentName}`]
       );
-      console.log(`[MessageLog] Recorded notification for org ${orgId}: ${type}`);
+      console.log(`[MessageLog] Recorded ${messageType} notification for org ${orgId}: ${type}`);
     } catch (logError) {
       console.error(`[MessageLog] Failed to record:`, logError);
     }
 
-    // 카카오 알림톡 발송 (Solapi API)
+    // 메시지 발송 (SMS 또는 알림톡)
     if (recipientPhone) {
       // 타입 매핑 (assignment_new -> assignment)
       const solapiType = mapToSolapiType(type);
@@ -432,23 +451,41 @@ export async function sendNotification(
         ? { ...defaultVariables, ...templateVariables }
         : defaultVariables;
 
-      const alimtalkResult = await sendSolapiAlimtalk(env, {
-        type: solapiType,
-        phone: recipientPhone,
-        recipientName: recipientName || `${studentName} 학부모`,
-        variables,
-      });
+      // SMS 또는 알림톡 발송 분기
+      if (useSms) {
+        // SMS 발송
+        const smsResult = await sendSolapiSms(env, {
+          type: solapiType,
+          phone: recipientPhone,
+          recipientName: recipientName || `${studentName} 학부모`,
+          variables,
+        });
 
-      if (!alimtalkResult.success) {
-        console.log(`[Notification] Alimtalk failed: ${alimtalkResult.error}`);
+        if (!smsResult.success) {
+          console.log(`[Notification] SMS failed: ${smsResult.error}`);
+        } else {
+          console.log(`[Notification] Solapi SMS 발송 성공: ${type} -> ${recipientPhone}`);
+        }
       } else {
-        console.log(`[Notification] Solapi 알림톡 발송 성공: ${type} -> ${recipientPhone}`);
+        // 카카오 알림톡 발송
+        const alimtalkResult = await sendSolapiAlimtalk(env, {
+          type: solapiType,
+          phone: recipientPhone,
+          recipientName: recipientName || `${studentName} 학부모`,
+          variables,
+        });
+
+        if (!alimtalkResult.success) {
+          console.log(`[Notification] Alimtalk failed: ${alimtalkResult.error}`);
+        } else {
+          console.log(`[Notification] Solapi 알림톡 발송 성공: ${type} -> ${recipientPhone}`);
+        }
       }
 
       // 텔레그램으로도 전송 (모니터링용)
       await sendTelegramWithSolapiFormat(env, solapiType, variables, recipientPhone);
     } else {
-      console.log(`[Notification] Skipping Kakao (no phone): ${message}`);
+      console.log(`[Notification] Skipping send (no phone): ${message}`);
     }
 
     return { success: true };
@@ -521,15 +558,37 @@ export async function sendBulkNotifications(
   }
 
   try {
-    // 1. 알림톡 가격 조회
+    // 1. use_sms 설정 조회 (SMS vs 알림톡 결정)
+    const orgSettingsResult = await client.query(
+      `SELECT settings FROM organizations WHERE id = $1`,
+      [orgId]
+    );
+    const orgSettings = (orgSettingsResult.rows[0] as { settings?: { use_sms?: boolean } })?.settings;
+    const useSms = orgSettings?.use_sms === true;
+    const messageType: 'sms' | 'kakao_alimtalk' = useSms ? 'sms' : 'kakao_alimtalk';
+    const messageTypeLabel = useSms ? 'SMS' : '알림톡';
+    console.log(`[BulkNotification] 메시지 채널: ${messageType} (use_sms=${useSms})`);
+
+    // 2. 메시지 타입별 가격 조회
     const pricingResult = await client.query(
       `SELECT price, cost FROM message_pricing
-       WHERE message_type = 'kakao_alimtalk' AND is_active = true
-       LIMIT 1`
+       WHERE message_type = $1 AND is_active = true
+       LIMIT 1`,
+      [messageType]
     );
     const pricing = pricingResult.rows[0] as { price: number; cost: number } | undefined;
-    const pricePerMessage = pricing?.price ?? 100;
-    const costPerMessage = pricing?.cost ?? 12;
+    if (!pricing) {
+      console.error(`[BulkNotification] message_pricing 테이블에서 ${messageType} 가격을 찾을 수 없음`);
+      result.totalFailed = notifications.length;
+      result.failedItems = notifications.map(n => ({
+        studentName: n.studentName,
+        reason: `${messageType} 가격 정보 없음`
+      }));
+      return result;
+    }
+    const pricePerMessage = pricing.price;
+    const costPerMessage = pricing.cost;
+    console.log(`[BulkNotification] 가격 조회 (${messageType}): price=${pricePerMessage}원, cost=${costPerMessage}원`);
 
     // 2. 총 필요 금액 계산
     const totalRequired = pricePerMessage * notifications.length;
@@ -573,7 +632,7 @@ export async function sendBulkNotifications(
         }));
 
         // 실패 내역 벌크 기록
-        await recordBulkMessageLogs(client, orgId, notifications, pricePerMessage, costPerMessage, 'failed', '(잔액부족)');
+        await recordBulkMessageLogs(client, orgId, notifications, pricePerMessage, costPerMessage, 'failed', '(잔액부족)', messageType);
 
         return result;
       }
@@ -616,7 +675,7 @@ export async function sendBulkNotifications(
       `INSERT INTO credit_transactions (
         org_id, type, amount, balance_after, description
       ) VALUES ($1, 'deduction', $2, $3, $4)`,
-      [orgId, -deductedAmount, newBalance, `벌크 알림톡 발송: ${notificationTypes} (${availableCount}건)`]
+      [orgId, -deductedAmount, newBalance, `벌크 ${messageTypeLabel} 발송: ${notificationTypes} (${availableCount}건)`]
     );
 
     // 5. 발송할 알림과 실패할 알림 분리
@@ -625,12 +684,11 @@ export async function sendBulkNotifications(
 
     // 6. 성공 건 처리 (message_logs 벌크 기록 + 실제 발송)
     if (toSend.length > 0) {
-      await recordBulkMessageLogs(client, orgId, toSend, pricePerMessage, costPerMessage, 'sent', '');
+      await recordBulkMessageLogs(client, orgId, toSend, pricePerMessage, costPerMessage, 'sent', '', messageType);
 
-      // 실제 알림 발송 (Solapi 알림톡)
+      // 실제 알림 발송 (SMS 또는 알림톡)
       for (const notification of toSend) {
         try {
-          // 카카오 알림톡 발송 (Solapi)
           if (notification.recipientPhone) {
             const solapiType = mapToSolapiType(notification.type);
             const variables = notification.templateVariables || {
@@ -638,17 +696,35 @@ export async function sendBulkNotifications(
               "학생명": notification.studentName,
             };
 
-            const alimtalkResult = await sendSolapiAlimtalk(env, {
-              type: solapiType,
-              phone: notification.recipientPhone,
-              recipientName: notification.recipientName || `${notification.studentName} 학부모`,
-              variables,
-            });
+            // SMS 또는 알림톡 발송 분기
+            if (useSms) {
+              // SMS 발송
+              const smsResult = await sendSolapiSms(env, {
+                type: solapiType,
+                phone: notification.recipientPhone,
+                recipientName: notification.recipientName || `${notification.studentName} 학부모`,
+                variables,
+              });
 
-            if (alimtalkResult.success) {
-              console.log(`[BulkNotification] Solapi 발송 성공: ${notification.type} -> ${notification.recipientPhone}`);
+              if (smsResult.success) {
+                console.log(`[BulkNotification] SMS 발송 성공: ${notification.type} -> ${notification.recipientPhone}`);
+              } else {
+                console.log(`[BulkNotification] SMS 발송 실패: ${smsResult.error}`);
+              }
             } else {
-              console.log(`[BulkNotification] Solapi 발송 실패: ${alimtalkResult.error}`);
+              // 카카오 알림톡 발송
+              const alimtalkResult = await sendSolapiAlimtalk(env, {
+                type: solapiType,
+                phone: notification.recipientPhone,
+                recipientName: notification.recipientName || `${notification.studentName} 학부모`,
+                variables,
+              });
+
+              if (alimtalkResult.success) {
+                console.log(`[BulkNotification] 알림톡 발송 성공: ${notification.type} -> ${notification.recipientPhone}`);
+              } else {
+                console.log(`[BulkNotification] 알림톡 발송 실패: ${alimtalkResult.error}`);
+              }
             }
 
             // 텔레그램으로도 전송 (모니터링용)
@@ -665,7 +741,7 @@ export async function sendBulkNotifications(
 
     // 7. 실패 건 처리 (잔액 부족으로 발송 못 한 건들)
     if (toFail.length > 0) {
-      await recordBulkMessageLogs(client, orgId, toFail, pricePerMessage, costPerMessage, 'failed', '(잔액부족)');
+      await recordBulkMessageLogs(client, orgId, toFail, pricePerMessage, costPerMessage, 'failed', '(잔액부족)', messageType);
       result.totalFailed = toFail.length;
       result.failedItems = toFail.map(n => ({
         studentName: n.studentName,
@@ -695,7 +771,8 @@ async function recordBulkMessageLogs(
   price: number,
   cost: number,
   status: 'sent' | 'failed',
-  suffix: string
+  suffix: string,
+  messageType: 'sms' | 'kakao_alimtalk' = 'kakao_alimtalk'
 ): Promise<void> {
   if (notifications.length === 0) return;
 
@@ -704,9 +781,9 @@ async function recordBulkMessageLogs(
   const placeholders: string[] = [];
 
   notifications.forEach((n, i) => {
-    const offset = i * 5;
-    placeholders.push(`($${offset + 1}, 'kakao_alimtalk', 1, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5})`);
-    values.push(orgId, price, cost, status, `${n.type}: ${n.studentName}${suffix}`);
+    const offset = i * 6;
+    placeholders.push(`($${offset + 1}, $${offset + 2}, 1, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6})`);
+    values.push(orgId, messageType, price, cost, status, `${n.type}: ${n.studentName}${suffix}`);
   });
 
   try {

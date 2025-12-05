@@ -141,8 +141,8 @@ export async function GET(request: Request) {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).toISOString()
 
-      // 4개 쿼리 병렬 실행 (순차 실행 대비 ~75% 시간 단축)
-      const [alimtalkResult, serviceResult, thisMonthResult, txResult] = await Promise.all([
+      // 6개 쿼리 병렬 실행 (순차 실행 대비 ~75% 시간 단축)
+      const [alimtalkResult, smsResult, serviceResult, thisMonthAlimtalkResult, thisMonthSmsResult, txResult] = await Promise.all([
         // 알림톡 이용내역 (최근 100건)
         db.from('message_logs')
           .select('id, message_type, recipient_count, total_price, status, description, created_at')
@@ -150,18 +150,32 @@ export async function GET(request: Request) {
           .eq('message_type', 'kakao_alimtalk')
           .order('created_at', { ascending: false })
           .limit(100),
-        // SMS/기타 이용내역 (최근 100건)
+        // SMS 이용내역 (최근 100건)
         db.from('message_logs')
           .select('id, message_type, recipient_count, total_price, status, description, created_at')
           .eq('org_id', orgId)
-          .neq('message_type', 'kakao_alimtalk')
+          .eq('message_type', 'sms')
           .order('created_at', { ascending: false })
           .limit(100),
-        // 이번 달 알림톡 유형별 집계 (전체)
+        // 기타 서비스 이용내역 (알림톡/SMS 제외, 최근 100건)
+        db.from('message_logs')
+          .select('id, message_type, recipient_count, total_price, status, description, created_at')
+          .eq('org_id', orgId)
+          .not('message_type', 'in', '("kakao_alimtalk","sms")')
+          .order('created_at', { ascending: false })
+          .limit(100),
+        // 이번 달 알림톡 유형별 집계
         db.from('message_logs')
           .select('description, total_price')
           .eq('org_id', orgId)
           .eq('message_type', 'kakao_alimtalk')
+          .gte('created_at', monthStart)
+          .lte('created_at', monthEnd),
+        // 이번 달 SMS 유형별 집계
+        db.from('message_logs')
+          .select('description, total_price')
+          .eq('org_id', orgId)
+          .eq('message_type', 'sms')
           .gte('created_at', monthStart)
           .lte('created_at', monthEnd),
         // 충전/차감 내역 (최근 50건)
@@ -173,8 +187,10 @@ export async function GET(request: Request) {
       ])
 
       const alimtalkLogs = alimtalkResult.data
+      const smsLogs = smsResult.data
       const serviceLogs = serviceResult.data
-      const thisMonthLogs = thisMonthResult.data
+      const thisMonthAlimtalkLogs = thisMonthAlimtalkResult.data
+      const thisMonthSmsLogs = thisMonthSmsResult.data
       const txLogs = txResult.data
 
       // 알림톡 데이터 변환
@@ -196,7 +212,26 @@ export async function GET(request: Request) {
         }
       })
 
-      // SMS 데이터 변환
+      // SMS 데이터 변환 (알림톡과 동일한 형식)
+      const smsUsages = (smsLogs || []).map((r: any) => {
+        let dateStr = '-'
+        if (r.created_at) {
+          const date = new Date(r.created_at)
+          const kstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000)
+          dateStr = `${kstDate.getUTCFullYear()}-${String(kstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(kstDate.getUTCDate()).padStart(2, '0')} ${String(kstDate.getUTCHours()).padStart(2, '0')}:${String(kstDate.getUTCMinutes()).padStart(2, '0')}`
+        }
+        return {
+          id: r.id,
+          date: dateStr,
+          type: r.description?.split(':')[0] || 'SMS',
+          recipient: r.description?.split(':')[1]?.trim() || '-',
+          count: r.recipient_count || 1,
+          cost: r.total_price || 0,
+          status: r.status === 'sent' ? 'success' : 'failed',
+        }
+      })
+
+      // 기타 서비스 데이터 변환
       const serviceUsages = (serviceLogs || []).map((r: any) => {
         let dateStr = '-'
         if (r.created_at) {
@@ -207,16 +242,16 @@ export async function GET(request: Request) {
         return {
           id: r.id,
           date: dateStr,
-          type: r.message_type === 'sms' ? 'SMS' : r.message_type,
+          type: r.message_type,
           description: r.description || '-',
           count: r.recipient_count || 1,
           cost: r.total_price || 0,
         }
       })
 
-      // 이번 달 집계
+      // 이번 달 알림톡 집계 (TEMPLATE_LABELS와 동일한 이름 사용)
       const summaryMap: Record<string, { count: number; cost: number }> = {}
-      for (const log of (thisMonthLogs || [])) {
+      for (const log of (thisMonthAlimtalkLogs || [])) {
         const desc = log.description || ''
         let notificationType: string | null = null
         if (desc.startsWith('late:') || desc.includes('_late:')) notificationType = '지각 알림'
@@ -227,7 +262,7 @@ export async function GET(request: Request) {
         else if (desc.startsWith('return:') || desc.startsWith('study_return:')) notificationType = '복귀 알림'
         else if (desc.startsWith('daily_report:') || desc.startsWith('study_report:')) notificationType = '당일 학습 진행 결과'
         else if (desc.startsWith('lesson_report:')) notificationType = '수업일지 전송'
-        else if (desc.startsWith('exam_result:')) notificationType = '시험 결과'
+        else if (desc.startsWith('exam_result:')) notificationType = '시험 결과 전송'
         else if (desc.startsWith('assignment_new:') || desc.startsWith('assignment:')) notificationType = '과제 알림'
         if (!notificationType) continue
         if (!summaryMap[notificationType]) {
@@ -243,9 +278,65 @@ export async function GET(request: Request) {
         cost: data.cost,
       })).sort((a, b) => b.count - a.count)
 
+      // 이번 달 SMS 집계 (TEMPLATE_LABELS와 동일한 이름 사용)
+      const smsSummaryMap: Record<string, { count: number; cost: number }> = {}
+      for (const log of (thisMonthSmsLogs || [])) {
+        const desc = log.description || ''
+        let notificationType: string | null = null
+        if (desc.startsWith('late:') || desc.includes('_late:')) notificationType = '지각 알림'
+        else if (desc.startsWith('absent:') || desc.includes('_absent:')) notificationType = '결석 알림'
+        else if (desc.startsWith('checkin:')) notificationType = '입실/등원 알림'
+        else if (desc.startsWith('checkout:')) notificationType = '퇴실/하원 알림'
+        else if (desc.startsWith('out:') || desc.startsWith('study_out:')) notificationType = '외출 알림'
+        else if (desc.startsWith('return:') || desc.startsWith('study_return:')) notificationType = '복귀 알림'
+        else if (desc.startsWith('daily_report:') || desc.startsWith('study_report:')) notificationType = '당일 학습 진행 결과'
+        else if (desc.startsWith('lesson_report:')) notificationType = '수업일지 전송'
+        else if (desc.startsWith('exam_result:')) notificationType = '시험 결과 전송'
+        else if (desc.startsWith('assignment_new:') || desc.startsWith('assignment:')) notificationType = '과제 알림'
+        if (!notificationType) continue
+        if (!smsSummaryMap[notificationType]) {
+          smsSummaryMap[notificationType] = { count: 0, cost: 0 }
+        }
+        smsSummaryMap[notificationType].count += 1
+        smsSummaryMap[notificationType].cost += log.total_price || 0
+      }
+
+      const smsSummary = Object.entries(smsSummaryMap).map(([type, data]) => ({
+        type,
+        count: data.count,
+        cost: data.cost,
+      })).sort((a, b) => b.count - a.count)
+
       // 이번 달 총합 계산 (요약 카드용)
       const totalAlimtalkCount = usageSummary.reduce((sum, s) => sum + s.count, 0)
       const totalAlimtalkCost = usageSummary.reduce((sum, s) => sum + s.cost, 0)
+      const totalSmsCount = smsSummary.reduce((sum, s) => sum + s.count, 0)
+      const totalSmsCost = smsSummary.reduce((sum, s) => sum + s.cost, 0)
+
+      // 전체 건수 및 합계 (무한 스크롤용) - 알림톡 전체
+      const [alimtalkCountResult, alimtalkSumResult, smsCountResult, smsSumResult] = await Promise.all([
+        db.from('message_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .eq('message_type', 'kakao_alimtalk'),
+        db.from('message_logs')
+          .select('total_price')
+          .eq('org_id', orgId)
+          .eq('message_type', 'kakao_alimtalk'),
+        db.from('message_logs')
+          .select('id', { count: 'exact', head: true })
+          .eq('org_id', orgId)
+          .eq('message_type', 'sms'),
+        db.from('message_logs')
+          .select('total_price')
+          .eq('org_id', orgId)
+          .eq('message_type', 'sms'),
+      ])
+
+      const kakaoTalkUsagesTotal = alimtalkCountResult.count || kakaoTalkUsages.length
+      const kakaoTalkUsagesTotalCost = (alimtalkSumResult.data || []).reduce((sum: number, r: any) => sum + (r.total_price || 0), 0)
+      const smsUsagesTotal = smsCountResult.count || smsUsages.length
+      const smsUsagesTotalCost = (smsSumResult.data || []).reduce((sum: number, r: any) => sum + (r.total_price || 0), 0)
 
       // 충전 내역 변환
       const creditTransactions = (txLogs || []).map((r: any) => ({
@@ -259,12 +350,31 @@ export async function GET(request: Request) {
 
       return Response.json({
         kakaoTalkUsages,
+        kakaoTalkUsagesTotal,
+        kakaoTalkUsagesTotalCost,
+        smsUsages,
+        smsUsagesTotal,
+        smsUsagesTotalCost,
+        smsSummary,
         serviceUsages,
         usageSummary,
         creditTransactions,
         // 이번 달 총합 (요약 카드용)
         totalAlimtalkCount,
         totalAlimtalkCost,
+        totalSmsCount,
+        totalSmsCost,
+        // 이번 달 통계 (요약 카드용)
+        alimtalkMonthStats: {
+          totalCount: totalAlimtalkCount,
+          totalRecipients: totalAlimtalkCount,
+          totalCost: totalAlimtalkCost,
+        },
+        smsMonthStats: {
+          totalCount: totalSmsCount,
+          totalRecipients: totalSmsCount,
+          totalCost: totalSmsCost,
+        },
       })
     }
 
