@@ -3437,16 +3437,23 @@ export default function SettingsPage() {
                           )}
                         </tbody>
                       </table>
-                      {/* Sentinel for infinite scroll */}
-                      <div ref={kakaoSentinelRef} className="h-4" />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      {kakaoDisplayCount < kakaoTalkUsagesTotal
-                        ? `${kakaoDisplayCount}건 표시 중 (전체 ${kakaoTalkUsagesTotal}건) - 스크롤하여 더 보기`
-                        : `총 ${kakaoTalkUsagesTotal}건`} · 합계: ₩{kakaoTalkUsagesTotalCost.toLocaleString()}
+                      {kakaoDisplayCount < kakaoTalkUsages.length
+                        ? `${kakaoDisplayCount}건 표시 중 (전체 ${kakaoTalkUsages.length}건)`
+                        : `총 ${kakaoTalkUsages.length}건`} · 합계: ₩{kakaoTalkUsagesTotalCost.toLocaleString()}
                     </p>
+                    {kakaoDisplayCount < kakaoTalkUsages.length && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setKakaoDisplayCount(prev => prev + 10)}
+                      >
+                        더보기 10개
+                      </Button>
+                    )}
                   </div>
                 </TabsContent>
 
@@ -3509,16 +3516,23 @@ export default function SettingsPage() {
                           )}
                         </tbody>
                       </table>
-                      {/* Sentinel for infinite scroll */}
-                      <div ref={smsSentinelRef} className="h-4" />
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      {smsDisplayCount < smsUsagesTotal
-                        ? `${smsDisplayCount}건 표시 중 (전체 ${smsUsagesTotal}건) - 스크롤하여 더 보기`
-                        : `총 ${smsUsagesTotal}건`} · 합계: ₩{smsUsagesTotalCost.toLocaleString()}
+                      {smsDisplayCount < smsUsages.length
+                        ? `${smsDisplayCount}건 표시 중 (전체 ${smsUsages.length}건)`
+                        : `총 ${smsUsages.length}건`} · 합계: ₩{smsUsagesTotalCost.toLocaleString()}
                     </p>
+                    {smsDisplayCount < smsUsages.length && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSmsDisplayCount(prev => prev + 10)}
+                      >
+                        더보기 10개
+                      </Button>
+                    )}
                   </div>
                 </TabsContent>
 
