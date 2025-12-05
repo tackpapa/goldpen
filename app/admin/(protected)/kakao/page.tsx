@@ -303,7 +303,7 @@ export default function KakaoPage() {
             <CardTitle className="text-lg">채널별 발송 현황</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2">
               {/* 카카오 알림톡 */}
               <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
                 <div className="flex items-center gap-2 mb-2">
@@ -329,34 +329,6 @@ export default function KakaoPage() {
                 </div>
                 <div className="text-xs text-emerald-600">
                   이익 {stats.by_message_type.sms.profit.toLocaleString()}원
-                </div>
-              </div>
-
-              {/* LMS */}
-              <div className="p-4 rounded-lg bg-purple-50 border border-purple-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-purple-600 font-medium">LMS</span>
-                </div>
-                <div className="text-2xl font-bold">{stats.by_message_type.lms.count.toLocaleString()}건</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  매출 {stats.by_message_type.lms.price.toLocaleString()}원
-                </div>
-                <div className="text-xs text-emerald-600">
-                  이익 {stats.by_message_type.lms.profit.toLocaleString()}원
-                </div>
-              </div>
-
-              {/* MMS */}
-              <div className="p-4 rounded-lg bg-pink-50 border border-pink-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-pink-600 font-medium">MMS</span>
-                </div>
-                <div className="text-2xl font-bold">{stats.by_message_type.mms.count.toLocaleString()}건</div>
-                <div className="text-sm text-muted-foreground mt-1">
-                  매출 {stats.by_message_type.mms.price.toLocaleString()}원
-                </div>
-                <div className="text-xs text-emerald-600">
-                  이익 {stats.by_message_type.mms.profit.toLocaleString()}원
                 </div>
               </div>
             </div>

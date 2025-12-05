@@ -31,8 +31,19 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { useToast } from '@/hooks/use-toast'
 import {
   Select,
   SelectContent,
@@ -40,7 +51,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { MoreHorizontal, Plus, Search, Users, GraduationCap, TrendingUp, Wallet } from 'lucide-react'
+import { MoreHorizontal, Plus, Search, Users, GraduationCap, TrendingUp, Wallet, Trash2, AlertTriangle } from 'lucide-react'
 import { format } from 'date-fns/format'
 
 interface Organization {
@@ -77,6 +88,7 @@ interface OrganizationsResponse {
 
 export default function OrganizationsPage() {
   const router = useRouter()
+  const { toast } = useToast()
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [page, setPage] = useState(1)
@@ -84,6 +96,15 @@ export default function OrganizationsPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const limit = 20
+
+  // 완전 삭제 모달 상태
+  const [hardDeleteModal, setHardDeleteModal] = useState<{ open: boolean; orgId: string; orgName: string }>({
+    open: false,
+    orgId: '',
+    orgName: '',
+  })
+  const [deletePassword, setDeletePassword] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // SWR URL 생성
   const apiUrl = useMemo(() => {
@@ -281,12 +302,26 @@ export default function OrganizationsPage() {
               >
                 수정
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => handleDelete(organization.id)}
-                className="text-red-600"
-              >
-                삭제
-              </DropdownMenuItem>
+              {organization.status !== 'deleted' && (
+                <DropdownMenuItem
+                  onClick={() => handleDelete(organization.id)}
+                  className="text-red-600"
+                >
+                  삭제
+                </DropdownMenuItem>
+              )}
+              {organization.status === 'deleted' && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => setHardDeleteModal({ open: true, orgId: organization.id, orgName: organization.name })}
+                    className="text-red-600 font-semibold"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    완전 삭제
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )
@@ -319,12 +354,49 @@ export default function OrganizationsPage() {
       })
 
       if (response.ok) {
+        toast({ title: '조직이 삭제되었습니다', description: '상태가 "삭제"로 변경되었습니다.' })
         mutate() // SWR 캐시 갱신
       }
     } catch (error) {
       console.error('Failed to delete organization:', error)
+      toast({ title: '삭제 실패', description: '조직 삭제에 실패했습니다.', variant: 'destructive' })
     }
-  }, [mutate])
+  }, [mutate, toast])
+
+  // 완전 삭제 (비밀번호 확인 후)
+  const handleHardDelete = useCallback(async () => {
+    if (!deletePassword) {
+      toast({ title: '비밀번호 입력', description: '비밀번호를 입력해주세요.', variant: 'destructive' })
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch(
+        `/api/admin/organizations/${hardDeleteModal.orgId}?hard=true&password=${encodeURIComponent(deletePassword)}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        }
+      )
+
+      const data = await response.json()
+
+      if (response.ok) {
+        toast({ title: '완전 삭제 완료', description: `"${hardDeleteModal.orgName}" 조직이 완전히 삭제되었습니다.` })
+        setHardDeleteModal({ open: false, orgId: '', orgName: '' })
+        setDeletePassword('')
+        mutate() // SWR 캐시 갱신
+      } else {
+        toast({ title: '삭제 실패', description: data.error || '삭제에 실패했습니다.', variant: 'destructive' })
+      }
+    } catch (error) {
+      console.error('Failed to hard delete organization:', error)
+      toast({ title: '삭제 실패', description: '서버 오류가 발생했습니다.', variant: 'destructive' })
+    } finally {
+      setIsDeleting(false)
+    }
+  }, [hardDeleteModal, deletePassword, mutate, toast])
 
   if (isLoading) {
     return (
@@ -469,6 +541,69 @@ export default function OrganizationsPage() {
           </Button>
         </div>
       </div>
+
+      {/* 완전 삭제 확인 모달 */}
+      <Dialog
+        open={hardDeleteModal.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setHardDeleteModal({ open: false, orgId: '', orgName: '' })
+            setDeletePassword('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              완전 삭제 확인
+            </DialogTitle>
+            <DialogDescription>
+              &quot;{hardDeleteModal.orgName}&quot; 조직을 완전히 삭제합니다.
+              <br />
+              <span className="text-red-500 font-semibold">이 작업은 되돌릴 수 없습니다.</span>
+              <br />
+              모든 학생, 사용자, 수업, 메시지 기록이 영구적으로 삭제됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="delete-password">비밀번호 확인</Label>
+              <Input
+                id="delete-password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                placeholder="비밀번호를 입력하세요"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && deletePassword) {
+                    handleHardDelete()
+                  }
+                }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setHardDeleteModal({ open: false, orgId: '', orgName: '' })
+                setDeletePassword('')
+              }}
+              disabled={isDeleting}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleHardDelete}
+              disabled={isDeleting || !deletePassword}
+            >
+              {isDeleting ? '삭제 중...' : '완전 삭제'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -304,6 +304,7 @@ export async function PUT(
 }
 
 // DELETE /api/admin/organizations/[id]
+// ?hard=true&password=xxx 로 완전 삭제, 아니면 soft delete
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -311,11 +312,16 @@ export async function DELETE(
   try {
     const { id } = await params
     const adminClient = createAdminClient()
+    const supabase = await createAuthenticatedClient(request)
     const authCheck = await checkSuperAdmin(request)
 
     if (!authCheck.authorized) {
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
     }
+
+    const url = new URL(request.url)
+    const isHardDelete = url.searchParams.get('hard') === 'true'
+    const password = url.searchParams.get('password')
 
     // Get current org for audit log
     const { data: currentOrg } = await adminClient
@@ -326,6 +332,68 @@ export async function DELETE(
 
     if (!currentOrg) {
       return Response.json({ error: 'Organization not found' }, { status: 404 })
+    }
+
+    // Hard delete requires password verification
+    if (isHardDelete) {
+      if (!password) {
+        return Response.json({ error: '비밀번호가 필요합니다' }, { status: 400 })
+      }
+
+      // Get user email for password verification
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user?.email) {
+        return Response.json({ error: '사용자 정보를 찾을 수 없습니다' }, { status: 400 })
+      }
+
+      // Verify password by attempting to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: password,
+      })
+
+      if (signInError) {
+        return Response.json({ error: '비밀번호가 올바르지 않습니다' }, { status: 401 })
+      }
+
+      // Hard delete - completely remove from database
+      // Delete related data first (cascade should handle most, but be explicit)
+      await Promise.all([
+        adminClient.from('students').delete().eq('org_id', id),
+        adminClient.from('users').delete().eq('org_id', id),
+        adminClient.from('classes').delete().eq('org_id', id),
+        adminClient.from('rooms').delete().eq('org_id', id),
+        adminClient.from('org_settings').delete().eq('org_id', id),
+        adminClient.from('notification_logs').delete().eq('org_id', id),
+        adminClient.from('message_logs').delete().eq('org_id', id),
+        adminClient.from('credit_transactions').delete().eq('org_id', id),
+      ])
+
+      // Finally delete the organization
+      const { error } = await adminClient
+        .from('organizations')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        console.error('[Organization HARD DELETE] Error:', error)
+        return Response.json({ error: error.message }, { status: 500 })
+      }
+
+      // Log audit
+      await adminClient.from('audit_logs').insert({
+        admin_id: authCheck.user!.id,
+        action: 'hard_delete',
+        target_type: 'organization',
+        target_id: id,
+        changes: { before: currentOrg, after: null },
+        metadata: {
+          user_agent: request.headers.get('user-agent'),
+          hard_delete: true,
+        },
+      })
+
+      return Response.json({ success: true, hard_deleted: true })
     }
 
     // Soft delete - set status to 'deleted'

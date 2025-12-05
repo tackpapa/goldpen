@@ -79,8 +79,11 @@ export async function GET(request: Request) {
       query = query.eq('type', type)
     }
 
+    // 삭제된 조직은 기본적으로 숨김 (status=deleted 필터 시에만 표시)
     if (status) {
       query = query.eq('status', status)
+    } else {
+      query = query.neq('status', 'deleted')
     }
 
     // Apply pagination
