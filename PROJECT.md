@@ -1,6 +1,6 @@
-# GOLDPEN_SYS_MAP v3.4
+# GOLDPEN_SYS_MAP v3.5
 # Token-optimized system reference (machine-readable)
-# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync)
+# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync v2)
 
 ## ⚠️ RULES (CRITICAL)
 rule1:EDGE_RUNTIME - export const runtime='edge' 필수
@@ -36,25 +36,26 @@ cron:cloudflare-scheduled (workers/cron)
 
 ## PROJECT_STRUCTURE
 goldpen/
-├ app/                      # Next.js App Router (39 pages)
+├ app/                      # Next.js App Router (40 pages)
 │ ├ (auth)/                # 인증 (login, signup)
 │ ├ (portal)/my/           # 포털 (dashboard)
 │ ├ admin/(protected)/     # Admin (9 pages)
-│ ├ [institutionname]/     # 기관별 (19 pages)
+│ ├ [institutionname]/     # 기관별 (20 pages)
 │ ├ api/                   # API Routes (97 routes)
 │ ├ consultation/          # 상담 신청
 │ ├ demo/                  # 데모 페이지 (NEW)
 │ ├ invite/[token]/        # 초대 수락
 │ └ lesson-note/           # 수업노트 공유
-├ components/              # React (74 files)
-│ ├ ui/                   # shadcn/ui (32 files)
+├ components/              # React (75 files)
+│ ├ ui/                   # shadcn/ui (30 files)
 │ ├ students/             # 학생 모달/탭 (11 files)
 │ ├ teachers/             # 강사 모달/탭 (6 files)
 │ ├ managers/             # 매니저 모달/탭 (4 files)
 │ ├ livescreen/           # 라이브스크린 (9 files)
 │ ├ dashboard/            # 대시보드 위젯 (4 files)
 │ ├ admin/                # Admin (2 files)
-│ ├ seats/                # 좌석 (2 files)
+│ ├ seats/                # 좌석 (1 file)
+│ ├ charts/               # 차트 (2 files) NEW
 │ ├ landing/              # 랜딩 (1 file)
 │ └ shared/               # 공통 (4 files)
 ├ lib/                     # 유틸/설정 (34 files)
@@ -78,11 +79,11 @@ goldpen/
 │ ├ shared/               # 공유 (비활성)
 │ └ tail-logger/          # 로그 (비활성)
 ├ supabase/                # DB
-│ └ migrations/           # SQL (88 files)
+│ └ migrations/           # SQL (89 files)
 └ docs/                    # 문서
   └ kakao.md              # 카카오 가이드
 
-## PAGES (39)
+## PAGES (40)
 root:
 ├ / - 홈 (리다이렉트)
 ├ /login - 로그인
@@ -108,6 +109,7 @@ admin:
 └ /admin/payments - 결제 관리 (NEW)
 
 dashboard:
+├ /[org] - 대시보드 (기본 리다이렉트) NEW
 ├ /[org]/overview - 대시보드 홈
 ├ /[org]/students - 학생 관리
 ├ /[org]/teachers - 강사 관리
@@ -270,7 +272,7 @@ admin:
 ├ /api/admin/stats/credits - GET 크레딧 통계 (NEW)
 └ /api/admin/stats/messages - GET 메시지 통계 (NEW)
 
-## DB_SCHEMA (88 migrations)
+## DB_SCHEMA (89 migrations)
 core:
 ├ organizations - 기관 (slug, logo, settings, credit_balance)
 ├ users - 사용자 (role: super_admin|admin|teacher|student|parent)
@@ -324,15 +326,16 @@ admin:
 ├ notification_logs - 알림 로그
 ├ message_pricing - 메시지 요금 (NEW)
 ├ message_logs - 메시지 로그 (NEW)
-└ invitations - 초대 (NEW)
+├ invitations - 초대 (NEW)
+└ performance_indexes - 성능 인덱스 (NEW)
 
 rls:ALL_TABLES_ENABLED
 ├ policy:org_isolation (org_id 기반)
 ├ policy:role_based (user.role 기반)
 └ policy:row_owner (user_id 기반)
 
-## COMPONENTS (74)
-ui/ (32 files, shadcn/ui):
+## COMPONENTS (75)
+ui/ (30 files, shadcn/ui):
 ├ button, input, card, table, badge, avatar
 ├ tabs, dropdown-menu, label, textarea
 ├ checkbox, radio-group, switch, alert
@@ -392,9 +395,12 @@ shared/ (4 files):
 ├ MobileSidebar - 모바일 사이드바
 └ Breadcrumb - 브레드크럼
 
-seats/ (2 files):
-├ SeatAssignment - 좌석 배정
+seats/ (1 file):
 └ StudentPlannerModal - 학생 계획 모달
+
+charts/ (2 files) NEW:
+├ ExamsCharts - 시험 차트
+└ LessonsCharts - 수업 차트
 
 landing/ (1 file):
 └ FeatureShowcase - 랜딩 기능 전시
@@ -712,14 +718,14 @@ wrangler:4.47.0
 vitest:2.1.0
 
 ## STATISTICS
-pages:39
+pages:40
 api_routes:97
-components:74
+components:75
 lib_files:34
 hooks:9
 workers_files:59
-migrations:88
-total_ts_files:~340
+migrations:89
+total_ts_files:~345
 
 ## ROADMAP
 v1.0 (current):
@@ -743,10 +749,20 @@ v1.1 (planned):
 └ [ ] Payment gateway
 
 ---
-# END OF GOLDPEN_SYS_MAP v3.4
-# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync)
+# END OF GOLDPEN_SYS_MAP v3.5
+# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync v2)
 #
-# Changes (2025-12-05):
+# Changes (2025-12-05 v2):
+#   - Pages: 39 → 40 (+1)
+#     - /[org] 대시보드 기본 리다이렉트 페이지 누락 발견 및 추가
+#   - Components: 74 → 75 (+1)
+#     - charts/ 폴더 추가 (ExamsCharts, LessonsCharts)
+#     - ui: 32 → 30 (실제 카운트 수정)
+#     - seats: 2 → 1 (SeatAssignment 없음)
+#   - Migrations: 88 → 89 (+1)
+#     - 20251205_performance_indexes.sql 추가
+#
+# Changes (2025-12-05 v1):
 #   - API: 85 → 97 (+12 routes)
 #     - /api/admin/infrastructure, message-pricing, payments
 #     - /api/admin/organizations/[id]/credit
@@ -759,10 +775,6 @@ v1.1 (planned):
 #   - Components: 72 → 74 (+2)
 #   - Workers: 53 → 59 (+6)
 #   - Migrations: 82 → 88 (+6)
-#     - attendance_unique_constraint
-#     - credit_balance, manager_fields
-#     - message_logs, message_pricing
-#     - exam_time
 #
 # Changes (2025-12-03):
 #   - Workers: queue worker 추가 (974줄, 비동기 알림 처리)

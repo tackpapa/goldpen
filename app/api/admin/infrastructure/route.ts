@@ -33,33 +33,32 @@ export async function GET() {
       return Response.json({ error: 'Service client not available' }, { status: 500 })
     }
 
-    // 1. Tenant (Organization) 수
-    const { count: tenantCount } = await service
-      .from('organizations')
-      .select('*', { count: 'exact', head: true })
-
-    // 2. 전체 사용자 수
-    const { count: userCount } = await service
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-
-    // 3. 전체 학생 수
-    const { count: studentCount } = await service
-      .from('students')
-      .select('*', { count: 'exact', head: true })
-
-    // 4. DB 테이블별 대략적 레코드 수 (주요 테이블만)
+    // 모든 카운트 쿼리를 병렬 실행 (7개 쿼리 → 1 Promise.all)
     const [
-      { count: attendanceCount },
-      { count: lessonsCount },
-      { count: paymentsCount },
-      { count: consultationsCount },
+      tenantResult,
+      userResult,
+      studentResult,
+      attendanceResult,
+      lessonsResult,
+      paymentsResult,
+      consultationsResult,
     ] = await Promise.all([
+      service.from('organizations').select('*', { count: 'exact', head: true }),
+      service.from('users').select('*', { count: 'exact', head: true }),
+      service.from('students').select('*', { count: 'exact', head: true }),
       service.from('attendance').select('*', { count: 'exact', head: true }),
       service.from('lessons').select('*', { count: 'exact', head: true }),
       service.from('payment_records').select('*', { count: 'exact', head: true }),
       service.from('consultations').select('*', { count: 'exact', head: true }),
     ])
+
+    const tenantCount = tenantResult.count
+    const userCount = userResult.count
+    const studentCount = studentResult.count
+    const attendanceCount = attendanceResult.count
+    const lessonsCount = lessonsResult.count
+    const paymentsCount = paymentsResult.count
+    const consultationsCount = consultationsResult.count
 
     // 5. Storage 사용량 (버킷별)
     // Note: Supabase API로 직접 조회 어려움, 대략적 추정

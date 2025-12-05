@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
@@ -151,6 +152,21 @@ const roleLabels: Record<string, string> = {
   staff: '직원',
 }
 
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => {
+  if (!res.ok) throw new Error('Failed to load organization')
+  return res.json()
+})
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
+interface OrganizationResponse {
+  organization: OrganizationDetail
+}
+
 export default function OrganizationDetailPage({
   params,
 }: {
@@ -158,9 +174,6 @@ export default function OrganizationDetailPage({
 }) {
   const { id } = params
   const router = useRouter()
-  const [organization, setOrganization] = useState<OrganizationDetail | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [creditDialogOpen, setCreditDialogOpen] = useState(false)
   const [creditAmount, setCreditAmount] = useState('')
   const [creditDescription, setCreditDescription] = useState('')
@@ -170,39 +183,19 @@ export default function OrganizationDetailPage({
   const [isUpdatingCredit, setIsUpdatingCredit] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
 
-  useEffect(() => {
-    loadOrganization()
-  }, [id])
+  // SWR URL 생성
+  const apiUrl = useMemo(() => {
+    return selectedMonth
+      ? `/api/admin/organizations/${id}?month=${selectedMonth}`
+      : `/api/admin/organizations/${id}`
+  }, [id, selectedMonth])
 
-  useEffect(() => {
-    if (selectedMonth) {
-      loadOrganization(selectedMonth)
-    }
-  }, [selectedMonth])
+  // SWR로 데이터 페칭
+  const { data, isLoading, error, mutate } = useSWR<OrganizationResponse>(apiUrl, fetcher, swrOptions)
 
-  const loadOrganization = async (month?: string) => {
-    try {
-      setIsLoading(true)
-      const url = month
-        ? `/api/admin/organizations/${id}?month=${month}`
-        : `/api/admin/organizations/${id}`
-      const response = await fetch(url)
+  const organization = data?.organization || null
 
-      if (!response.ok) {
-        throw new Error('Failed to load organization')
-      }
-
-      const data = await response.json() as { organization?: any }
-      setOrganization(data.organization)
-    } catch (err) {
-      setError('조직 정보를 불러오는데 실패했습니다.')
-      console.error('Failed to load organization:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleCreditUpdate = async () => {
+  const handleCreditUpdate = useCallback(async () => {
     const amount = Number(creditAmount)
     if (!creditAmount || isNaN(amount) || amount < 1000 || amount % 1000 !== 0) {
       alert('1,000원 단위로 금액을 입력해주세요. (최소 1,000원)')
@@ -225,17 +218,17 @@ export default function OrganizationDetailPage({
         }),
       })
 
-      const data = await response.json() as { success?: boolean; error?: string; credit_balance?: number }
+      const responseData = await response.json() as { success?: boolean; error?: string; credit_balance?: number }
 
-      if (response.ok && data.success) {
-        // Update local state
-        setOrganization(prev => prev ? { ...prev, credit_balance: data.credit_balance ?? prev.credit_balance } : null)
+      if (response.ok && responseData.success) {
+        // SWR 캐시 갱신
+        mutate()
         setCreditDialogOpen(false)
         setCreditAmount('')
         setCreditDescription('')
         alert(creditType === 'charge' ? '충전이 완료되었습니다.' : '차감이 완료되었습니다.')
       } else {
-        alert(data.error || '처리 중 오류가 발생했습니다.')
+        alert(responseData.error || '처리 중 오류가 발생했습니다.')
       }
     } catch (err) {
       console.error('Credit update failed:', err)
@@ -243,7 +236,7 @@ export default function OrganizationDetailPage({
     } finally {
       setIsUpdatingCredit(false)
     }
-  }
+  }, [id, creditAmount, creditType, creditPaymentType, creditDescription, mutate])
 
   if (isLoading) {
     return (
@@ -266,7 +259,7 @@ export default function OrganizationDetailPage({
     )
   }
 
-  if (error || !organization) {
+  if (error || (!isLoading && !organization)) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
@@ -277,40 +270,43 @@ export default function OrganizationDetailPage({
         </div>
         <Card>
           <CardContent className="py-10 text-center text-muted-foreground">
-            {error || '조직을 찾을 수 없습니다.'}
+            {error?.message || '조직을 찾을 수 없습니다.'}
           </CardContent>
         </Card>
       </div>
     )
   }
 
+  // After null check, organization is guaranteed to be non-null
+  const org = organization!
+
   const statCards = [
     {
       title: '사용자',
-      value: organization.user_count,
-      max: organization.max_users,
+      value: org.user_count,
+      max: org.max_users,
       icon: Users,
       color: 'text-blue-600',
       bgColor: 'bg-blue-100',
     },
     {
       title: '학생',
-      value: organization.student_count,
-      max: organization.max_students,
+      value: org.student_count,
+      max: org.max_students,
       icon: GraduationCap,
       color: 'text-green-600',
       bgColor: 'bg-green-100',
     },
     {
       title: '수업',
-      value: organization.class_count,
+      value: org.class_count,
       icon: BookOpen,
       color: 'text-purple-600',
       bgColor: 'bg-purple-100',
     },
     {
       title: '강의실',
-      value: organization.room_count,
+      value: org.room_count,
       icon: DoorOpen,
       color: 'text-orange-600',
       bgColor: 'bg-orange-100',
@@ -327,16 +323,16 @@ export default function OrganizationDetailPage({
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-bold">{organization.name}</h1>
-              <Badge className={typeColors[organization.type]}>
-                {typeLabels[organization.type]}
+              <h1 className="text-3xl font-bold">{org.name}</h1>
+              <Badge className={typeColors[org.type]}>
+                {typeLabels[org.type]}
               </Badge>
-              <Badge className={statusColors[organization.status]}>
-                {statusLabels[organization.status]}
+              <Badge className={statusColors[org.status]}>
+                {statusLabels[org.status]}
               </Badge>
             </div>
             <p className="text-muted-foreground mt-1">
-              /{organization.slug} &middot; {format(new Date(organization.created_at), 'yyyy년 M월 d일', { locale: ko })} 생성
+              /{org.slug} &middot; {format(new Date(org.created_at), 'yyyy년 M월 d일', { locale: ko })} 생성
             </p>
           </div>
         </div>
@@ -379,16 +375,16 @@ export default function OrganizationDetailPage({
                 매출
               </div>
               <Select
-                value={organization.selected_month}
+                value={org.selected_month}
                 onValueChange={(value) => setSelectedMonth(value)}
               >
                 <SelectTrigger className="w-[130px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {(organization.available_months?.length > 0
-                    ? organization.available_months
-                    : [organization.selected_month]
+                  {(org.available_months?.length > 0
+                    ? org.available_months
+                    : [org.selected_month]
                   ).map((month) => (
                     <SelectItem key={month} value={month}>
                       {month.split('-')[0]}년 {Number(month.split('-')[1])}월
@@ -402,24 +398,24 @@ export default function OrganizationDetailPage({
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground mb-1">
-                  {organization.selected_month?.split('-')[0]}년 {Number(organization.selected_month?.split('-')[1])}월 매출
+                  {org.selected_month?.split('-')[0]}년 {Number(org.selected_month?.split('-')[1])}월 매출
                 </p>
                 <div className="text-3xl font-bold">
-                  {organization.monthly_revenue.toLocaleString()}원
+                  {org.monthly_revenue.toLocaleString()}원
                 </div>
               </div>
               <Separator />
               <div>
                 <p className="text-sm text-muted-foreground mb-1">누적 매출 (전체)</p>
                 <div className="text-2xl font-bold text-blue-600">
-                  {(organization.total_revenue || 0).toLocaleString()}원
+                  {(org.total_revenue || 0).toLocaleString()}원
                 </div>
               </div>
             </div>
-            {organization.recent_transactions.length > 0 && (
+            {org.recent_transactions.length > 0 && (
               <div className="mt-4 space-y-2 pt-4 border-t">
                 <p className="text-sm font-medium text-muted-foreground">최근 거래</p>
-                {organization.recent_transactions.slice(0, 3).map((tx: any) => (
+                {org.recent_transactions.slice(0, 3).map((tx: any) => (
                   <div key={tx.id} className="flex justify-between text-sm">
                     <span>{tx.student_name || tx.revenue_category_name || '결제'}</span>
                     <span className="font-medium">{tx.amount?.toLocaleString()}원</span>
@@ -448,7 +444,7 @@ export default function OrganizationDetailPage({
                   <DialogHeader>
                     <DialogTitle>충전금 관리</DialogTitle>
                     <DialogDescription>
-                      현재 잔액: {(organization.credit_balance || 0).toLocaleString()}원
+                      현재 잔액: {(org.credit_balance || 0).toLocaleString()}원
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4 py-4">
@@ -539,7 +535,7 @@ export default function OrganizationDetailPage({
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-emerald-600">
-              {(organization.credit_balance || 0).toLocaleString()}원
+              {(org.credit_balance || 0).toLocaleString()}원
             </div>
             <p className="text-sm text-muted-foreground mt-2">
               조직에서 사용 가능한 충전금
@@ -558,19 +554,19 @@ export default function OrganizationDetailPage({
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <div className="text-2xl font-bold">
-                  {organization.kakao_stats.total_count.toLocaleString()}
+                  {org.kakao_stats.total_count.toLocaleString()}
                 </div>
                 <p className="text-sm text-muted-foreground">발송</p>
               </div>
               <div>
                 <div className="text-2xl font-bold text-green-600">
-                  {organization.kakao_stats.success_count.toLocaleString()}
+                  {org.kakao_stats.success_count.toLocaleString()}
                 </div>
                 <p className="text-sm text-muted-foreground">성공</p>
               </div>
               <div>
                 <div className="text-2xl font-bold">
-                  {organization.kakao_stats.total_cost.toLocaleString()}원
+                  {org.kakao_stats.total_cost.toLocaleString()}원
                 </div>
                 <p className="text-sm text-muted-foreground">비용</p>
               </div>
@@ -590,26 +586,26 @@ export default function OrganizationDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {organization.owner ? (
+            {org.owner ? (
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4 text-muted-foreground" />
-                  <span className="font-medium">{organization.owner.name}</span>
+                  <span className="font-medium">{org.owner.name}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span>{organization.owner.email}</span>
+                  <span>{org.owner.email}</span>
                 </div>
-                {organization.owner.phone && (
+                {org.owner.phone && (
                   <div className="flex items-center gap-2">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{organization.owner.phone}</span>
+                    <span>{org.owner.phone}</span>
                   </div>
                 )}
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-muted-foreground">
-                    {format(new Date(organization.owner.created_at), 'yyyy년 M월 d일', { locale: ko })} 가입
+                    {format(new Date(org.owner.created_at), 'yyyy년 M월 d일', { locale: ko })} 가입
                   </span>
                 </div>
               </div>
@@ -632,38 +628,38 @@ export default function OrganizationDetailPage({
               <div className="flex justify-between">
                 <span className="text-muted-foreground">구독 플랜</span>
                 <Badge variant="outline" className="uppercase">
-                  {organization.subscription_plan}
+                  {org.subscription_plan}
                 </Badge>
               </div>
               <Separator />
               <div className="flex justify-between">
                 <span className="text-muted-foreground">카카오 알림톡</span>
-                <Badge className={(organization.org_settings?.settings as any)?.use_kakao ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
-                  {(organization.org_settings?.settings as any)?.use_kakao ? '활성화' : '비활성화'}
+                <Badge className={(org.org_settings?.settings as any)?.use_kakao ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                  {(org.org_settings?.settings as any)?.use_kakao ? '활성화' : '비활성화'}
                 </Badge>
               </div>
-              {organization.org_settings?.kakao_channel_id && (
+              {org.org_settings?.kakao_channel_id && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">카카오 채널 ID</span>
-                  <span className="text-sm">{organization.org_settings.kakao_channel_id}</span>
+                  <span className="text-sm">{org.org_settings.kakao_channel_id}</span>
                 </div>
               )}
-              {organization.org_settings?.contact_phone && (
+              {org.org_settings?.contact_phone && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">연락처</span>
-                  <span>{organization.org_settings.contact_phone}</span>
+                  <span>{org.org_settings.contact_phone}</span>
                 </div>
               )}
-              {organization.org_settings?.address && (
+              {org.org_settings?.address && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">주소</span>
-                  <span className="text-sm text-right max-w-[200px]">{organization.org_settings.address}</span>
+                  <span className="text-sm text-right max-w-[200px]">{org.org_settings.address}</span>
                 </div>
               )}
-              {organization.org_settings?.business_hours && (
+              {org.org_settings?.business_hours && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">영업시간</span>
-                  <span className="text-sm">{organization.org_settings.business_hours}</span>
+                  <span className="text-sm">{org.org_settings.business_hours}</span>
                 </div>
               )}
             </div>
@@ -676,7 +672,7 @@ export default function OrganizationDetailPage({
         <CardHeader>
           <CardTitle>사용자 목록 (최근 10명)</CardTitle>
           <CardDescription>
-            전체 {organization.user_count}명의 사용자 중 최근 가입한 사용자입니다
+            전체 {org.user_count}명의 사용자 중 최근 가입한 사용자입니다
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -691,14 +687,14 @@ export default function OrganizationDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {organization.users.length === 0 ? (
+                {org.users.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center">
                       사용자가 없습니다
                     </TableCell>
                   </TableRow>
                 ) : (
-                  organization.users.map((user) => (
+                  org.users.map((user) => (
                     <TableRow key={user.id}>
                       <TableCell className="font-medium">{user.name}</TableCell>
                       <TableCell>{user.email}</TableCell>

@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import {
   ColumnDef,
@@ -46,17 +47,39 @@ interface User {
   organizations: { id: string; name: string; type: string } | null
 }
 
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
+interface UsersResponse {
+  users: User[]
+  total: number
+}
+
 export default function UsersPage() {
   const router = useRouter()
-  const [users, setUsers] = useState<User[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
+  const [searchQuery, setSearchQuery] = useState('')
   const limit = 20
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
+
+  // SWR URL 생성
+  const apiUrl = useMemo(() => {
+    return `/api/admin/users?page=${page}&limit=${limit}&search=${searchQuery}`
+  }, [page, searchQuery])
+
+  // SWR로 데이터 페칭
+  const { data, isLoading, mutate } = useSWR<UsersResponse>(apiUrl, fetcher, swrOptions)
+
+  const users = data?.users || []
+  const totalCount = data?.total || 0
 
   const roleLabels: Record<string, string> = {
     super_admin: '슈퍼 어드민',
@@ -167,41 +190,17 @@ export default function UsersPage() {
     },
   })
 
-  useEffect(() => {
-    loadUsers()
-  }, [page])
-
-  const loadUsers = async () => {
-    try {
-      setIsLoading(true)
-      const searchQuery = table.getColumn('name')?.getFilterValue() as string || ''
-
-      const response = await fetch(
-        `/api/admin/users?page=${page}&limit=${limit}&search=${searchQuery}`
-      )
-
-      if (response.ok) {
-        const data = await response.json() as { users?: any[]; total?: number }
-        setUsers(data.users || [])
-        setTotalCount(data.total || 0)
-      }
-    } catch (error) {
-      console.error('Failed to load users:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleDelete = async () => {
+  const handleDelete = useCallback(async () => {
     if (!userToDelete) return
 
     try {
       const response = await fetch(`/api/admin/users/${userToDelete.id}`, {
         method: 'DELETE',
+        credentials: 'include',
       })
 
       if (response.ok) {
-        loadUsers()
+        mutate() // SWR 캐시 갱신
       }
     } catch (error) {
       console.error('Failed to delete user:', error)
@@ -209,7 +208,7 @@ export default function UsersPage() {
       setDeleteDialogOpen(false)
       setUserToDelete(null)
     }
-  }
+  }, [userToDelete, mutate])
 
   if (isLoading) {
     return (
@@ -239,9 +238,9 @@ export default function UsersPage() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="이름 또는 이메일로 검색..."
-            value={(table.getColumn('name')?.getFilterValue() as string) ?? ''}
+            value={searchQuery}
             onChange={(event) => {
-              table.getColumn('name')?.setFilterValue(event.target.value)
+              setSearchQuery(event.target.value)
               setPage(1)
             }}
             className="pl-10"

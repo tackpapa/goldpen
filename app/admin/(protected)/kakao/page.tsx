@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
+import useSWR from 'swr'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -116,8 +117,34 @@ const orgTypeLabels: Record<string, string> = {
   tutoring: '공부방',
 }
 
+interface KakaoResponse {
+  stats?: Stats
+  organization_usages?: OrgUsage[]
+  recent_usages?: RecentUsage[]
+  daily_stats?: DailyStat[]
+  type_breakdown?: TypeBreakdown[]
+}
+
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
 export default function KakaoPage() {
-  const [stats, setStats] = useState<Stats>({
+  const [period, setPeriod] = useState('30')
+
+  // SWR URL 생성
+  const apiUrl = useMemo(() => {
+    return `/api/admin/kakao?period=${period}`
+  }, [period])
+
+  // SWR로 데이터 페칭
+  const { data, isLoading, mutate } = useSWR<KakaoResponse>(apiUrl, fetcher, swrOptions)
+
+  const stats = data?.stats || {
     total_count: 0,
     success_count: 0,
     failed_count: 0,
@@ -125,44 +152,15 @@ export default function KakaoPage() {
     total_price: 0,
     total_cost: 0,
     total_profit: 0,
-  })
-  const [orgUsages, setOrgUsages] = useState<OrgUsage[]>([])
-  const [recentUsages, setRecentUsages] = useState<RecentUsage[]>([])
-  const [dailyStats, setDailyStats] = useState<DailyStat[]>([])
-  const [typeBreakdown, setTypeBreakdown] = useState<TypeBreakdown[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [period, setPeriod] = useState('30')
-
-  useEffect(() => {
-    loadData()
-  }, [period])
-
-  const loadData = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch(`/api/admin/kakao?period=${period}`)
-      if (response.ok) {
-        const data = await response.json() as {
-          stats?: Stats
-          organization_usages?: OrgUsage[]
-          recent_usages?: RecentUsage[]
-          daily_stats?: DailyStat[]
-          type_breakdown?: TypeBreakdown[]
-        }
-        if (data.stats) {
-          setStats(data.stats)
-        }
-        setOrgUsages(data.organization_usages || [])
-        setRecentUsages(data.recent_usages || [])
-        setDailyStats(data.daily_stats || [])
-        setTypeBreakdown(data.type_breakdown || [])
-      }
-    } catch (error) {
-      console.error('Failed to load kakao data:', error)
-    } finally {
-      setIsLoading(false)
-    }
   }
+  const orgUsages = data?.organization_usages || []
+  const recentUsages = data?.recent_usages || []
+  const dailyStats = data?.daily_stats || []
+  const typeBreakdown = data?.type_breakdown || []
+
+  const handleRefresh = useCallback(() => {
+    mutate()
+  }, [mutate])
 
   const statCards = [
     {
@@ -251,7 +249,7 @@ export default function KakaoPage() {
               <SelectItem value="90">최근 90일</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" onClick={loadData}>
+          <Button variant="outline" size="icon" onClick={handleRefresh}>
             <RefreshCw className="h-4 w-4" />
           </Button>
         </div>

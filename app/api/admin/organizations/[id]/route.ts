@@ -49,7 +49,7 @@ export async function GET(
       return Response.json({ error: authCheck.error }, { status: authCheck.status })
     }
 
-    // Get organization
+    // Get organization first (required for 404 check)
     const { data: org, error: orgError } = await adminClient
       .from('organizations')
       .select('*')
@@ -60,53 +60,9 @@ export async function GET(
       return Response.json({ error: 'Organization not found' }, { status: 404 })
     }
 
-    // Get org settings
-    const { data: orgSettings } = await adminClient
-      .from('org_settings')
-      .select('*')
-      .eq('org_id', id)
-      .maybeSingle()
-
-    // Get owner (role = 'owner')
-    const { data: owner } = await adminClient
-      .from('users')
-      .select('id, name, email, phone, created_at')
-      .eq('org_id', id)
-      .eq('role', 'owner')
-      .maybeSingle()
-
-    // Get all users in org (super_admin 제외 - 전체 서비스 관리자는 조직 소속이 아님)
-    const { data: users, count: userCount } = await adminClient
-      .from('users')
-      .select('id, name, email, role, created_at', { count: 'exact' })
-      .eq('org_id', id)
-      .neq('role', 'super_admin')
-      .order('created_at', { ascending: false })
-      .limit(10)
-
-    // Get student count
-    const { count: studentCount } = await adminClient
-      .from('students')
-      .select('*', { count: 'exact', head: true })
-      .eq('org_id', id)
-
-    // Get class count
-    const { count: classCount } = await adminClient
-      .from('classes')
-      .select('*', { count: 'exact', head: true })
-      .eq('org_id', id)
-
-    // Get room count
-    const { count: roomCount } = await adminClient
-      .from('rooms')
-      .select('*', { count: 'exact', head: true })
-      .eq('org_id', id)
-
-    // Get revenue data - payment_records 테이블에서 completed 상태의 금액 합계
-    // 매출정산 페이지와 동일한 데이터 소스 사용
+    // Parse month parameter
     const url = new URL(request.url)
-    const selectedMonth = url.searchParams.get('month') // YYYY-MM format
-
+    const selectedMonth = url.searchParams.get('month')
     const now = new Date()
     let targetMonth: { year: number; month: number }
 
@@ -118,92 +74,157 @@ export async function GET(
     }
 
     const startOfMonth = new Date(targetMonth.year, targetMonth.month - 1, 1)
-    const endOfMonth = new Date(targetMonth.year, targetMonth.month, 0) // 해당 월의 마지막 날
+    const endOfMonth = new Date(targetMonth.year, targetMonth.month, 0)
     const startOfMonthStr = startOfMonth.toISOString().split('T')[0]
     const endOfMonthStr = endOfMonth.toISOString().split('T')[0]
 
-    // 선택된 월의 매출
-    const { data: revenueData } = await adminClient
-      .from('payment_records')
-      .select('amount, payment_date, student_name, revenue_category_name')
-      .eq('org_id', id)
-      .eq('status', 'completed')
-      .gte('payment_date', startOfMonthStr)
-      .lte('payment_date', endOfMonthStr)
+    // Parallel fetch all data (11 queries → 1 Promise.all)
+    const [
+      orgSettingsResult,
+      ownerResult,
+      usersResult,
+      studentCountResult,
+      classCountResult,
+      roomCountResult,
+      revenueDataResult,
+      totalRevenueDataResult,
+      allPaymentsResult,
+      notificationLogsResult,
+      recentTransactionsResult,
+    ] = await Promise.all([
+      // 1. Org settings
+      adminClient
+        .from('org_settings')
+        .select('*')
+        .eq('org_id', id)
+        .maybeSingle(),
 
-    const monthlyRevenue = (revenueData || []).reduce(
+      // 2. Owner
+      adminClient
+        .from('users')
+        .select('id, name, email, phone, created_at')
+        .eq('org_id', id)
+        .eq('role', 'owner')
+        .maybeSingle(),
+
+      // 3. Users with count
+      adminClient
+        .from('users')
+        .select('id, name, email, role, created_at', { count: 'exact' })
+        .eq('org_id', id)
+        .neq('role', 'super_admin')
+        .order('created_at', { ascending: false })
+        .limit(10),
+
+      // 4. Student count
+      adminClient
+        .from('students')
+        .select('*', { count: 'exact', head: true })
+        .eq('org_id', id),
+
+      // 5. Class count
+      adminClient
+        .from('classes')
+        .select('*', { count: 'exact', head: true })
+        .eq('org_id', id),
+
+      // 6. Room count
+      adminClient
+        .from('rooms')
+        .select('*', { count: 'exact', head: true })
+        .eq('org_id', id),
+
+      // 7. Monthly revenue
+      adminClient
+        .from('payment_records')
+        .select('amount, payment_date, student_name, revenue_category_name')
+        .eq('org_id', id)
+        .eq('status', 'completed')
+        .gte('payment_date', startOfMonthStr)
+        .lte('payment_date', endOfMonthStr),
+
+      // 8. Total revenue
+      adminClient
+        .from('payment_records')
+        .select('amount')
+        .eq('org_id', id)
+        .eq('status', 'completed'),
+
+      // 9. All payments for month list
+      adminClient
+        .from('payment_records')
+        .select('payment_date')
+        .eq('org_id', id)
+        .eq('status', 'completed')
+        .order('payment_date', { ascending: false }),
+
+      // 10. Notification logs for Kakao stats
+      adminClient
+        .from('notification_logs')
+        .select('type, status')
+        .eq('org_id', id)
+        .gte('created_at', startOfMonth.toISOString()),
+
+      // 11. Recent transactions
+      adminClient
+        .from('payment_records')
+        .select('id, amount, student_name, revenue_category_name, payment_date, status')
+        .eq('org_id', id)
+        .eq('status', 'completed')
+        .order('payment_date', { ascending: false })
+        .limit(10),
+    ])
+
+    // Process results
+    const orgSettings = orgSettingsResult.data
+    const owner = ownerResult.data
+    const users = usersResult.data || []
+    const userCount = usersResult.count || 0
+    const studentCount = studentCountResult.count || 0
+    const classCount = classCountResult.count || 0
+    const roomCount = roomCountResult.count || 0
+
+    const monthlyRevenue = (revenueDataResult.data || []).reduce(
       (sum, tx) => sum + (Number(tx.amount) || 0),
       0
     )
 
-    // 누적 매출 (전체)
-    const { data: totalRevenueData } = await adminClient
-      .from('payment_records')
-      .select('amount')
-      .eq('org_id', id)
-      .eq('status', 'completed')
-
-    const totalRevenue = (totalRevenueData || []).reduce(
+    const totalRevenue = (totalRevenueDataResult.data || []).reduce(
       (sum, tx) => sum + (Number(tx.amount) || 0),
       0
     )
-
-    // 월별 데이터가 있는 월 목록 (드롭다운용)
-    const { data: allPayments } = await adminClient
-      .from('payment_records')
-      .select('payment_date')
-      .eq('org_id', id)
-      .eq('status', 'completed')
-      .order('payment_date', { ascending: false })
 
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-    const monthsFromData = (allPayments || [])
+    const monthsFromData = (allPaymentsResult.data || [])
       .map(p => p.payment_date?.substring(0, 7))
       .filter(Boolean)
-
-    // 현재 달을 항상 포함 + 데이터가 있는 월들
     const availableMonths = [...new Set([currentMonth, ...monthsFromData])].sort().reverse()
 
-    // Get Kakao usage stats from notification_logs (Solapi 알림톡)
-    const { data: notificationLogs } = await adminClient
-      .from('notification_logs')
-      .select('type, status')
-      .eq('org_id', id)
-      .gte('created_at', startOfMonth.toISOString())
-
-    const ALIMTALK_PRICE = 100 // 알림톡 판매가 100원
-    const successCount = (notificationLogs || []).filter(n => n.status === 'sent').length
+    const ALIMTALK_PRICE = 100
+    const notificationLogs = notificationLogsResult.data || []
+    const successCount = notificationLogs.filter(n => n.status === 'sent').length
     const kakaoStats = {
-      total_count: notificationLogs?.length || 0,
+      total_count: notificationLogs.length,
       total_cost: successCount * ALIMTALK_PRICE,
       success_count: successCount,
     }
-
-    // Get recent payment records (최근 결제 내역) - 매출정산 페이지와 동일
-    const { data: recentTransactions } = await adminClient
-      .from('payment_records')
-      .select('id, amount, student_name, revenue_category_name, payment_date, status')
-      .eq('org_id', id)
-      .eq('status', 'completed')
-      .order('payment_date', { ascending: false })
-      .limit(10)
 
     return Response.json({
       organization: {
         ...org,
         org_settings: orgSettings,
         owner,
-        users: users || [],
-        user_count: userCount || 0,
-        student_count: studentCount || 0,
-        class_count: classCount || 0,
-        room_count: roomCount || 0,
+        users,
+        user_count: userCount,
+        student_count: studentCount,
+        class_count: classCount,
+        room_count: roomCount,
         monthly_revenue: monthlyRevenue,
         total_revenue: totalRevenue,
         available_months: availableMonths,
         selected_month: `${targetMonth.year}-${String(targetMonth.month).padStart(2, '0')}`,
         kakao_stats: kakaoStats,
-        recent_transactions: recentTransactions || [],
+        recent_transactions: recentTransactionsResult.data || [],
       },
     })
   } catch (error) {

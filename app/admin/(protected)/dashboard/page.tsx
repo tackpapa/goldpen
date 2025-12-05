@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useCallback } from 'react'
+import useSWR from 'swr'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import {
@@ -12,6 +13,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Building2, Users, TrendingUp, Activity, MessageSquare, Send, Wallet, DollarSign, CreditCard, ArrowUpCircle, ArrowDownCircle, PiggyBank, Gift, AlertTriangle } from 'lucide-react'
+
+// SWR fetcher
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
 
 interface Stats {
   totalOrganizations: number
@@ -95,29 +99,15 @@ function getMonthOptions() {
   return options
 }
 
+// SWR 설정 - 30초 캐시, 5분마다 백그라운드 재검증
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000, // 30초 내 중복 요청 방지
+  refreshInterval: 300000, // 5분마다 자동 갱신
+}
+
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<Stats>({
-    totalOrganizations: 0,
-    activeOrganizations: 0,
-    totalUsers: 0,
-    recentOrganizations: 0,
-  })
-  const [messageStats, setMessageStats] = useState<MessageStats>({
-    sms: { count: 0, totalPrice: 0, totalCost: 0, profit: 0 },
-    kakao_alimtalk: { count: 0, totalPrice: 0, totalCost: 0, profit: 0 },
-    total: { count: 0, totalPrice: 0, totalCost: 0, profit: 0 },
-    period: 'month',
-  })
-  const [creditStats, setCreditStats] = useState<CreditStats>({
-    totalBalance: 0,
-    paidBalance: 0,
-    freeBalance: 0,
-    orgsWithBalance: 0,
-    today: { used: 0, charged: 0, paidCharged: 0, freeCharged: 0 },
-    month: { used: 0, charged: 0, paidCharged: 0, freeCharged: 0, year: 0, month: 0 },
-    monthlyUsage: [],
-  })
-  const [isLoading, setIsLoading] = useState(true)
+  // 월 선택 상태
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
@@ -127,74 +117,68 @@ export default function AdminDashboard() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   })
 
+  // SWR로 3개 API 병렬 호출 + 캐싱
+  const { data: stats, isLoading: statsLoading } = useSWR<Stats>(
+    '/api/admin/stats/overview',
+    fetcher,
+    swrOptions
+  )
+
+  const { data: messageStats, isLoading: messageLoading } = useSWR<MessageStats>(
+    `/api/admin/stats/messages?month=${selectedMonth}`,
+    fetcher,
+    swrOptions
+  )
+
+  const { data: creditStats, isLoading: creditLoading } = useSWR<CreditStats>(
+    `/api/admin/stats/credits?month=${selectedCreditMonth}`,
+    fetcher,
+    swrOptions
+  )
+
   const monthOptions = getMonthOptions()
 
-  // 메시지 통계 로드 함수
-  const loadMessageStats = async (month: string) => {
-    try {
-      const res = await fetch(`/api/admin/stats/messages?month=${month}`, { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json() as MessageStats
-        setMessageStats(data)
-      }
-    } catch (error) {
-      console.error('Failed to load message stats:', error)
-    }
+  // 기본값 설정 (데이터 로딩 전)
+  const safeStats = stats ?? {
+    totalOrganizations: 0,
+    activeOrganizations: 0,
+    totalUsers: 0,
+    recentOrganizations: 0,
   }
 
-  // 충전금 통계 로드 함수
-  const loadCreditStats = async (month: string) => {
-    try {
-      const res = await fetch(`/api/admin/stats/credits?month=${month}`, { credentials: 'include' })
-      if (res.ok) {
-        const data = await res.json() as CreditStats
-        setCreditStats(data)
-      }
-    } catch (error) {
-      console.error('Failed to load credit stats:', error)
-    }
+  const safeMessageStats = messageStats ?? {
+    sms: { count: 0, totalPrice: 0, totalCost: 0, profit: 0 },
+    kakao_alimtalk: { count: 0, totalPrice: 0, totalCost: 0, profit: 0 },
+    total: { count: 0, totalPrice: 0, totalCost: 0, profit: 0 },
+    period: 'month',
   }
 
-  useEffect(() => {
-    const loadStats = async () => {
-      try {
-        const overviewRes = await fetch('/api/admin/stats/overview', { credentials: 'include' })
+  const safeCreditStats = creditStats ?? {
+    totalBalance: 0,
+    paidBalance: 0,
+    freeBalance: 0,
+    orgsWithBalance: 0,
+    today: { used: 0, charged: 0, paidCharged: 0, freeCharged: 0 },
+    month: { used: 0, charged: 0, paidCharged: 0, freeCharged: 0, year: 0, month: 0 },
+    monthlyUsage: [],
+  }
 
-        if (overviewRes.ok) {
-          const data = await overviewRes.json() as Stats
-          setStats(data)
-        }
+  // 전체 로딩 상태 (모든 API가 처음 로딩 중일 때만)
+  const isLoading = statsLoading && messageLoading && creditLoading
 
-        // 메시지 통계도 로드
-        await loadMessageStats(selectedMonth)
-        // 충전금 통계도 로드
-        await loadCreditStats(selectedCreditMonth)
-      } catch (error) {
-        console.error('Failed to load stats:', error)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadStats()
+  // 월 변경 핸들러 (SWR가 자동으로 새 키로 요청)
+  const handleMonthChange = useCallback((month: string) => {
+    setSelectedMonth(month)
   }, [])
 
-  // 월 변경 시 메시지 통계 다시 로드
-  const handleMonthChange = (month: string) => {
-    setSelectedMonth(month)
-    loadMessageStats(month)
-  }
-
-  // 충전금 월 변경 핸들러
-  const handleCreditMonthChange = (month: string) => {
+  const handleCreditMonthChange = useCallback((month: string) => {
     setSelectedCreditMonth(month)
-    loadCreditStats(month)
-  }
+  }, [])
 
   const statCards = [
     {
       title: '전체 조직',
-      value: stats.totalOrganizations,
+      value: safeStats.totalOrganizations,
       icon: Building2,
       description: '등록된 모든 조직',
       color: 'text-blue-600',
@@ -202,7 +186,7 @@ export default function AdminDashboard() {
     },
     {
       title: '활성 조직',
-      value: stats.activeOrganizations,
+      value: safeStats.activeOrganizations,
       icon: Activity,
       description: '현재 운영 중',
       color: 'text-green-600',
@@ -210,7 +194,7 @@ export default function AdminDashboard() {
     },
     {
       title: '전체 사용자',
-      value: stats.totalUsers,
+      value: safeStats.totalUsers,
       icon: Users,
       description: '모든 조직 포함',
       color: 'text-purple-600',
@@ -218,7 +202,7 @@ export default function AdminDashboard() {
     },
     {
       title: '최근 가입',
-      value: stats.recentOrganizations,
+      value: safeStats.recentOrganizations,
       icon: TrendingUp,
       description: '지난 7일',
       color: 'text-orange-600',
@@ -312,9 +296,9 @@ export default function AdminDashboard() {
                 </div>
                 <span className="text-sm font-medium">SMS 문자</span>
               </div>
-              <div className="text-2xl font-bold">{formatValue(messageStats.sms.count, '건')}</div>
+              <div className="text-2xl font-bold">{formatValue(safeMessageStats.sms.count, '건')}</div>
               <div className="text-xs text-muted-foreground mt-1">
-                매출 {formatMoney(messageStats.sms.totalPrice)}
+                매출 {formatMoney(safeMessageStats.sms.totalPrice)}
               </div>
             </div>
 
@@ -326,9 +310,9 @@ export default function AdminDashboard() {
                 </div>
                 <span className="text-sm font-medium">카카오 알림톡</span>
               </div>
-              <div className="text-2xl font-bold">{formatValue(messageStats.kakao_alimtalk.count, '건')}</div>
+              <div className="text-2xl font-bold">{formatValue(safeMessageStats.kakao_alimtalk.count, '건')}</div>
               <div className="text-xs text-muted-foreground mt-1">
-                매출 {formatMoney(messageStats.kakao_alimtalk.totalPrice)}
+                매출 {formatMoney(safeMessageStats.kakao_alimtalk.totalPrice)}
               </div>
             </div>
 
@@ -341,10 +325,10 @@ export default function AdminDashboard() {
                 <span className="text-sm font-medium">총 원가</span>
               </div>
               <div className="text-2xl font-bold text-red-600">
-                {formatMoney(messageStats.total.totalCost)}
+                {formatMoney(safeMessageStats.total.totalCost)}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                총 {formatValue(messageStats.total.count, '건')} 발송
+                총 {formatValue(safeMessageStats.total.count, '건')} 발송
               </div>
             </div>
 
@@ -356,11 +340,11 @@ export default function AdminDashboard() {
                 </div>
                 <span className="text-sm font-medium">순수익</span>
               </div>
-              <div className={`text-2xl font-bold ${messageStats.total.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatMoney(messageStats.total.profit, true)}
+              <div className={`text-2xl font-bold ${safeMessageStats.total.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {formatMoney(safeMessageStats.total.profit, true)}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                매출 {formatMoney(messageStats.total.totalPrice)}
+                매출 {formatMoney(safeMessageStats.total.totalPrice)}
               </div>
             </div>
           </div>
@@ -374,16 +358,16 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div>
                   <span className="text-muted-foreground">발송</span>
-                  <div className="font-medium">{formatValue(messageStats.sms.count, '건')}</div>
+                  <div className="font-medium">{formatValue(safeMessageStats.sms.count, '건')}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">원가</span>
-                  <div className="font-medium text-red-600">{formatMoney(messageStats.sms.totalCost)}</div>
+                  <div className="font-medium text-red-600">{formatMoney(safeMessageStats.sms.totalCost)}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">수익</span>
-                  <div className={`font-medium ${messageStats.sms.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatMoney(messageStats.sms.profit, true)}
+                  <div className={`font-medium ${safeMessageStats.sms.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatMoney(safeMessageStats.sms.profit, true)}
                   </div>
                 </div>
               </div>
@@ -394,16 +378,16 @@ export default function AdminDashboard() {
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div>
                   <span className="text-muted-foreground">발송</span>
-                  <div className="font-medium">{formatValue(messageStats.kakao_alimtalk.count, '건')}</div>
+                  <div className="font-medium">{formatValue(safeMessageStats.kakao_alimtalk.count, '건')}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">원가</span>
-                  <div className="font-medium text-red-600">{formatMoney(messageStats.kakao_alimtalk.totalCost)}</div>
+                  <div className="font-medium text-red-600">{formatMoney(safeMessageStats.kakao_alimtalk.totalCost)}</div>
                 </div>
                 <div>
                   <span className="text-muted-foreground">수익</span>
-                  <div className={`font-medium ${messageStats.kakao_alimtalk.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {formatMoney(messageStats.kakao_alimtalk.profit, true)}
+                  <div className={`font-medium ${safeMessageStats.kakao_alimtalk.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {formatMoney(safeMessageStats.kakao_alimtalk.profit, true)}
                   </div>
                 </div>
               </div>
@@ -445,10 +429,10 @@ export default function AdminDashboard() {
                 <span className="text-sm font-medium">유료 충전금</span>
               </div>
               <div className="text-2xl font-bold text-blue-600">
-                {formatMoney(creditStats.paidBalance)}
+                {formatMoney(safeCreditStats.paidBalance)}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                실제 수익 ({creditStats.orgsWithBalance || '-'}개 조직)
+                실제 수익 ({safeCreditStats.orgsWithBalance || '-'}개 조직)
               </div>
             </div>
 
@@ -461,7 +445,7 @@ export default function AdminDashboard() {
                 <span className="text-sm font-medium">무료 제공금</span>
               </div>
               <div className="text-2xl font-bold text-yellow-600">
-                {formatMoney(creditStats.freeBalance)}
+                {formatMoney(safeCreditStats.freeBalance)}
               </div>
               <div className="text-xs text-yellow-700 mt-1 flex items-center gap-1">
                 <AlertTriangle className="h-3 w-3" />
@@ -478,10 +462,10 @@ export default function AdminDashboard() {
                 <span className="text-sm font-medium">오늘 사용</span>
               </div>
               <div className="text-2xl font-bold text-red-600">
-                {creditStats.today.used ? `-${creditStats.today.used.toLocaleString()}원` : '-'}
+                {safeCreditStats.today.used ? `-${safeCreditStats.today.used.toLocaleString()}원` : '-'}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                충전 {creditStats.today.charged ? `+${creditStats.today.charged.toLocaleString()}원` : '-'}
+                충전 {safeCreditStats.today.charged ? `+${safeCreditStats.today.charged.toLocaleString()}원` : '-'}
               </div>
             </div>
 
@@ -494,10 +478,10 @@ export default function AdminDashboard() {
                 <span className="text-sm font-medium">이번 달 사용</span>
               </div>
               <div className="text-2xl font-bold text-orange-600">
-                {creditStats.month.used ? `-${creditStats.month.used.toLocaleString()}원` : '-'}
+                {safeCreditStats.month.used ? `-${safeCreditStats.month.used.toLocaleString()}원` : '-'}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                {creditStats.month.year && creditStats.month.month ? `${creditStats.month.year}년 ${creditStats.month.month}월` : '-'}
+                {safeCreditStats.month.year && safeCreditStats.month.month ? `${safeCreditStats.month.year}년 ${safeCreditStats.month.month}월` : '-'}
               </div>
             </div>
 
@@ -510,10 +494,10 @@ export default function AdminDashboard() {
                 <span className="text-sm font-medium">이번 달 충전</span>
               </div>
               <div className="text-2xl font-bold text-green-600">
-                {creditStats.month.charged ? `+${creditStats.month.charged.toLocaleString()}원` : '-'}
+                {safeCreditStats.month.charged ? `+${safeCreditStats.month.charged.toLocaleString()}원` : '-'}
               </div>
               <div className="text-xs text-muted-foreground mt-1">
-                유료 {formatMoney(creditStats.month.paidCharged)} / 무료 {formatMoney(creditStats.month.freeCharged)}
+                유료 {formatMoney(safeCreditStats.month.paidCharged)} / 무료 {formatMoney(safeCreditStats.month.freeCharged)}
               </div>
             </div>
           </div>
@@ -524,9 +508,9 @@ export default function AdminDashboard() {
           <div className="space-y-3 mb-6">
             <h4 className="text-sm font-medium flex items-center gap-2">
               수익 분석 (원가 기반)
-              {creditStats.month.year && creditStats.month.month && (
+              {safeCreditStats.month.year && safeCreditStats.month.month && (
                 <span className="text-xs text-muted-foreground font-normal">
-                  {creditStats.month.year}년 {creditStats.month.month}월
+                  {safeCreditStats.month.year}년 {safeCreditStats.month.month}월
                 </span>
               )}
             </h4>
@@ -535,20 +519,20 @@ export default function AdminDashboard() {
               <div className="p-3 border rounded-lg bg-blue-50">
                 <div className="text-xs text-muted-foreground mb-1">유료 충전 매출</div>
                 <div className="text-lg font-bold text-blue-600">
-                  {formatMoney(creditStats.month.paidRevenue)}
+                  {formatMoney(safeCreditStats.month.paidRevenue)}
                 </div>
               </div>
 
               {/* 전체 원가 (메시지 발송) */}
               <div className="p-3 border rounded-lg bg-gray-50">
                 <div className="text-xs text-muted-foreground mb-1">
-                  전체 원가 ({creditStats.month.messageCount?.toLocaleString() || 0}건)
+                  전체 원가 ({safeCreditStats.month.messageCount?.toLocaleString() || 0}건)
                 </div>
                 <div className="text-lg font-bold text-gray-600">
-                  {formatMoney(creditStats.month.actualCost)}
+                  {formatMoney(safeCreditStats.month.actualCost)}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
-                  무료: {formatMoney(creditStats.month.freeActualCost)} / 유료: {formatMoney(creditStats.month.paidActualCost)}
+                  무료: {formatMoney(safeCreditStats.month.freeActualCost)} / 유료: {formatMoney(safeCreditStats.month.paidActualCost)}
                 </div>
               </div>
 
@@ -559,7 +543,7 @@ export default function AdminDashboard() {
                   마케팅 비용
                 </div>
                 <div className="text-lg font-bold text-yellow-600">
-                  {creditStats.month.freeActualCost ? `-${creditStats.month.freeActualCost.toLocaleString()}원` : '-'}
+                  {safeCreditStats.month.freeActualCost ? `-${safeCreditStats.month.freeActualCost.toLocaleString()}원` : '-'}
                 </div>
                 <div className="text-xs text-yellow-600 mt-1">
                   무료 제공분 실제 원가
@@ -567,10 +551,10 @@ export default function AdminDashboard() {
               </div>
 
               {/* 순이익 */}
-              <div className={`p-3 border rounded-lg ${(creditStats.month.netProfit ?? 0) >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <div className={`p-3 border rounded-lg ${(safeCreditStats.month.netProfit ?? 0) >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                 <div className="text-xs text-muted-foreground mb-1">순이익</div>
-                <div className={`text-lg font-bold ${(creditStats.month.netProfit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatMoney(creditStats.month.netProfit, true)}
+                <div className={`text-lg font-bold ${(safeCreditStats.month.netProfit ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatMoney(safeCreditStats.month.netProfit, true)}
                 </div>
                 <div className="text-xs text-muted-foreground mt-1">
                   매출 - 전체 원가
@@ -584,12 +568,12 @@ export default function AdminDashboard() {
           {/* 월별 사용량 트렌드 */}
           <div className="space-y-3">
             <h4 className="text-sm font-medium">월별 충전금 현황 (최근 6개월)</h4>
-            {creditStats.monthlyUsage.length > 0 ? (
+            {safeCreditStats.monthlyUsage.length > 0 ? (
               <>
                 <div className="space-y-2">
-                  {creditStats.monthlyUsage.map((m) => {
+                  {safeCreditStats.monthlyUsage.map((m) => {
                     const maxValue = Math.max(
-                      ...creditStats.monthlyUsage.map((x) => Math.max(x.used, x.charged)),
+                      ...safeCreditStats.monthlyUsage.map((x) => Math.max(x.used, x.charged)),
                       1
                     )
                     const usedWidth = m.used ? (m.used / maxValue) * 100 : 0

@@ -2,7 +2,8 @@
 
 export const runtime = 'edge'
 
-import { useEffect, useState } from 'react'
+import { useState, useCallback } from 'react'
+import useSWR from 'swr'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -76,6 +77,14 @@ const alertLabels = {
   critical: '위험',
 }
 
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
 function AlertIcon({ level }: { level: 'safe' | 'warning' | 'danger' | 'critical' }) {
   if (level === 'safe') return <CheckCircle2 className="h-4 w-4 text-green-600" />
   if (level === 'warning') return <AlertTriangle className="h-4 w-4 text-yellow-600" />
@@ -146,29 +155,23 @@ function MetricCard({
 }
 
 export default function InfrastructurePage() {
-  const [metrics, setMetrics] = useState<InfraMetrics | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  const loadMetrics = async () => {
-    setIsLoading(true)
-    try {
-      const response = await fetch('/api/admin/infrastructure', { credentials: 'include' })
-      if (response.ok) {
-        const data = await response.json() as InfraMetrics
-        setMetrics(data)
+  // SWR로 데이터 페칭
+  const { data: metrics, isLoading, isValidating, mutate } = useSWR<InfraMetrics>(
+    '/api/admin/infrastructure',
+    fetcher,
+    {
+      ...swrOptions,
+      onSuccess: () => {
         setLastUpdated(new Date())
       }
-    } catch (error) {
-      console.error('Failed to load infrastructure metrics:', error)
-    } finally {
-      setIsLoading(false)
     }
-  }
+  )
 
-  useEffect(() => {
-    loadMetrics()
-  }, [])
+  const handleRefresh = useCallback(() => {
+    mutate()
+  }, [mutate])
 
   if (isLoading || !metrics) {
     return (
@@ -210,8 +213,8 @@ export default function InfrastructurePage() {
               마지막 업데이트: {lastUpdated.toLocaleTimeString()}
             </span>
           )}
-          <Button variant="outline" size="sm" onClick={loadMetrics} disabled={isLoading}>
-            <RefreshCw className={cn('h-4 w-4 mr-2', isLoading && 'animate-spin')} />
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isValidating}>
+            <RefreshCw className={cn('h-4 w-4 mr-2', isValidating && 'animate-spin')} />
             새로고침
           </Button>
         </div>

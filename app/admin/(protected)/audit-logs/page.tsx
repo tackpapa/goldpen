@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useMemo } from 'react'
+import useSWR from 'swr'
 import {
   ColumnDef,
   flexRender,
@@ -50,16 +51,45 @@ interface AuditLog {
   organizations: { id: string; name: string } | null
 }
 
+interface AuditLogsResponse {
+  logs: AuditLog[]
+  total: number
+}
+
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
 export default function AuditLogsPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const [actionFilter, setActionFilter] = useState('')
   const [resourceTypeFilter, setResourceTypeFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const limit = 20
+
+  // SWR URL 생성
+  const apiUrl = useMemo(() => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    })
+    if (searchQuery) params.append('search', searchQuery)
+    if (actionFilter) params.append('action', actionFilter)
+    if (resourceTypeFilter) params.append('resource_type', resourceTypeFilter)
+    return `/api/admin/audit-logs?${params.toString()}`
+  }, [page, searchQuery, actionFilter, resourceTypeFilter])
+
+  // SWR로 데이터 페칭
+  const { data, isLoading } = useSWR<AuditLogsResponse>(apiUrl, fetcher, swrOptions)
+
+  const logs = data?.logs || []
+  const totalCount = data?.total || 0
 
   const actionLabels: Record<string, string> = {
     create: '생성',
@@ -154,38 +184,6 @@ export default function AuditLogsPage() {
     },
   })
 
-  useEffect(() => {
-    loadLogs()
-  }, [page, actionFilter, resourceTypeFilter])
-
-  const loadLogs = async () => {
-    try {
-      setIsLoading(true)
-      const searchQuery = table.getColumn('resource_type')?.getFilterValue() as string || ''
-
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-      })
-
-      if (searchQuery) params.append('search', searchQuery)
-      if (actionFilter) params.append('action', actionFilter)
-      if (resourceTypeFilter) params.append('resource_type', resourceTypeFilter)
-
-      const response = await fetch(`/api/admin/audit-logs?${params}`)
-
-      if (response.ok) {
-        const data = await response.json() as { logs?: any[]; total?: number }
-        setLogs(data.logs || [])
-        setTotalCount(data.total || 0)
-      }
-    } catch (error) {
-      console.error('Failed to load audit logs:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -216,9 +214,9 @@ export default function AuditLogsPage() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="리소스 ID로 검색..."
-            value={(table.getColumn('resource_type')?.getFilterValue() as string) ?? ''}
+            value={searchQuery}
             onChange={(event) => {
-              table.getColumn('resource_type')?.setFilterValue(event.target.value)
+              setSearchQuery(event.target.value)
               setPage(1)
             }}
             className="pl-10"

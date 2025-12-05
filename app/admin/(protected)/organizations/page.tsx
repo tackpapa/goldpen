@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import useSWR from 'swr'
 import { useRouter } from 'next/navigation'
 import {
   ColumnDef,
@@ -61,17 +62,46 @@ interface Organization {
   } | null
 }
 
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
+interface OrganizationsResponse {
+  organizations: Organization[]
+  total: number
+}
+
 export default function OrganizationsPage() {
   const router = useRouter()
-  const [organizations, setOrganizations] = useState<Organization[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [totalCount, setTotalCount] = useState(0)
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const limit = 20
+
+  // SWR URL 생성
+  const apiUrl = useMemo(() => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+      search: searchQuery,
+    })
+    if (typeFilter && typeFilter !== 'all') params.append('type', typeFilter)
+    if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter)
+    return `/api/admin/organizations?${params.toString()}`
+  }, [page, typeFilter, statusFilter, searchQuery])
+
+  // SWR로 데이터 페칭
+  const { data, isLoading, mutate } = useSWR<OrganizationsResponse>(apiUrl, fetcher, swrOptions)
+
+  const organizations = data?.organizations || []
+  const totalCount = data?.total || 0
 
   const typeLabels: Record<string, string> = {
     academy: '학원',
@@ -279,57 +309,22 @@ export default function OrganizationsPage() {
     },
   })
 
-  useEffect(() => {
-    loadOrganizations()
-  }, [page, typeFilter, statusFilter])
-
-  const loadOrganizations = async () => {
-    try {
-      setIsLoading(true)
-      const searchQuery = table.getColumn('name')?.getFilterValue() as string || ''
-
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        search: searchQuery,
-      })
-
-      if (typeFilter && typeFilter !== 'all') {
-        params.append('type', typeFilter)
-      }
-      if (statusFilter && statusFilter !== 'all') {
-        params.append('status', statusFilter)
-      }
-
-      const response = await fetch(`/api/admin/organizations?${params.toString()}`)
-
-      if (response.ok) {
-        const data = await response.json() as { organizations?: any[]; total?: number }
-        setOrganizations(data.organizations || [])
-        setTotalCount(data.total || 0)
-      }
-    } catch (error) {
-      console.error('Failed to load organizations:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     if (!confirm('정말로 이 조직을 삭제하시겠습니까?')) return
 
     try {
       const response = await fetch(`/api/admin/organizations/${id}`, {
         method: 'DELETE',
+        credentials: 'include',
       })
 
       if (response.ok) {
-        loadOrganizations()
+        mutate() // SWR 캐시 갱신
       }
     } catch (error) {
       console.error('Failed to delete organization:', error)
     }
-  }
+  }, [mutate])
 
   if (isLoading) {
     return (
@@ -365,9 +360,9 @@ export default function OrganizationsPage() {
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="조직명으로 검색..."
-            value={(table.getColumn('name')?.getFilterValue() as string) ?? ''}
+            value={searchQuery}
             onChange={(event) => {
-              table.getColumn('name')?.setFilterValue(event.target.value)
+              setSearchQuery(event.target.value)
               setPage(1)
             }}
             className="pl-10"

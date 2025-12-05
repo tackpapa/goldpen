@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useMemo } from 'react'
+import useSWR from 'swr'
 import {
   ColumnDef,
   flexRender,
@@ -66,42 +67,34 @@ interface PaymentsResponse {
   }
 }
 
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
 export default function PaymentsPage() {
-  const [data, setData] = useState<PaymentsResponse | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [searchOrg, setSearchOrg] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  const loadData = async () => {
-    setIsLoading(true)
-    try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: '20',
-        type: typeFilter,
-      })
-
-      if (startDate) params.set('start_date', startDate)
-      if (endDate) params.set('end_date', endDate)
-
-      const res = await fetch(`/api/admin/payments?${params}`, { credentials: 'include' })
-      if (res.ok) {
-        const json = await res.json() as PaymentsResponse
-        setData(json)
-      }
-    } catch (error) {
-      console.error('Failed to load payments:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadData()
+  // SWR URL 생성
+  const apiUrl = useMemo(() => {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: '20',
+      type: typeFilter,
+    })
+    if (startDate) params.set('start_date', startDate)
+    if (endDate) params.set('end_date', endDate)
+    return `/api/admin/payments?${params.toString()}`
   }, [page, typeFilter, startDate, endDate])
+
+  // SWR로 데이터 페칭
+  const { data, isLoading } = useSWR<PaymentsResponse>(apiUrl, fetcher, swrOptions)
 
   const columns: ColumnDef<Transaction>[] = [
     {

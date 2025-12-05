@@ -1,7 +1,8 @@
 'use client'
 
 export const runtime = 'edge'
-import { useEffect, useState } from 'react'
+import { useState, useCallback } from 'react'
+import useSWR from 'swr'
 import {
   ColumnDef,
   flexRender,
@@ -95,17 +96,45 @@ const featureLabels: Record<string, string> = {
   dedicated_support: '전담 지원',
 }
 
+interface PlansResponse {
+  plans?: Plan[]
+}
+
+interface MessagePricingResponse {
+  pricing?: MessagePricing[]
+}
+
+const fetcher = <T,>(url: string): Promise<T> => fetch(url, { credentials: 'include' }).then(res => res.json())
+
+const swrOptions = {
+  revalidateOnFocus: false,
+  dedupingInterval: 30000,
+  refreshInterval: 300000,
+}
+
 export default function PlansPage() {
   const { toast } = useToast()
-  const [plans, setPlans] = useState<Plan[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingPlan, setEditingPlan] = useState<Plan | null>(null)
-
-  // 메시지 비용 설정 state
-  const [messagePricing, setMessagePricing] = useState<MessagePricing[]>([])
   const [editingPrice, setEditingPrice] = useState<{ type: string; price: number; cost: number } | null>(null)
   const [isSavingPrice, setIsSavingPrice] = useState(false)
+
+  // SWR로 플랜 데이터 페칭
+  const { data: plansData, isLoading, mutate: mutatePlans } = useSWR<PlansResponse>(
+    '/api/admin/plans?includeInactive=true',
+    fetcher,
+    swrOptions
+  )
+
+  // SWR로 메시지 비용 데이터 페칭
+  const { data: pricingData, mutate: mutatePricing } = useSWR<MessagePricingResponse>(
+    '/api/admin/message-pricing',
+    fetcher,
+    swrOptions
+  )
+
+  const plans = plansData?.plans || []
+  const messagePricing = pricingData?.pricing || []
 
   const [formData, setFormData] = useState({
     name: '',
@@ -216,24 +245,7 @@ export default function PlansPage() {
     getCoreRowModel: getCoreRowModel(),
   })
 
-  useEffect(() => {
-    loadPlans()
-    loadMessagePricing()
-  }, [])
-
-  const loadMessagePricing = async () => {
-    try {
-      const response = await fetch('/api/admin/message-pricing')
-      if (response.ok) {
-        const data = await response.json() as { pricing?: MessagePricing[] }
-        setMessagePricing(data.pricing || [])
-      }
-    } catch (error) {
-      console.error('Failed to load message pricing:', error)
-    }
-  }
-
-  const handleSavePrice = async (messageType: string, price: number, cost: number) => {
+  const handleSavePrice = useCallback(async (messageType: string, price: number, cost: number) => {
     try {
       setIsSavingPrice(true)
       const response = await fetch('/api/admin/message-pricing', {
@@ -245,7 +257,7 @@ export default function PlansPage() {
       if (response.ok) {
         toast({ title: '메시지 비용이 저장되었습니다' })
         setEditingPrice(null)
-        loadMessagePricing()
+        mutatePricing() // SWR 캐시 갱신
       } else {
         const data = await response.json() as { error?: string }
         toast({ title: data.error || '저장 실패', variant: 'destructive' })
@@ -256,23 +268,7 @@ export default function PlansPage() {
     } finally {
       setIsSavingPrice(false)
     }
-  }
-
-  const loadPlans = async () => {
-    try {
-      setIsLoading(true)
-      const response = await fetch('/api/admin/plans?includeInactive=true')
-      if (response.ok) {
-        const data = await response.json() as { plans?: any[] }
-        setPlans(data.plans || [])
-      }
-    } catch (error) {
-      console.error('Failed to load plans:', error)
-      toast({ title: '플랜 목록 로딩 실패', variant: 'destructive' })
-    } finally {
-      setIsLoading(false)
-    }
-  }
+  }, [toast, mutatePricing])
 
   const handleEdit = (plan: Plan) => {
     setEditingPlan(plan)
@@ -312,7 +308,7 @@ export default function PlansPage() {
     setIsDialogOpen(true)
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     try {
       const url = editingPlan
         ? `/api/admin/plans/${editingPlan.id}`
@@ -328,7 +324,7 @@ export default function PlansPage() {
       if (response.ok) {
         toast({ title: editingPlan ? '플랜 수정 완료' : '플랜 생성 완료' })
         setIsDialogOpen(false)
-        loadPlans()
+        mutatePlans() // SWR 캐시 갱신
       } else {
         const data = await response.json() as { error?: string }
         toast({ title: data.error || '저장 실패', variant: 'destructive' })
@@ -337,9 +333,9 @@ export default function PlansPage() {
       console.error('Failed to save plan:', error)
       toast({ title: '저장 중 오류 발생', variant: 'destructive' })
     }
-  }
+  }, [editingPlan, formData, toast, mutatePlans])
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     if (!confirm('정말로 이 플랜을 삭제하시겠습니까?')) return
 
     try {
@@ -349,7 +345,7 @@ export default function PlansPage() {
 
       if (response.ok) {
         toast({ title: '플랜 삭제 완료' })
-        loadPlans()
+        mutatePlans() // SWR 캐시 갱신
       } else {
         const data = await response.json() as { error?: string }
         toast({ title: data.error || '삭제 실패', variant: 'destructive' })
@@ -358,7 +354,7 @@ export default function PlansPage() {
       console.error('Failed to delete plan:', error)
       toast({ title: '삭제 중 오류 발생', variant: 'destructive' })
     }
-  }
+  }, [toast, mutatePlans])
 
   const toggleFeature = (feature: string) => {
     setFormData((prev) => ({

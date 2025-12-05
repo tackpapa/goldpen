@@ -33,36 +33,45 @@ export async function GET(request: Request) {
       return Response.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Get total organizations
-    const { count: totalOrganizations } = await adminClient
-      .from('organizations')
-      .select('*', { count: 'exact', head: true })
-
-    // Get active organizations
-    const { count: activeOrganizations } = await adminClient
-      .from('organizations')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'active')
-
-    // Get total users
-    const { count: totalUsers } = await adminClient
-      .from('users')
-      .select('*', { count: 'exact', head: true })
-
-    // Get recent organizations (last 7 days)
+    // 7일 전 날짜
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
 
-    const { count: recentOrganizations } = await adminClient
-      .from('organizations')
-      .select('*', { count: 'exact', head: true })
-      .gte('created_at', sevenDaysAgo.toISOString())
+    // ========== 병렬 쿼리 실행 (최적화!) ==========
+    const [
+      totalOrgsResult,
+      activeOrgsResult,
+      totalUsersResult,
+      recentOrgsResult,
+    ] = await Promise.all([
+      // 1. 전체 조직 수
+      adminClient
+        .from('organizations')
+        .select('*', { count: 'exact', head: true }),
+
+      // 2. 활성 조직 수
+      adminClient
+        .from('organizations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active'),
+
+      // 3. 전체 사용자 수
+      adminClient
+        .from('users')
+        .select('*', { count: 'exact', head: true }),
+
+      // 4. 최근 7일 신규 조직 수
+      adminClient
+        .from('organizations')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', sevenDaysAgo.toISOString()),
+    ])
 
     return Response.json({
-      totalOrganizations: totalOrganizations || 0,
-      activeOrganizations: activeOrganizations || 0,
-      totalUsers: totalUsers || 0,
-      recentOrganizations: recentOrganizations || 0,
+      totalOrganizations: totalOrgsResult.count || 0,
+      activeOrganizations: activeOrgsResult.count || 0,
+      totalUsers: totalUsersResult.count || 0,
+      recentOrganizations: recentOrgsResult.count || 0,
     })
   } catch (error) {
     console.error('[Stats Overview] Error:', error)

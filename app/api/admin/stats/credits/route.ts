@@ -23,7 +23,7 @@ async function checkSuperAdmin(request: Request) {
   return { authorized: true, user }
 }
 
-// GET /api/admin/stats/credits - 충전금 통계 조회
+// GET /api/admin/stats/credits - 충전금 통계 조회 (최적화 버전)
 export async function GET(request: Request) {
   try {
     const authCheck = await checkSuperAdmin(request)
@@ -55,32 +55,85 @@ export async function GET(request: Request) {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
 
-    // 1. 전체 조직의 총 충전금 잔액
-    const { data: orgsData, error: orgsError } = await adminClient
-      .from('organizations')
-      .select('credit_balance')
+    // 6개월 전 날짜 계산
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1)
 
+    // ========== 병렬 쿼리 실행 (핵심 최적화!) ==========
+    const [
+      orgsResult,
+      allTransactionsResult,
+      todayTransactionsResult,
+      monthTransactionsResult,
+      sixMonthsTransactionsResult,
+      msgCountResult,
+      pricingResult,
+    ] = await Promise.all([
+      // 1. 조직 잔액 합계 (SUM 사용)
+      adminClient
+        .from('organizations')
+        .select('credit_balance'),
+
+      // 2. 전체 트랜잭션 (잔액 계산용)
+      adminClient
+        .from('credit_transactions')
+        .select('amount, type'),
+
+      // 3. 오늘 트랜잭션
+      adminClient
+        .from('credit_transactions')
+        .select('amount, type')
+        .gte('created_at', todayStart.toISOString())
+        .lte('created_at', todayEnd.toISOString()),
+
+      // 4. 이번 달 트랜잭션
+      adminClient
+        .from('credit_transactions')
+        .select('amount, type')
+        .gte('created_at', monthStart.toISOString())
+        .lte('created_at', monthEnd.toISOString()),
+
+      // 5. 6개월 트랜잭션 (월별 집계용) - 한 번에 가져오기!
+      adminClient
+        .from('credit_transactions')
+        .select('amount, type, created_at')
+        .gte('created_at', sixMonthsAgo.toISOString()),
+
+      // 6. 메시지 발송 건수
+      adminClient
+        .from('notification_logs')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'sent')
+        .gte('created_at', monthStart.toISOString())
+        .lte('created_at', monthEnd.toISOString()),
+
+      // 7. 알림톡 원가
+      adminClient
+        .from('message_pricing')
+        .select('cost')
+        .eq('message_type', 'kakao_alimtalk')
+        .single(),
+    ])
+
+    // ========== 결과 처리 ==========
+
+    // 1. 조직 잔액 계산
     let totalBalance = 0
     let orgsWithBalance = 0
-    if (!orgsError && orgsData) {
-      for (const org of orgsData) {
+    if (!orgsResult.error && orgsResult.data) {
+      for (const org of orgsResult.data) {
         const balance = org.credit_balance || 0
         totalBalance += balance
         if (balance > 0) orgsWithBalance++
       }
     }
 
-    // 1-1. 전체 충전/사용 내역으로 유료/무료 잔액 계산
-    const { data: allTransactions } = await adminClient
-      .from('credit_transactions')
-      .select('amount, type')
+    // 2. 전체 유료/무료 잔액 계산
+    let totalPaidCharged = 0
+    let totalFreeCharged = 0
+    let totalUsed = 0
 
-    let totalPaidCharged = 0  // 전체 유료 충전 총액
-    let totalFreeCharged = 0  // 전체 무료 충전 총액
-    let totalUsed = 0         // 전체 사용 총액
-
-    if (allTransactions) {
-      for (const t of allTransactions) {
+    if (!allTransactionsResult.error && allTransactionsResult.data) {
+      for (const t of allTransactionsResult.data) {
         if (t.amount > 0) {
           if (t.type === 'paid') {
             totalPaidCharged += t.amount
@@ -94,159 +147,117 @@ export async function GET(request: Request) {
     }
 
     // 무료 먼저 사용 가정
-    // 무료 잔액 = max(0, 무료충전 - 사용)
-    // 유료 잔액 = 유료충전 - max(0, 사용 - 무료충전)
     const usedFromFree = Math.min(totalUsed, totalFreeCharged)
     const usedFromPaid = Math.max(0, totalUsed - totalFreeCharged)
     const freeBalance = Math.max(0, totalFreeCharged - usedFromFree)
     const paidBalance = Math.max(0, totalPaidCharged - usedFromPaid)
 
-    // 2. 오늘 사용된 충전금 (음수 amount의 합)
-    const { data: todayUsage, error: todayError } = await adminClient
-      .from('credit_transactions')
-      .select('amount')
-      .lt('amount', 0)
-      .gte('created_at', todayStart.toISOString())
-      .lte('created_at', todayEnd.toISOString())
-
+    // 3. 오늘 통계
     let todayUsed = 0
-    if (!todayError && todayUsage) {
-      todayUsed = todayUsage.reduce((sum, t) => sum + Math.abs(t.amount), 0)
-    }
-
-    // 3. 오늘 충전된 금액 (양수 amount의 합)
-    const { data: todayCharge, error: todayChargeError } = await adminClient
-      .from('credit_transactions')
-      .select('amount, type')
-      .gt('amount', 0)
-      .gte('created_at', todayStart.toISOString())
-      .lte('created_at', todayEnd.toISOString())
-
     let todayCharged = 0
     let todayFreeCharged = 0
     let todayPaidCharged = 0
-    if (!todayChargeError && todayCharge) {
-      for (const t of todayCharge) {
-        todayCharged += t.amount
-        if (t.type === 'paid') {
-          todayPaidCharged += t.amount
+
+    if (!todayTransactionsResult.error && todayTransactionsResult.data) {
+      for (const t of todayTransactionsResult.data) {
+        if (t.amount < 0) {
+          todayUsed += Math.abs(t.amount)
         } else {
-          todayFreeCharged += t.amount
+          todayCharged += t.amount
+          if (t.type === 'paid') {
+            todayPaidCharged += t.amount
+          } else {
+            todayFreeCharged += t.amount
+          }
         }
       }
     }
 
-    // 4. 이번 달 사용된 충전금
-    const { data: monthUsage, error: monthError } = await adminClient
-      .from('credit_transactions')
-      .select('amount')
-      .lt('amount', 0)
-      .gte('created_at', monthStart.toISOString())
-      .lte('created_at', monthEnd.toISOString())
-
+    // 4. 이번 달 통계
     let monthUsed = 0
-    if (!monthError && monthUsage) {
-      monthUsed = monthUsage.reduce((sum, t) => sum + Math.abs(t.amount), 0)
-    }
-
-    // 5. 이번 달 충전된 금액
-    const { data: monthCharge, error: monthChargeError } = await adminClient
-      .from('credit_transactions')
-      .select('amount, type')
-      .gt('amount', 0)
-      .gte('created_at', monthStart.toISOString())
-      .lte('created_at', monthEnd.toISOString())
-
     let monthCharged = 0
     let monthFreeCharged = 0
     let monthPaidCharged = 0
-    if (!monthChargeError && monthCharge) {
-      for (const t of monthCharge) {
-        monthCharged += t.amount
-        if (t.type === 'paid') {
-          monthPaidCharged += t.amount
+
+    if (!monthTransactionsResult.error && monthTransactionsResult.data) {
+      for (const t of monthTransactionsResult.data) {
+        if (t.amount < 0) {
+          monthUsed += Math.abs(t.amount)
         } else {
-          monthFreeCharged += t.amount
+          monthCharged += t.amount
+          if (t.type === 'paid') {
+            monthPaidCharged += t.amount
+          } else {
+            monthFreeCharged += t.amount
+          }
         }
       }
     }
 
-    // 6. 최근 6개월 월별 사용량
-    const monthlyUsage = []
+    // 5. 6개월 월별 통계 (JS에서 그룹핑 - 쿼리 6개 → 1개로 줄임!)
+    const monthlyMap = new Map<string, { used: number; charged: number; paidCharged: number; freeCharged: number }>()
+
+    // 최근 6개월 키 초기화
     for (let i = 0; i < 6; i++) {
       const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const mEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999)
+      const key = `${mStart.getFullYear()}-${String(mStart.getMonth() + 1).padStart(2, '0')}`
+      monthlyMap.set(key, { used: 0, charged: 0, paidCharged: 0, freeCharged: 0 })
+    }
 
-      const { data: mData } = await adminClient
-        .from('credit_transactions')
-        .select('amount, type')
-        .gte('created_at', mStart.toISOString())
-        .lte('created_at', mEnd.toISOString())
+    if (!sixMonthsTransactionsResult.error && sixMonthsTransactionsResult.data) {
+      for (const t of sixMonthsTransactionsResult.data) {
+        const date = new Date(t.created_at)
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
 
-      let used = 0
-      let charged = 0
-      let paidCharged = 0
-      let freeCharged = 0
-
-      if (mData) {
-        for (const t of mData) {
+        const monthData = monthlyMap.get(key)
+        if (monthData) {
           if (t.amount < 0) {
-            used += Math.abs(t.amount)
+            monthData.used += Math.abs(t.amount)
           } else {
-            charged += t.amount
+            monthData.charged += t.amount
             if (t.type === 'paid') {
-              paidCharged += t.amount
+              monthData.paidCharged += t.amount
             } else {
-              freeCharged += t.amount
+              monthData.freeCharged += t.amount
             }
           }
         }
       }
+    }
+
+    // monthlyUsage 배열 생성
+    const monthlyUsage = []
+    for (let i = 0; i < 6; i++) {
+      const mStart = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      const key = `${mStart.getFullYear()}-${String(mStart.getMonth() + 1).padStart(2, '0')}`
+      const data = monthlyMap.get(key) || { used: 0, charged: 0, paidCharged: 0, freeCharged: 0 }
 
       monthlyUsage.push({
-        month: `${mStart.getFullYear()}-${String(mStart.getMonth() + 1).padStart(2, '0')}`,
+        month: key,
         label: `${mStart.getFullYear()}년 ${mStart.getMonth() + 1}월`,
-        used,
-        charged,
-        paidCharged,
-        freeCharged,
+        ...data,
       })
     }
 
-    // 7. 메시지 발송 건수로 실제 원가 계산
-    // notification_logs에서 발송 건수 집계
-    const { count: msgCount } = await adminClient
-      .from('notification_logs')
-      .select('*', { count: 'exact', head: true })
-      .eq('status', 'sent')
-      .gte('created_at', monthStart.toISOString())
-      .lte('created_at', monthEnd.toISOString())
-
-    // message_pricing에서 알림톡 원가 조회
-    const { data: alimtalkPricing } = await adminClient
-      .from('message_pricing')
-      .select('cost')
-      .eq('message_type', 'kakao_alimtalk')
-      .single()
-
-    const alimtalkCost = alimtalkPricing?.cost ?? 13
-    const monthMessageCount = msgCount ?? 0
+    // 6. 메시지 원가 계산
+    const alimtalkCost = pricingResult.data?.cost ?? 13
+    const monthMessageCount = msgCountResult.count ?? 0
     const monthActualCost = monthMessageCount * alimtalkCost
 
-    // 무료/유료 사용 비율 계산 (무료 먼저 사용 가정)
+    // 무료/유료 사용 비율 계산
     const freeUsedAmount = Math.min(monthUsed, totalFreeCharged)
     const paidUsedAmount = Math.max(0, monthUsed - totalFreeCharged)
     const freeUsedRatio = monthUsed > 0 ? freeUsedAmount / monthUsed : 0
     const paidUsedRatio = monthUsed > 0 ? paidUsedAmount / monthUsed : 0
 
     // 실제 원가 배분
-    const freeActualCost = Math.round(monthActualCost * freeUsedRatio)  // 무료 사용 원가 (마케팅 비용)
-    const paidActualCost = Math.round(monthActualCost * paidUsedRatio)  // 유료 사용 원가
+    const freeActualCost = Math.round(monthActualCost * freeUsedRatio)
+    const paidActualCost = Math.round(monthActualCost * paidUsedRatio)
 
     return Response.json({
       totalBalance,
-      paidBalance,      // 유료 충전금 잔액
-      freeBalance,      // 무료 제공금 잔액
+      paidBalance,
+      freeBalance,
       orgsWithBalance,
       today: {
         used: todayUsed,
@@ -255,20 +266,19 @@ export async function GET(request: Request) {
         freeCharged: todayFreeCharged,
       },
       month: {
-        used: monthUsed,              // 사용 액면가
+        used: monthUsed,
         charged: monthCharged,
         paidCharged: monthPaidCharged,
         freeCharged: monthFreeCharged,
         year: selectedMonth.year,
         month: selectedMonth.month,
-        // 실제 원가 기반 통계 (NEW)
         messageCount: monthMessageCount,
-        actualCost: monthActualCost,      // 전체 실제 원가
-        freeActualCost: freeActualCost,   // 무료 사용 실제 원가 (마케팅 비용)
-        paidActualCost: paidActualCost,   // 유료 사용 실제 원가
-        paidRevenue: monthPaidCharged,    // 유료 충전 매출
-        paidProfit: monthPaidCharged - paidActualCost, // 유료 순이익
-        netProfit: monthPaidCharged - monthActualCost, // 전체 순이익 (매출 - 전체원가)
+        actualCost: monthActualCost,
+        freeActualCost: freeActualCost,
+        paidActualCost: paidActualCost,
+        paidRevenue: monthPaidCharged,
+        paidProfit: monthPaidCharged - paidActualCost,
+        netProfit: monthPaidCharged - monthActualCost,
       },
       monthlyUsage,
     })
