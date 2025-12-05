@@ -298,12 +298,12 @@ async function processClassAttendance(
   nowMinutes: number,
   env: Env
 ): Promise<void> {
-  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
+  // org_settings에서 유예 시간 설정 읽기 (기본값: 5분)
   const orgSettingsResult = await sql`
     SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
   `;
   const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
-  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
+  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 5;
 
   const classes = await sql`
     SELECT
@@ -511,12 +511,12 @@ async function processCommuteAttendance(
   nowMinutes: number,
   env: Env
 ): Promise<void> {
-  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
+  // org_settings에서 유예 시간 설정 읽기 (기본값: 5분)
   const orgSettingsResult = await sql`
     SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
   `;
   const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
-  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
+  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 5;
 
   console.log(`[Commute] Checking org ${orgName}, weekday: ${weekday}, nowMinutes: ${nowMinutes}, gracePeriod: ${lateGracePeriod}`);
 
@@ -676,7 +676,7 @@ async function processCommuteAttendance(
 
 /**
  * 일일 학습 리포트 발송 (독서실 전용)
- * - 오늘 독서실에 출석한 학생만 대상
+ * - 오늘 독서실에 출석한 학생만 대상 (체크인/체크아웃 상태 무관)
  * - 완료과목은 daily_planners.study_plans에서 가져옴
  */
 async function processDailyReport(
@@ -686,37 +686,41 @@ async function processDailyReport(
   todayDate: string,
   env: Env
 ): Promise<void> {
-  // 1. 현재 등원 중인 학생 중 서비스 소속에 "독서실"이 포함된 학생만 조회
-  // 🔴 수정: seat_assignments.check_in_time 사용 (seats 페이지 UI와 동일하게)
-  // seats 페이지의 노란색 시간 = NOW() - seat_assignments.check_in_time
+  // 1. 오늘 좌석 체크인 기록이 있는 학생 조회 (체크아웃 상태도 포함)
+  // - seat_assignments에 오늘 체크인 기록 있음 = 좌석 기능 사용자
+  // - 캠퍼스 조건 제거 (좌석 체크인 기록이 있으면 이미 해당 서비스 사용자)
   const attendanceRecords = await sql`
     SELECT
       s.id as student_id,
       s.name as student_name,
       s.parent_phone,
       COALESCE(
-        EXTRACT(EPOCH FROM (NOW() - sa.check_in_time)) / 60,
+        EXTRACT(EPOCH FROM (
+          COALESCE(sa.updated_at, NOW()) - sa.check_in_time
+        )) / 60,
         0
       )::int as study_minutes,
-      dp.study_plans
+      dp.study_plans,
+      sa.status as seat_status
     FROM students s
     JOIN seat_assignments sa ON sa.student_id = s.id
       AND sa.org_id = ${orgId}
-      AND sa.status = 'checked_in'
       AND sa.check_in_time::date = ${todayDate}::date
     LEFT JOIN daily_planners dp ON dp.student_id = s.id
       AND dp.date = ${todayDate}::date
       AND dp.org_id = ${orgId}
     WHERE s.org_id = ${orgId}
       AND s.parent_phone IS NOT NULL
-      AND '독서실' = ANY(s.campuses)
   `;
+
+  console.log(`[DailyReport] ${orgName}: 오늘 좌석 체크인 기록이 있는 학생 ${attendanceRecords.length}명 발견`);
 
   // 🔴 병렬 처리를 위해 알림 목록 먼저 수집
   const template = await getTemplate(sql, orgId, 'daily_report');
   const notifications: NotificationParams[] = [];
 
   for (const record of attendanceRecords) {
+    console.log(`[DailyReport] - ${record.student_name}: 상태=${record.seat_status}, 학습시간=${record.study_minutes}분`);
     // 과목(완료), 과목(미완료) 형태로 생성 (50자 제한)
     const plans = record.study_plans as Array<{ subject: string; completed: boolean }> || [];
     let completedSubjectsStr = '여러 공부'; // 과목이 없으면 "여러 공부"
@@ -955,6 +959,7 @@ async function sendNotification(
     }
 
     // 🔴 org_settings에서 use_sms 설정 조회 (가격 계산 및 발송 방식 결정용)
+    // 설정 페이지가 org_settings에 저장하므로 여기서도 org_settings 사용
     const orgSettingsResult = await sql`
       SELECT settings FROM org_settings WHERE org_id = ${orgId}
     `;
@@ -1303,6 +1308,7 @@ async function processNotificationQueue(
       });
 
       // org_settings에서 use_sms 설정 조회 (메시지 타입 결정용)
+      // 설정 페이지가 org_settings에 저장하므로 여기서도 org_settings 사용
       const orgSettingsResult = await sql`
         SELECT settings FROM org_settings WHERE org_id = ${student.org_id}
       `;
@@ -1437,7 +1443,7 @@ async function processNotificationQueue(
         console.log(`[NotificationQueue] Checkout completed: ${student.name} (${studyTimeStr})`);
       }
 
-      else if (notification.type === 'out') {
+      else if (notification.type === 'study_out') {
         // 외출 처리
         await sql`
           UPDATE notification_queue SET status = 'processing' WHERE id = ${notification.id}
@@ -1481,7 +1487,7 @@ async function processNotificationQueue(
         console.log(`[NotificationQueue] Out completed: ${student.name}`);
       }
 
-      else if (notification.type === 'return') {
+      else if (notification.type === 'study_return') {
         // 복귀 처리 - 외출 기록 확인
         const outingRecord = await sql`
           SELECT * FROM outing_records

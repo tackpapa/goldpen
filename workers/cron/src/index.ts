@@ -138,34 +138,30 @@ export default {
         });
       }
 
-      // 2. 일일 학습 리포트 발송 (독서실 기능 사용 학생 대상, 조직별 설정 시간에 발송)
-      // 현재 시간을 "HH:00" 형식으로 변환 (분이 0일 때만 실행)
-      if (nowMinute === 0) {
-        const nowTimeStr = `${nowHour.toString().padStart(2, '0')}:00`;
-        console.log(`[Cron] Checking daily reports for time ${nowTimeStr}...`);
+      // 2. 일일 학습 리포트 발송 (오늘 좌석 체크인 기록이 있는 학생 대상)
+      // 매 분마다 체크하여 "HH:MM" 형식으로 설정 가능 (예: "22:00", "21:30" 등)
+      const nowTimeStr = `${nowHour.toString().padStart(2, '0')}:${nowMinute.toString().padStart(2, '0')}`;
 
-        for (const org of organizations) {
-          // 조직별 설정에서 dailyReportTime 가져오기 (기본값: 22:00)
-          const settings = (org.settings as Record<string, unknown>) || {};
-          const orgReportTime = (settings.dailyReportTime as string) || '22:00';
+      for (const org of organizations) {
+        // 조직별 설정에서 dailyReportTime 가져오기 (기본값: 22:00)
+        const settings = (org.settings as Record<string, unknown>) || {};
+        const orgReportTime = (settings.dailyReportTime as string) || '22:00';
 
-          // 현재 시간이 조직의 설정 시간과 일치하면 큐에 추가
-          // 모든 기관 대상 (독서실 기능 사용 여부는 Queue에서 판단)
-          if (nowTimeStr === orgReportTime) {
-            console.log(`[Cron] Queuing daily report for ${org.name} (time: ${orgReportTime})`);
-            messages.push({
-              body: {
-                type: 'daily_report',
-                orgId: org.id,
-                orgName: org.name,
-                orgType: org.type,
-                weekday: todayWeekday,
-                todayDate,
-                nowMinutes,
-                timestamp: Date.now(),
-              }
-            });
-          }
+        // 현재 시간이 조직의 설정 시간과 일치하면 큐에 추가
+        if (nowTimeStr === orgReportTime) {
+          console.log(`[Cron] Queuing daily report for ${org.name} (time: ${orgReportTime})`);
+          messages.push({
+            body: {
+              type: 'daily_report',
+              orgId: org.id,
+              orgName: org.name,
+              orgType: org.type,
+              weekday: todayWeekday,
+              todayDate,
+              nowMinutes,
+              timestamp: Date.now(),
+            }
+          });
         }
       }
 

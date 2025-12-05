@@ -77,7 +77,7 @@ interface KakaoTalkUsage {
   recipient: string
   count: number
   cost: number
-  status: 'success' | 'failed'
+  status: 'success' | 'failed' | 'error'
 }
 
 interface ServiceUsage {
@@ -97,7 +97,7 @@ interface SmsUsage {
   recipient: string
   count: number
   cost: number
-  status: 'success' | 'failed'
+  status: 'success' | 'failed' | 'error'
 }
 
 interface UsageSummary {
@@ -3428,8 +3428,8 @@ export default function SettingsPage() {
                                 <td className="p-4 align-middle text-right">{usage.count}</td>
                                 <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
                                 <td className="p-4 align-middle text-center">
-                                  <Badge variant={usage.status === 'success' ? 'default' : 'destructive'}>
-                                    {usage.status === 'success' ? '성공' : usage.recipient?.includes('잔액부족') ? '잔액부족' : '실패'}
+                                  <Badge variant={usage.status === 'success' ? 'default' : usage.status === 'error' ? 'secondary' : 'destructive'}>
+                                    {usage.status === 'success' ? '성공' : usage.status === 'error' ? '에러' : usage.recipient?.includes('잔액부족') ? '잔액부족' : '실패'}
                                   </Badge>
                                 </td>
                               </tr>
@@ -3500,8 +3500,8 @@ export default function SettingsPage() {
                                 <td className="p-4 align-middle text-right">{usage.count}</td>
                                 <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
                                 <td className="p-4 align-middle text-center">
-                                  <Badge variant={usage.status === 'success' ? 'default' : 'destructive'}>
-                                    {usage.status === 'success' ? '성공' : usage.recipient?.includes('잔액부족') ? '잔액부족' : '실패'}
+                                  <Badge variant={usage.status === 'success' ? 'default' : usage.status === 'error' ? 'secondary' : 'destructive'}>
+                                    {usage.status === 'success' ? '성공' : usage.status === 'error' ? '에러' : usage.recipient?.includes('잔액부족') ? '잔액부족' : '실패'}
                                   </Badge>
                                 </td>
                               </tr>

@@ -208,7 +208,7 @@ export async function GET(request: Request) {
           recipient: r.description?.split(':')[1]?.trim() || '-',
           count: r.recipient_count || 1,
           cost: r.total_price || 0,
-          status: r.status === 'sent' ? 'success' : 'failed',
+          status: r.status === 'sent' ? 'success' : r.status === 'error' ? 'error' : 'failed',
         }
       })
 
@@ -227,7 +227,7 @@ export async function GET(request: Request) {
           recipient: r.description?.split(':')[1]?.trim() || '-',
           count: r.recipient_count || 1,
           cost: r.total_price || 0,
-          status: r.status === 'sent' ? 'success' : 'failed',
+          status: r.status === 'sent' ? 'success' : r.status === 'error' ? 'error' : 'failed',
         }
       })
 

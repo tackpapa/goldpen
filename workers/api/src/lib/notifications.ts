@@ -298,9 +298,10 @@ export async function sendNotification(
 
     // ============================================================
     // use_sms 설정 조회 (SMS vs 알림톡 결정)
+    // 설정 페이지가 org_settings에 저장하므로 org_settings 사용
     // ============================================================
     const orgSettingsResult = await client.query(
-      `SELECT settings FROM organizations WHERE id = $1`,
+      `SELECT settings FROM org_settings WHERE org_id = $1`,
       [orgId]
     );
     const orgSettings = (orgSettingsResult.rows[0] as { settings?: { use_sms?: boolean } })?.settings;
@@ -559,8 +560,9 @@ export async function sendBulkNotifications(
 
   try {
     // 1. use_sms 설정 조회 (SMS vs 알림톡 결정)
+    // 설정 페이지가 org_settings에 저장하므로 org_settings 사용
     const orgSettingsResult = await client.query(
-      `SELECT settings FROM organizations WHERE id = $1`,
+      `SELECT settings FROM org_settings WHERE org_id = $1`,
       [orgId]
     );
     const orgSettings = (orgSettingsResult.rows[0] as { settings?: { use_sms?: boolean } })?.settings;

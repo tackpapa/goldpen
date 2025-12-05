@@ -332,7 +332,7 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
       // 알림 큐에 추가 (비동기 처리 - 100% 전달 보장)
       await supabase.from('notification_queue').insert({
         org_id: orgId,
-        type: 'out',
+        type: 'study_out',
         payload: { student_id: studentId, seat_number: seatNumber },
         status: 'pending'
       })
@@ -375,7 +375,7 @@ export function useLivescreenState(studentId: string, seatNumber: number, orgId:
       // 알림 큐에 추가 (비동기 처리 - 100% 전달 보장)
       await supabase.from('notification_queue').insert({
         org_id: orgId,
-        type: 'return',
+        type: 'study_return',
         payload: { student_id: studentId, seat_number: seatNumber },
         status: 'pending'
       })

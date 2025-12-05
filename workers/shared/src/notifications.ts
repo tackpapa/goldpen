@@ -778,7 +778,7 @@ export async function recordMessageLogPostgres(
   studentName: string,
   price: number,
   cost: number,
-  status: 'sent' | 'failed',
+  status: 'sent' | 'failed' | 'error',
   suffix: string = '',
   messageType: 'sms' | 'kakao_alimtalk' = 'kakao_alimtalk'
 ): Promise<void> {
@@ -842,6 +842,17 @@ export async function sendNotificationWithBalancePostgres(
 
   console.log(`[Notification] 시작: ${orgName} - ${studentName} (${type}) [${messageType}]`);
 
+  // 0. 부모님 전화번호 검증 - 없으면 에러 로그 기록 후 반환
+  if (!recipientPhone) {
+    console.log(`[Notification] 에러: ${studentName} - 부모님 핸드폰번호 없음`);
+    await recordMessageLogPostgres(
+      sql, orgId, type, studentName,
+      0, 0, // 가격 0 (차감 없음)
+      'error', ' (부모님 핸드폰번호가 등록되지 않았습니다)', messageType
+    );
+    return { success: false, error: '부모님 핸드폰번호가 등록되지 않았습니다' };
+  }
+
   // 1. 잔액 확인 및 차감 (메시지 타입에 따른 가격 조회)
   const balanceResult = await checkAndDeductBalancePostgres(sql, orgId, orgName, messageType);
 
@@ -900,15 +911,28 @@ export async function sendNotificationWithBalancePostgres(
     await sendTelegramWithSolapiFormat(telegramConfig, type, solapiVariables, recipientPhone);
   }
 
-  // 5. 카카오 알림톡 발송 (Solapi)
-  // TODO: Solapi 템플릿 승인 후 DRY_RUN 해제
+  // 5. 실제 메시지 발송 (SMS 또는 알림톡)
   if (recipientPhone && solapiConfig) {
-    await sendSolapiAlimtalk(solapiConfig, {
-      type,
-      phone: recipientPhone,
-      recipientName: recipientName || `${studentName} 학부모`,
-      variables: solapiVariables,
-    });
+    if (messageType === 'sms') {
+      // SMS 발송 - DEFAULT_TEMPLATES 사용
+      const smsTemplate = DEFAULT_TEMPLATES[type];
+      const smsMessage = smsTemplate
+        ? fillTemplate(smsTemplate, solapiVariables)
+        : `[${orgName}] ${studentName} 학생 ${type} 알림`;
+
+      await sendSolapiSms(solapiConfig, {
+        phone: recipientPhone,
+        message: smsMessage,
+      });
+    } else {
+      // 카카오 알림톡 발송
+      await sendSolapiAlimtalk(solapiConfig, {
+        type,
+        phone: recipientPhone,
+        recipientName: recipientName || `${studentName} 학부모`,
+        variables: solapiVariables,
+      });
+    }
   }
 
   console.log(`[Notification] 완료: ${orgName} - ${studentName} (${type}), -${balanceResult.price}원`);
