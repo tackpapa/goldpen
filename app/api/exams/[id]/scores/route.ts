@@ -145,6 +145,51 @@ export async function POST(
       return Response.json({ error: '점수 저장 실패', details: insertError.message }, { status: 500 })
     }
 
+    // ============================================================
+    // 알림 큐에 exam_result 알림 등록 (Queue Worker가 1분 내에 처리)
+    // ============================================================
+    try {
+      // 시험 상세 정보 조회 (알림에 필요)
+      const { data: examDetails } = await db
+        .from('exams')
+        .select('id, title, total_score')
+        .eq('id', examId)
+        .single()
+
+      if (examDetails && insertedScores && insertedScores.length > 0) {
+        // 알림 큐에 등록할 항목들
+        const notificationItems = insertedScores.map((score: any) => ({
+          student_id: score.student_id,
+          exam_id: examId,
+          exam_title: examDetails.title || '시험',
+          score: score.score,
+          total_score: examDetails.total_score || 100,
+        }))
+
+        // notification_queue에 배치 삽입
+        const { error: queueError } = await db
+          .from('notification_queue')
+          .insert(
+            notificationItems.map((item: any) => ({
+              org_id: orgId,
+              type: 'exam_result',
+              payload: item,
+              status: 'pending',
+            }))
+          )
+
+        if (queueError) {
+          console.error('[Exam Scores POST] notification_queue insert error:', queueError)
+          // 알림 실패해도 점수 저장은 성공으로 처리
+        } else {
+          console.log(`[Exam Scores POST] ${notificationItems.length}개 exam_result 알림 큐에 등록됨`)
+        }
+      }
+    } catch (notifError) {
+      console.error('[Exam Scores POST] notification queue error:', notifError)
+      // 알림 실패해도 점수 저장은 성공으로 처리
+    }
+
     return Response.json({
       scores: insertedScores,
       message: `${insertedScores?.length || 0}명의 점수가 저장되었습니다`,

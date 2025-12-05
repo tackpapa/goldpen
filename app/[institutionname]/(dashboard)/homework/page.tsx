@@ -271,7 +271,7 @@ export default function HomeworkPage() {
     setIsHomeworkHistoryDialogOpen(true)
   }
 
-  // 과제 생성 핸들러
+  // 과제 생성 핸들러 - Workers API 호출 (알림 발송 포함)
   const handleCreateHomework = async () => {
     if (!newHomework.class_id || !newHomework.title) {
       toast({ title: '반과 과제명을 입력해주세요', variant: 'destructive' })
@@ -280,7 +280,9 @@ export default function HomeworkPage() {
 
     setIsCreating(true)
     try {
-      const response = await fetch('/api/homework', {
+      // Workers API로 과제 생성 (알림 발송 로직 포함)
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+      const response = await fetch(`${apiUrl}/api/homework`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

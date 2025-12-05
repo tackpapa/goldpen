@@ -2633,6 +2633,54 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* 메시지 발송 방식 선택 */}
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">메시지 발송 방식</Label>
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant={organization.settings.use_sms ? 'default' : 'outline'}
+                    className="gap-2"
+                    onClick={() => {
+                      const nextSettings = {
+                        ...organization.settings,
+                        use_sms: true,
+                        use_kakao: false,
+                      }
+                      setOrganization({ ...organization, settings: nextSettings })
+                      persistOrganization({ settings: nextSettings })
+                      toast({ title: '설정 변경', description: 'SMS 사용으로 변경되었습니다.' })
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    SMS 사용하기
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={organization.settings.use_kakao !== false ? 'default' : 'outline'}
+                    className="gap-2"
+                    onClick={() => {
+                      const nextSettings = {
+                        ...organization.settings,
+                        use_sms: false,
+                        use_kakao: true,
+                      }
+                      setOrganization({ ...organization, settings: nextSettings })
+                      persistOrganization({ settings: nextSettings })
+                      toast({ title: '설정 변경', description: '카카오 알림톡 사용으로 변경되었습니다.' })
+                    }}
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    카카오 알림톡 사용하기
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {organization.settings.use_sms
+                    ? '현재 SMS로 알림이 발송됩니다. (건당 20원)'
+                    : '현재 카카오 알림톡으로 알림이 발송됩니다. (건당 9원)'}
+                </p>
+              </div>
+
               {/* 출결 알림 (통합) */}
               <div className="space-y-4">
                 <h3 className="text-lg font-semibold border-b pb-2">
@@ -2861,7 +2909,7 @@ export default function SettingsPage() {
                     <div className="space-y-0.5">
                       <Label>새 과제 알림</Label>
                       <p className="text-sm text-muted-foreground">
-                        과제 등록 → 관리자 승인 → 전송
+                        수업일지에서 숙제 등록 시 자동 전송
                       </p>
                     </div>
                     <Switch defaultChecked />

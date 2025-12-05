@@ -3,11 +3,10 @@
  * Queue에서 출결 체크 작업을 받아서 처리
  *
  * 작업 타입:
- * - check_academy: 학원/공부방 출결 체크
- * - check_study: 독서실 출결 체크
+ * - check_commute: 통학 출결 체크 (check_academy, check_study 통합)
  * - check_class: 강의 출결 체크
  * - daily_report: 일일 학습 리포트 발송
- * - process_commute_absent: 독서실 결석 처리
+ * - process_commute_absent: 결석 처리
  */
 
 import postgres from "postgres";
@@ -16,15 +15,17 @@ import postgres from "postgres";
 import {
   sendTelegramWithSolapiFormat,
   sendSolapiAlimtalk,
-  sendPpurioAlimtalk, // Legacy - 다른 곳에서 아직 사용 중
+  sendSolapiSms,
   checkAndDeductBalancePostgres,
   recordTransactionPostgres,
   recordMessageLogPostgres,
   sendNotificationWithBalancePostgres,
   SOLAPI_TEMPLATE_CONFIGS,
+  DEFAULT_TEMPLATES,
+  fillTemplate,
+  toTemplateType,
   type TelegramConfig,
   type SolapiConfig,
-  type PpurioConfig, // Legacy - 다른 곳에서 아직 사용 중
   type NotificationType as SharedNotificationType,
 } from "../../shared/src/notifications";
 
@@ -36,10 +37,6 @@ interface Env {
   KAKAO_ALIMTALK_SENDER_KEY?: string;
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_CHAT_ID?: string;
-  // PPURIO 알림톡 설정 (deprecated - Solapi로 대체)
-  PPURIO_ACCOUNT?: string;
-  PPURIO_PASSWORD?: string;
-  PPURIO_SENDER_KEY?: string;
   // Solapi 알림톡 설정
   SOLAPI_API_KEY?: string;
   SOLAPI_API_SECRET?: string;
@@ -166,7 +163,8 @@ export default {
   ): Promise<void> {
     console.log(`[QueueConsumer] Processing ${batch.messages.length} messages`);
 
-    const sql = postgres(env.HYPERDRIVE_DB.connectionString);
+    // Hyperdrive + postgres.js 조합 시 prepare: false 필수 (prepared statement 충돌 방지)
+    const sql = postgres(env.HYPERDRIVE_DB.connectionString, { prepare: false });
 
     try {
       for (const msg of batch.messages) {
@@ -176,17 +174,14 @@ export default {
 
         try {
           switch (type) {
+            // check_academy, check_study는 check_commute로 통합 (모두 동일한 commute_schedules 테이블 사용)
             case 'check_academy':
-              await processAcademyAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
-              break;
             case 'check_study':
-              await processStudyRoomAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
+            case 'check_commute':
+              await processCommuteAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
               break;
             case 'check_class':
               await processClassAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
-              break;
-            case 'check_commute':
-              await processCommuteAttendance(sql, orgId, orgName, weekday, todayDate, nowMinutes, env);
               break;
             case 'daily_report':
               await processDailyReport(sql, orgId, orgName, todayDate, env);
@@ -319,324 +314,6 @@ export default {
 // ============================================================
 
 /**
- * 학원/공부방 출결 처리 (단일 기관)
- * 🔴 병렬 처리: DB 쓰기 없음, 알림만 배치 병렬
- */
-async function processAcademyAttendance(
-  sql: postgres.Sql,
-  orgId: string,
-  orgName: string,
-  weekday: WeekdayName,
-  todayDate: string,
-  nowMinutes: number,
-  env: Env
-): Promise<void> {
-  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
-  const orgSettingsResult = await sql`
-    SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
-  `;
-  const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
-  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
-
-  const schedules = await sql`
-    SELECT
-      cs.id,
-      cs.student_id,
-      cs.check_in_time,
-      cs.check_out_time,
-      s.name as student_name,
-      s.parent_phone,
-      (
-        SELECT COUNT(*) FROM attendance_logs al
-        WHERE al.student_id = cs.student_id
-          AND al.check_in_time::date = ${todayDate}::date
-      ) as has_checkin
-    FROM commute_schedules cs
-    JOIN students s ON s.id = cs.student_id
-    WHERE cs.org_id = ${orgId}
-      AND cs.weekday = ${weekday}
-      AND cs.check_in_time IS NOT NULL
-  `;
-
-  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집 + 템플릿 캐시
-  const lateTemplate = await getTemplate(sql, orgId, 'late');
-  const absentTemplate = await getTemplate(sql, orgId, 'absent');
-  const notifications: NotificationParams[] = [];
-
-  for (const schedule of schedules) {
-    const checkInMinutes = timeToMinutes(schedule.check_in_time);
-    const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
-    const hasCheckin = Number(schedule.has_checkin) > 0;
-
-    // 체크인 시간 + 유예 시간이 지나야 지각/결석 처리 (>=로 정확한 타이밍)
-    if (!hasCheckin && nowMinutes >= checkInMinutes + lateGracePeriod) {
-      const absentThreshold = checkOutMinutes || (checkInMinutes + 120);
-
-      if (nowMinutes >= absentThreshold) {
-        // 결석 처리 전에 지각 알림이 전송되었는지 확인
-        const existingLateNotif = await sql`
-          SELECT id FROM notification_logs
-          WHERE org_id = ${orgId}
-            AND student_id = ${schedule.student_id}
-            AND target_date = ${todayDate}::date
-            AND type IN ('academy_late', 'study_late')
-          LIMIT 1
-        `;
-
-        // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
-        if (existingLateNotif.length === 0) {
-          console.log(`[Academy] Will send late notification first for ${schedule.student_name} (before absent)`);
-          const lateMessage = fillTemplate(lateTemplate, {
-            '기관명': orgName,
-            '학생명': schedule.student_name,
-            '예정시간': schedule.check_in_time,
-          });
-          notifications.push({
-            orgId,
-            orgName,
-            studentId: schedule.student_id,
-            studentName: schedule.student_name,
-            type: "late",
-            context: "academy",
-            targetDate: todayDate,
-            scheduledTime: schedule.check_in_time,
-            recipientPhone: schedule.parent_phone,
-            message: lateMessage,
-          });
-        }
-
-        // 결석 알림 추가
-        const absentMessage = fillTemplate(absentTemplate, {
-          '기관명': orgName,
-          '학생명': schedule.student_name,
-          '예정시간': schedule.check_out_time || schedule.check_in_time,
-        });
-        notifications.push({
-          orgId,
-          orgName,
-          studentId: schedule.student_id,
-          studentName: schedule.student_name,
-          type: "absent",
-          context: "academy",
-          targetDate: todayDate,
-          scheduledTime: schedule.check_out_time || schedule.check_in_time,
-          recipientPhone: schedule.parent_phone,
-          message: absentMessage,
-        });
-      } else if (nowMinutes >= checkInMinutes + lateGracePeriod) {
-        // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
-        const existingLateNotifAcademy = await sql`
-          SELECT id FROM notification_logs
-          WHERE org_id = ${orgId}
-            AND student_id = ${schedule.student_id}
-            AND target_date = ${todayDate}::date
-            AND type IN ('academy_late', 'study_late')
-          LIMIT 1
-        `;
-
-        // 이미 지각 알림이 전송된 적 있으면 건너뜀
-        if (existingLateNotifAcademy.length > 0) {
-          console.log(`[Academy] Late notification already sent for ${schedule.student_name}, skipping`);
-          continue;
-        }
-
-        console.log(`[Academy] Will send late notification for ${schedule.student_name}`);
-        const message = fillTemplate(lateTemplate, {
-          '기관명': orgName,
-          '학생명': schedule.student_name,
-          '예정시간': schedule.check_in_time,
-        });
-        notifications.push({
-          orgId,
-          orgName,
-          studentId: schedule.student_id,
-          studentName: schedule.student_name,
-          type: "late",
-          context: "academy",
-          targetDate: todayDate,
-          scheduledTime: schedule.check_in_time,
-          recipientPhone: schedule.parent_phone,
-          message,
-        });
-      }
-    }
-  }
-
-  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
-  if (notifications.length > 0) {
-    console.log(`[Academy] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
-    await sendNotificationsBatch(sql, env, notifications, 5);
-  }
-}
-
-/**
- * 독서실 출결 처리 (단일 기관)
- * 🔴 병렬 처리: DB INSERT는 순차, 알림 발송은 배치 병렬
- */
-async function processStudyRoomAttendance(
-  sql: postgres.Sql,
-  orgId: string,
-  orgName: string,
-  weekday: WeekdayName,
-  todayDate: string,
-  nowMinutes: number,
-  env: Env
-): Promise<void> {
-  // org_settings에서 유예 시간 설정 읽기 (기본값: 10분)
-  const orgSettingsResult = await sql`
-    SELECT settings FROM org_settings WHERE org_id = ${orgId} LIMIT 1
-  `;
-  const orgSettings = orgSettingsResult[0]?.settings as { gracePeriods?: Record<string, number> } | undefined;
-  const lateGracePeriod = orgSettings?.gracePeriods?.late ?? 10;
-
-  const schedules = await sql`
-    SELECT
-      cs.id,
-      cs.student_id,
-      cs.check_in_time,
-      cs.check_out_time,
-      s.name as student_name,
-      s.parent_phone,
-      (
-        SELECT COUNT(*) FROM attendance_logs al
-        WHERE al.student_id = cs.student_id
-          AND al.check_in_time::date = ${todayDate}::date
-      ) as has_checkin
-    FROM commute_schedules cs
-    JOIN students s ON s.id = cs.student_id
-    WHERE cs.org_id = ${orgId}
-      AND cs.weekday = ${weekday}
-      AND cs.check_in_time IS NOT NULL
-  `;
-
-  // 🔴 병렬 처리를 위해 알림 목록 먼저 수집
-  const lateTemplate = await getTemplate(sql, orgId, 'late');
-  const absentTemplate = await getTemplate(sql, orgId, 'absent');
-  const notifications: NotificationParams[] = [];
-
-  for (const schedule of schedules) {
-    const checkInMinutes = timeToMinutes(schedule.check_in_time);
-    const checkOutMinutes = schedule.check_out_time ? timeToMinutes(schedule.check_out_time) : null;
-    const hasCheckin = Number(schedule.has_checkin) > 0;
-
-    // 체크인 시간 + 유예 시간이 지나야 지각/결석 처리 (>=로 정확한 타이밍)
-    if (!hasCheckin && nowMinutes >= checkInMinutes + lateGracePeriod) {
-      if (checkOutMinutes && nowMinutes >= checkOutMinutes) {
-        // 결석 처리 전에 지각 알림이 전송되었는지 확인
-        const existingLateNotif = await sql`
-          SELECT id FROM notification_logs
-          WHERE org_id = ${orgId}
-            AND student_id = ${schedule.student_id}
-            AND target_date = ${todayDate}::date
-            AND type = 'study_late'
-          LIMIT 1
-        `;
-
-        // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
-        if (existingLateNotif.length === 0) {
-          console.log(`[StudyRoom] Will send late notification first for ${schedule.student_name} (before absent)`);
-          const lateMessage = fillTemplate(lateTemplate, {
-            '기관명': orgName,
-            '학생명': schedule.student_name,
-            '예정시간': schedule.check_in_time,
-          });
-          notifications.push({
-            orgId,
-            orgName,
-            studentId: schedule.student_id,
-            studentName: schedule.student_name,
-            type: "late",
-            context: "study",
-            targetDate: todayDate,
-            scheduledTime: schedule.check_in_time,
-            recipientPhone: schedule.parent_phone,
-            message: lateMessage,
-          });
-        }
-
-        // 결석 레코드 삽입 (DB는 순차 처리)
-        try {
-          await sql`
-            INSERT INTO attendance_logs (org_id, student_id, check_in_time, check_out_time, duration_minutes, source)
-            VALUES (
-              ${orgId},
-              ${schedule.student_id},
-              ${todayDate}::date + TIME '00:00:00',
-              ${todayDate}::date + TIME '00:00:00',
-              0,
-              'cron_absent'
-            )
-            ON CONFLICT DO NOTHING
-          `;
-        } catch (insertError) {
-          console.error(`[StudyRoom] Failed to insert absence record:`, insertError);
-        }
-
-        // 결석 알림 추가
-        const absentMessage = fillTemplate(absentTemplate, {
-          '기관명': orgName,
-          '학생명': schedule.student_name,
-          '예정시간': schedule.check_out_time,
-        });
-        notifications.push({
-          orgId,
-          orgName,
-          studentId: schedule.student_id,
-          studentName: schedule.student_name,
-          type: "absent",
-          context: "study",
-          targetDate: todayDate,
-          scheduledTime: schedule.check_out_time,
-          recipientPhone: schedule.parent_phone,
-          message: absentMessage,
-        });
-      } else {
-        // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
-        const existingLateNotifStudy = await sql`
-          SELECT id FROM notification_logs
-          WHERE org_id = ${orgId}
-            AND student_id = ${schedule.student_id}
-            AND target_date = ${todayDate}::date
-            AND type IN ('study_late', 'academy_late')
-          LIMIT 1
-        `;
-
-        // 이미 지각 알림이 전송된 적 있으면 건너뜀
-        if (existingLateNotifStudy.length > 0) {
-          console.log(`[StudyRoom] Late notification already sent for ${schedule.student_name}, skipping`);
-          continue;
-        }
-
-        console.log(`[StudyRoom] Will send late notification for ${schedule.student_name}`);
-        const message = fillTemplate(lateTemplate, {
-          '기관명': orgName,
-          '학생명': schedule.student_name,
-          '예정시간': schedule.check_in_time,
-        });
-        notifications.push({
-          orgId,
-          orgName,
-          studentId: schedule.student_id,
-          studentName: schedule.student_name,
-          type: "late",
-          context: "study",
-          targetDate: todayDate,
-          scheduledTime: schedule.check_in_time,
-          recipientPhone: schedule.parent_phone,
-          message,
-        });
-      }
-    }
-  }
-
-  // 🔴 병렬 처리로 발송 (5개씩 동시 처리)
-  if (notifications.length > 0) {
-    console.log(`[StudyRoom] 병렬 발송 시작: ${orgName} - ${notifications.length}건`);
-    await sendNotificationsBatch(sql, env, notifications, 5);
-  }
-}
-
-/**
  * 강의 출결 처리 (단일 기관)
  * 🔴 병렬 처리: DB INSERT/UPDATE는 순차, 알림 발송은 배치 병렬
  */
@@ -713,100 +390,51 @@ async function processClassAttendance(
       // 이미 출석(present)이면 건너뜀
       if (currentStatus === 'present') continue;
 
+      console.log(`[Class] Processing ${enrollment.student_name}: status=${currentStatus || 'null'}, nowMinutes=${nowMinutes}, endMinutes=${endMinutes}, startMinutes=${startMinutes}, gracePeriod=${lateGracePeriod}`);
+
       // 수업 종료 시간이 지났으면 → 결석 처리 (>=로 정확한 타이밍)
       if (nowMinutes >= endMinutes) {
-        // 이미 결석이면 건너뜀
-        if (currentStatus === 'absent') continue;
+        // 🔴 결석 알림 중복 체크 (notification_logs 기준)
+        const existingAbsentNotif = await sql`
+          SELECT id FROM notification_logs
+          WHERE org_id = ${orgId}
+            AND student_id = ${enrollment.student_id}
+            AND class_id = ${cls.class_id}
+            AND target_date = ${todayDate}::date
+            AND type = 'class_absent'
+          LIMIT 1
+        `;
 
-        // 🔴 중요: 지각 알림이 아직 전송되지 않았으면 먼저 지각 알림 보내기
-        // (cron이 수업 종료 후에 처음 실행된 경우)
-        if (currentStatus !== 'late') {
-          // 지각 알림 먼저 전송 여부 확인
-          const existingLateNotif = await sql`
-            SELECT id FROM notification_logs
-            WHERE org_id = ${orgId}
-              AND student_id = ${enrollment.student_id}
-              AND class_id = ${cls.class_id}
-              AND target_date = ${todayDate}::date
-              AND type = 'class_late'
-            LIMIT 1
-          `;
-
-          // 지각 알림이 전송된 적 없으면 먼저 전송 (알림 목록에 추가)
-          if (existingLateNotif.length === 0) {
-            console.log(`[Class] Will send late notification first for ${enrollment.student_name} (before absent)`);
-
-            // attendance 레코드 생성 (late) - DB는 순차 처리
-            try {
-              if (!enrollment.attendance_id) {
-                await sql`
-                  INSERT INTO attendance (org_id, class_id, student_id, date, status)
-                  VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'late')
-                `;
-              }
-            } catch (err) {
-              console.error(`[Class] Failed to insert late record:`, err);
-            }
-
-            const lateMessage = fillTemplate(lateTemplate, {
-              '기관명': orgName,
-              '학생명': enrollment.student_name,
-              '수업명': cls.class_name,
-              '예정시간': todaySchedule.start_time,
-            });
-            notifications.push({
-              orgId,
-              orgName,
-              studentId: enrollment.student_id,
-              studentName: enrollment.student_name,
-              type: "late",
-              context: "class",
-              classId: cls.class_id,
-              targetDate: todayDate,
-              scheduledTime: todaySchedule.start_time,
-              recipientPhone: enrollment.parent_phone,
-              message: lateMessage,
-            });
-          }
+        if (existingAbsentNotif.length > 0) {
+          console.log(`[Class] Absent notification already sent for ${enrollment.student_name}, skipping`);
+          continue;
         }
 
-        // 이제 결석 처리 (DB는 순차 처리)
+        // DB에 결석 상태 업데이트 (attendance 레코드 관리)
         try {
           if (enrollment.attendance_id) {
-            // 기존 레코드(late)가 있으면 absent로 UPDATE
-            await sql`
-              UPDATE attendance SET status = 'absent', updated_at = NOW()
-              WHERE id = ${enrollment.attendance_id}
-            `;
-            console.log(`[Class] Updated late→absent for ${enrollment.student_name} in ${cls.class_name}`);
-          } else {
-            // 방금 late를 insert했으므로 다시 조회해서 update
-            const latestAttendance = await sql`
-              SELECT id FROM attendance
-              WHERE org_id = ${orgId}
-                AND class_id = ${cls.class_id}
-                AND student_id = ${enrollment.student_id}
-                AND date = ${todayDate}::date
-              LIMIT 1
-            `;
-            if (latestAttendance.length > 0) {
+            // 기존 레코드가 있으면 absent로 UPDATE
+            if (currentStatus !== 'absent') {
               await sql`
                 UPDATE attendance SET status = 'absent', updated_at = NOW()
-                WHERE id = ${latestAttendance[0].id}
+                WHERE id = ${enrollment.attendance_id}
               `;
-            } else {
-              // 레코드가 없으면 INSERT
-              await sql`
-                INSERT INTO attendance (org_id, class_id, student_id, date, status)
-                VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'absent')
-              `;
+              console.log(`[Class] Updated ${currentStatus || 'null'}→absent for ${enrollment.student_name}`);
             }
+          } else {
+            // 레코드가 없으면 INSERT
+            await sql`
+              INSERT INTO attendance (org_id, class_id, student_id, date, status)
+              VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'absent')
+            `;
+            console.log(`[Class] Inserted absent for ${enrollment.student_name}`);
           }
         } catch (err) {
           console.error(`[Class] Failed to process absence:`, err);
         }
 
         // 결석 알림 추가
+        console.log(`[Class] Sending absent notification for ${enrollment.student_name} in ${cls.class_name}`);
         const absentMessage = fillTemplate(absentTemplate, {
           '기관명': orgName,
           '학생명': enrollment.student_name,
@@ -829,9 +457,6 @@ async function processClassAttendance(
       }
       // 시작시간+유예시간 지났으면 → 지각 처리 (>=로 정확한 타이밍)
       else if (nowMinutes >= startMinutes + lateGracePeriod) {
-        // 이미 지각이면 건너뜀
-        if (currentStatus === 'late') continue;
-
         // 🔴 중복 알림 방지: notification_logs에 이미 전송된 지각 알림이 있는지 체크
         const existingLateNotif = await sql`
           SELECT id FROM notification_logs
@@ -849,19 +474,27 @@ async function processClassAttendance(
           continue;
         }
 
-        // DB INSERT 순차 처리
+        // DB INSERT 순차 처리 (attendance 레코드가 없으면 생성)
         try {
           if (!enrollment.attendance_id) {
             await sql`
               INSERT INTO attendance (org_id, class_id, student_id, date, status)
               VALUES (${orgId}, ${cls.class_id}, ${enrollment.student_id}, ${todayDate}::date, 'late')
             `;
+            console.log(`[Class] Inserted late for ${enrollment.student_name}`);
+          } else if (currentStatus !== 'late' && currentStatus !== 'absent') {
+            // 다른 상태에서 late로 업데이트 (absent는 유지)
+            await sql`
+              UPDATE attendance SET status = 'late', updated_at = NOW()
+              WHERE id = ${enrollment.attendance_id}
+            `;
+            console.log(`[Class] Updated ${currentStatus}→late for ${enrollment.student_name}`);
           }
         } catch (err) {
-          console.error(`[Class] Failed to insert late record:`, err);
+          console.error(`[Class] Failed to insert/update late record:`, err);
         }
 
-        console.log(`[Class] Will send late notification for ${enrollment.student_name} in ${cls.class_name}`);
+        console.log(`[Class] Sending late notification for ${enrollment.student_name} in ${cls.class_name}`);
         const message = fillTemplate(lateTemplate, {
           '기관명': orgName,
           '학생명': enrollment.student_name,
@@ -1081,22 +714,30 @@ async function processDailyReport(
   todayDate: string,
   env: Env
 ): Promise<void> {
-  // 1. 오늘 독서실에 출석한 학생 조회 (daily_planners에서 완료과목 가져옴)
+  // 1. 현재 등원 중인 학생 중 서비스 소속에 "독서실"이 포함된 학생만 조회
+  // 🔴 수정: seat_assignments.check_in_time 사용 (seats 페이지 UI와 동일하게)
+  // seats 페이지의 노란색 시간 = NOW() - seat_assignments.check_in_time
   const attendanceRecords = await sql`
     SELECT
-      al.student_id,
+      s.id as student_id,
       s.name as student_name,
       s.parent_phone,
-      COALESCE(EXTRACT(EPOCH FROM (al.check_out_time - al.check_in_time)) / 60, 0)::int as study_minutes,
+      COALESCE(
+        EXTRACT(EPOCH FROM (NOW() - sa.check_in_time)) / 60,
+        0
+      )::int as study_minutes,
       dp.study_plans
-    FROM attendance_logs al
-    JOIN students s ON s.id = al.student_id
-    LEFT JOIN daily_planners dp ON dp.student_id = al.student_id
+    FROM students s
+    JOIN seat_assignments sa ON sa.student_id = s.id
+      AND sa.org_id = ${orgId}
+      AND sa.status = 'checked_in'
+      AND sa.check_in_time::date = ${todayDate}::date
+    LEFT JOIN daily_planners dp ON dp.student_id = s.id
       AND dp.date = ${todayDate}::date
       AND dp.org_id = ${orgId}
-    WHERE al.org_id = ${orgId}
-      AND al.check_in_time::date = ${todayDate}::date
+    WHERE s.org_id = ${orgId}
       AND s.parent_phone IS NOT NULL
+      AND '독서실' = ANY(s.campuses)
   `;
 
   // 🔴 병렬 처리를 위해 알림 목록 먼저 수집
@@ -1106,7 +747,7 @@ async function processDailyReport(
   for (const record of attendanceRecords) {
     // 과목(완료), 과목(미완료) 형태로 생성 (50자 제한)
     const plans = record.study_plans as Array<{ subject: string; completed: boolean }> || [];
-    let completedSubjectsStr = '공부'; // 과목이 없으면 "공부"
+    let completedSubjectsStr = '여러 공부'; // 과목이 없으면 "여러 공부"
 
     if (plans.length > 0) {
       const subjectList: string[] = [];
@@ -1421,8 +1062,7 @@ async function sendNotification(
     };
     await sendTelegramWithSolapiFormat(telegramConfig, dbType as SharedNotificationType, solapiVariables, recipientPhone);
 
-    // Solapi 알림톡 발송
-    // TODO: Solapi 템플릿 승인 후 DRY_RUN 해제 (shared/notifications.ts)
+    // Solapi 알림톡/SMS 발송
     if (recipientPhone) {
       const solapiConfig: SolapiConfig = {
         apiKey: env.SOLAPI_API_KEY,
@@ -1430,12 +1070,35 @@ async function sendNotification(
         pfId: env.SOLAPI_PF_ID,
         senderPhone: env.SOLAPI_SENDER_PHONE,
       };
-      await sendSolapiAlimtalk(solapiConfig, {
-        type: dbType as SharedNotificationType,
-        phone: recipientPhone,
-        recipientName: `${studentName} 학부모`,
-        variables: solapiVariables,
-      });
+
+      // organization 설정에서 SMS/알림톡 선택 확인 (org_settings 테이블 사용)
+      const orgSettings = await sql`
+        SELECT settings FROM org_settings WHERE org_id = ${orgId}
+      `;
+      const useSms = orgSettings[0]?.settings?.use_sms === true;
+
+      if (useSms) {
+        // SMS 발송 - 템플릿에서 메시지 생성
+        const templateType = toTemplateType(dbType);
+        const template = DEFAULT_TEMPLATES[templateType] || DEFAULT_TEMPLATES['checkin'];
+        const smsMessage = fillTemplate(template, solapiVariables);
+
+        console.log(`[Notification] SMS 발송: ${studentName} - ${dbType}`);
+        await sendSolapiSms(solapiConfig, {
+          phone: recipientPhone,
+          message: smsMessage,
+          recipientName: `${studentName} 학부모`,
+        });
+      } else {
+        // 카카오 알림톡 발송
+        console.log(`[Notification] 알림톡 발송: ${studentName} - ${dbType}`);
+        await sendSolapiAlimtalk(solapiConfig, {
+          type: dbType as SharedNotificationType,
+          phone: recipientPhone,
+          recipientName: `${studentName} 학부모`,
+          variables: solapiVariables,
+        });
+      }
     }
   } catch (error) {
     console.error(`[Notification] Error for ${studentName}:`, error);
@@ -1984,7 +1647,7 @@ async function processNotificationQueue(
           total_score: number;
         };
 
-        const scoreStr = `${payload.score}/${payload.total_score}점`;
+        const scoreStr = `${payload.score}/${payload.total_score}`;
         const examMessage = `${student.org_name}입니다, 학부모님.\n\n${student.name} 학생의 시험 결과를 안내드립니다.\n\n${payload.exam_title}: ${scoreStr}\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다. 궁금하신 점은 편하게 연락 주세요!`;
 
         const notificationResult = await sendNotificationWithBalancePostgres({

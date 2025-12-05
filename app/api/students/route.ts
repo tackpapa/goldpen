@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const attendanceCode = searchParams.get('attendance_code') || searchParams.get('student_code') || undefined
     const checkDuplicate = searchParams.get('check_duplicate') === '1'
+    const classId = searchParams.get('class_id') || undefined
 
     // 중복 체크 모드: 빠른 응답을 위해 id만 조회
     if (checkDuplicate && attendanceCode) {
@@ -31,6 +32,28 @@ export async function GET(request: Request) {
       return Response.json({
         exists: existing && existing.length > 0,
         student_code: attendanceCode
+      })
+    }
+
+    // class_id가 있으면 해당 반에 등록된 학생만 조회
+    if (classId) {
+      const { data: enrollments, error: enrollError } = await db
+        .from('class_enrollments')
+        .select('student_id, students(id, name, parent_phone, student_code)')
+        .eq('class_id', classId)
+        .or('status.is.null,status.eq.active')
+
+      if (enrollError) {
+        console.error('Error fetching class enrollments:', enrollError)
+        return Response.json({ error: enrollError.message }, { status: 500 })
+      }
+
+      const students = (enrollments || [])
+        .map((e: any) => e.students)
+        .filter((s: any) => s !== null)
+
+      return Response.json({ students, count: students.length }, {
+        headers: { 'Cache-Control': 'private, max-age=60, stale-while-revalidate=120' }
       })
     }
 

@@ -85,7 +85,9 @@ app.post("/", async (c) => {
 
       // 점수 등록
       for (const scoreData of scoresInput) {
-        const { student_id, score, feedback = null } = scoreData;
+        // notes도 지원 (프론트엔드 호환성)
+        const { student_id, score, feedback, notes } = scoreData;
+        const finalFeedback = feedback || notes || null;
 
         // 기존 점수 확인 (UPSERT)
         const { rows } = await client.query(
@@ -94,7 +96,7 @@ app.post("/", async (c) => {
            ON CONFLICT (exam_id, student_id)
            DO UPDATE SET score = $3, feedback = $4
            RETURNING *`,
-          [examId, student_id, score, feedback]
+          [examId, student_id, score, finalFeedback]
         );
 
         if (rows[0]) {
@@ -174,6 +176,92 @@ app.post("/", async (c) => {
     return c.json({ scores: results }, 201);
   } catch (error: any) {
     console.error("[exams/:id/scores] POST error:", error);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+/**
+ * POST /api/exams/:id/scores/notify
+ * 이미 저장된 점수에 대해 알림톡만 발송
+ * body: { student_ids?: string[] } - 특정 학생만 발송할 경우, 없으면 전체 발송
+ */
+app.post("/notify", async (c) => {
+  const examId = c.req.param("id");
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const studentIds: string[] | undefined = body.student_ids;
+
+    const result = await withClient(c.env, async (client) => {
+      // 시험 정보 조회
+      const examRes = await client.query(
+        `SELECT e.*, o.name as org_name
+         FROM exams e
+         JOIN organizations o ON o.id = e.org_id
+         WHERE e.id = $1`,
+        [examId]
+      );
+
+      if (!examRes.rows[0]) {
+        throw new Error("Exam not found");
+      }
+
+      const exam = examRes.rows[0];
+
+      // 저장된 점수 조회 (등수 포함)
+      let scoresQuery = `
+        SELECT es.*, s.name as student_name,
+               RANK() OVER (ORDER BY es.score DESC) as rank,
+               COUNT(*) OVER () as total_students
+        FROM exam_scores es
+        JOIN students s ON s.id = es.student_id
+        WHERE es.exam_id = $1
+      `;
+      const queryParams: any[] = [examId];
+
+      // 특정 학생만 필터링
+      if (studentIds && studentIds.length > 0) {
+        scoresQuery += ` AND es.student_id = ANY($2)`;
+        queryParams.push(studentIds);
+      }
+
+      const scoresRes = await client.query(scoresQuery, queryParams);
+
+      if (scoresRes.rows.length === 0) {
+        return { queued: 0, message: "발송할 점수가 없습니다" };
+      }
+
+      const totalStudents = parseInt(scoresRes.rows[0].total_students) || scoresRes.rows.length;
+
+      // notification_queue에 배치 추가
+      const queueItems: NotificationQueuePayload[] = scoresRes.rows.map((row: any) => ({
+        student_id: row.student_id,
+        exam_id: examId,
+        exam_title: exam.title,
+        score: row.score,
+        total_score: exam.max_score || 100,
+        rank: row.rank,
+        total_students: totalStudents,
+      }));
+
+      const insertResult = await insertNotificationQueueBatch(
+        client,
+        exam.org_id,
+        'exam_result',
+        queueItems
+      );
+
+      console.log(`[exams/:id/scores/notify] Queued ${insertResult.insertedCount}/${queueItems.length} notifications`);
+
+      return {
+        queued: insertResult.insertedCount,
+        total: queueItems.length,
+        message: `${insertResult.insertedCount}명에게 알림이 예약되었습니다. 1분 내에 발송됩니다.`,
+      };
+    });
+
+    return c.json(result, 200);
+  } catch (error: any) {
+    console.error("[exams/:id/scores/notify] POST error:", error);
     return c.json({ error: error.message }, 500);
   }
 });

@@ -13,9 +13,12 @@ const mapHw = (row: any) => ({
   description: row.description,
   due_date: row.due_date,
   class_id: row.class_id,
+  class_name: row.class_name,
   teacher_id: row.teacher_id,
   status: row.status,
   submission_url: row.submission_url,
+  total_students: row.total_students ?? 0,
+  submitted_count: row.submitted_count ?? 0,
   created_at: row.created_at,
 });
 
@@ -56,25 +59,52 @@ app.post("/", async (c) => {
       due_date = null,
       class_id = null,
       teacher_id = null,
-      status = "assigned",
+      status = "active",
       submission_url = null,
       send_notification = true, // 알림 발송 여부
     } = body || {};
     if (!title) return c.json({ error: "title is required" }, 400);
+    if (!class_id) return c.json({ error: "class_id is required" }, 400);
 
     const item = await withClient(c.env, async (client) => {
+      // 반 정보 조회
+      const classRes = await client.query(
+        `SELECT id, name FROM classes WHERE id = $1 AND org_id = $2`,
+        [class_id, orgId]
+      );
+
+      if (!classRes.rows[0]) {
+        throw new Error("반 정보를 찾을 수 없습니다");
+      }
+
+      const classRow = classRes.rows[0];
+
+      // 해당 반의 활성 학생 수 조회
+      const studentCountRes = await client.query(
+        `SELECT COUNT(*)::int as cnt FROM class_enrollments
+         WHERE class_id = $1 AND (status = 'active' OR status IS NULL)`,
+        [class_id]
+      );
+      const totalStudents = studentCountRes.rows[0]?.cnt || 0;
+
+      // 마감일 기본값: 7일 후
+      const finalDueDate = due_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
       const { rows } = await client.query(
-        `INSERT INTO homework (org_id, title, description, due_date, class_id, teacher_id, status, submission_url)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        `INSERT INTO homework (org_id, title, description, due_date, class_id, class_name, teacher_id, status, submission_url, total_students, submitted_count)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
         [
           orgId,
           title,
           description,
-          due_date,
+          finalDueDate,
           class_id,
+          classRow.name,
           teacher_id,
           status,
           submission_url,
+          totalStudents,
+          0, // 새로 생성된 과제는 제출 수 0
         ],
       );
 
@@ -89,13 +119,13 @@ app.post("/", async (c) => {
             `SELECT ce.student_id, c.name as class_name
              FROM class_enrollments ce
              JOIN classes c ON c.id = ce.class_id
-             WHERE ce.class_id = $1 AND ce.status = 'active'`,
+             WHERE ce.class_id = $1 AND (ce.status = 'active' OR ce.status IS NULL)`,
             [class_id]
           );
 
           // 마감일 포맷팅 (YYYY-MM-DD 또는 미정)
-          const formattedDueDate = due_date
-            ? new Date(due_date).toISOString().split('T')[0]
+          const formattedDueDate = finalDueDate
+            ? new Date(finalDueDate).toISOString().split('T')[0]
             : '미정';
 
           // 배치로 notification_queue에 추가
@@ -115,7 +145,7 @@ app.post("/", async (c) => {
               'assignment_new',
               queueItems
             );
-            console.log(`[homework] Queued ${result.insertedCount}/${queueItems.length} notifications`);
+            console.log(`[homework] Queued ${result.insertedCount}/${queueItems.length} notifications for ${title}`);
           }
         } catch (notifError) {
           console.error("[homework] notification queue error:", notifError);
@@ -126,7 +156,7 @@ app.post("/", async (c) => {
       return homeworkData;
     });
 
-    return c.json({ homework: item }, item ? 201 : 500);
+    return c.json({ homework: item, message: '과제가 생성되었습니다' }, item ? 201 : 500);
   } catch (error: any) {
     console.error("[homework] POST error:", error);
     return c.json({ error: error.message }, 500);

@@ -797,11 +797,14 @@ export default function LessonsPage() {
       setLessons((prev) => [data.lesson, ...prev])
 
       // 과제명과 마감일이 모두 있으면 과제 자동 생성
+      // Workers API로 과제 생성 (알림 발송 로직 포함)
       if (formData.homework_assigned && formData.homework_due_date && formData.class_id) {
         try {
-          const homeworkResponse = await fetch('/api/homework', {
+          const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+          const homeworkResponse = await fetch(`${apiUrl}/api/homework`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({
               class_id: formData.class_id,
               title: formData.homework_assigned,

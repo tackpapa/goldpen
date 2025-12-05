@@ -689,6 +689,56 @@ export async function POST(request: Request) {
       return Response.json({ error: '숙제 생성 실패', details: createError.message }, { status: 500 })
     }
 
+    // ============================================================
+    // 알림 큐에 assignment_new 알림 등록 (Queue Worker가 1분 내에 처리)
+    // ============================================================
+    try {
+      // 해당 반의 활성 학생 조회
+      const { data: enrollments, error: enrollError } = await db
+        .from('class_enrollments')
+        .select('student_id')
+        .eq('class_id', validated.class_id)
+        .or('status.eq.active,status.is.null')
+
+      if (enrollError) {
+        console.error('[Homework POST] enrollment query error:', enrollError)
+      } else if (enrollments && enrollments.length > 0) {
+        // 마감일 포맷팅
+        const formattedDueDate = dueDate
+          ? new Date(dueDate).toISOString().split('T')[0]
+          : '미정'
+
+        // notification_queue에 배치 삽입
+        const notificationItems = enrollments.map((e: { student_id: string }) => ({
+          org_id: orgId,
+          type: 'assignment_new',
+          payload: {
+            student_id: e.student_id,
+            class_id: validated.class_id,
+            class_name: classRow.name,
+            title: validated.title,
+            due_date: formattedDueDate,
+            description: validated.description || undefined,
+          },
+          status: 'pending',
+        }))
+
+        const { error: queueError } = await db
+          .from('notification_queue')
+          .insert(notificationItems)
+
+        if (queueError) {
+          console.error('[Homework POST] notification_queue insert error:', queueError)
+          // 알림 실패해도 과제 생성은 성공으로 처리
+        } else {
+          console.log(`[Homework POST] ${notificationItems.length}개 assignment_new 알림 큐에 등록됨`)
+        }
+      }
+    } catch (notifError) {
+      console.error('[Homework POST] notification queue error:', notifError)
+      // 알림 실패해도 과제 생성은 성공으로 처리
+    }
+
     return Response.json({ homework, message: '숙제가 생성되었습니다' }, { status: 201 })
   } catch (error: any) {
     if (error?.message === 'AUTH_REQUIRED') {

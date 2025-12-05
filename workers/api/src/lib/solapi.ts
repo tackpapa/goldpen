@@ -42,62 +42,62 @@ interface TemplateConfig {
 /**
  * 알림 타입별 Solapi 템플릿 설정
  * - 템플릿 변수는 #{변수명} 형태로 정의되어 있음
- * - Solapi 대시보드에서 등록한 템플릿 ID
+ * - Solapi 대시보드에서 등록/승인된 템플릿 ID (2024-12-04 승인)
  */
 export const SOLAPI_TEMPLATES: Record<NotificationType, TemplateConfig> = {
   // 지각 알림: 기관명, 학생명, 시간
   late: {
-    templateId: "7omf6A4JxL",
+    templateId: "KA01TP251204073512160e3wLOmjadHo",
     variables: ["기관명", "학생명", "시간"],
   },
   // 결석 알림: 기관명, 학생명
   absent: {
-    templateId: "grzUv3iBJ8",
+    templateId: "KA01TP251204073716590X9PIO4lqHJO",
     variables: ["기관명", "학생명"],
   },
   // 등원 알림: 기관명, 학생명, 시간
   checkin: {
-    templateId: "09nmpwYZnv",
+    templateId: "KA01TP2512040736374033MaMtCvbrOU",
     variables: ["기관명", "학생명", "시간"],
   },
   // 하원 알림: 기관명, 학생명, 시간
   checkout: {
-    templateId: "TJygY5dhpe",
+    templateId: "KA01TP251204073555285nNM7Zije4g6",
     variables: ["기관명", "학생명", "시간"],
   },
   // 외출 알림: 기관명, 학생명, 시간
   study_out: {
-    templateId: "a4Qhq4ubGx",
+    templateId: "KA01TP251204073126106rpWtFqsElst",
     variables: ["기관명", "학생명", "시간"],
   },
   // 복귀 알림: 기관명, 학생명, 시간
   study_return: {
-    templateId: "ncH60rIuUj",
+    templateId: "KA01TP251204073216240Al5TN6oZpK1",
     variables: ["기관명", "학생명", "시간"],
   },
   // 학습 알림: 기관명, 학생명, 날짜, 총학습시간, 완료과목 (레거시 - daily_report와 동일)
   study_report: {
-    templateId: "6dkVxZdXta",
+    templateId: "KA01TP251204073400351Ji007ORdhMl",
     variables: ["기관명", "학생명", "날짜", "총학습시간", "완료과목"],
   },
   // 당일 학습 진행 결과: 기관명, 학생명, 날짜, 총학습시간, 완료과목 (Cron 자동 발송)
   daily_report: {
-    templateId: "6dkVxZdXta",
+    templateId: "KA01TP251204073400351Ji007ORdhMl",
     variables: ["기관명", "학생명", "날짜", "총학습시간", "완료과목"],
   },
   // 수업일지 알림: 기관명, 학생명, 오늘수업, 학습포인트, 선생님코멘트, 원장님코멘트, 숙제, 복습팁 (강사 수동 발송)
   lesson_report: {
-    templateId: "gcrkaJcXt7",
+    templateId: "KA01TP251204072710607rwTlsMrEZev",
     variables: ["기관명", "학생명", "오늘수업", "학습포인트", "선생님코멘트", "원장님코멘트", "숙제", "복습팁"],
   },
   // 시험관리 알림: 기관명, 학생명, 시험명, 점수
   exam_result: {
-    templateId: "KfVANY1h0J",
+    templateId: "KA01TP251204073020148HJTQIvTPKBy",
     variables: ["기관명", "학생명", "시험명", "점수"],
   },
   // 과제관리 알림: 기관명, 학생명, 과제, 마감일
   assignment: {
-    templateId: "s2crA6UhRd",
+    templateId: "KA01TP251204072838441p4prMiI6EES",
     variables: ["기관명", "학생명", "과제", "마감일"],
   },
 };

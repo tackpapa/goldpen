@@ -430,11 +430,13 @@ export default function ExamsPage() {
     }
 
     try {
-      const res = await fetch(`/api/exams/${selectedExam.id}/scores`, {
+      // Workers API로 점수 저장 (알림은 별도 "알림톡 보내기" 버튼으로만 발송)
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+      const res = await fetch(`${apiUrl}/api/exams/${selectedExam.id}/scores`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ scores: scoresToSave }),
+        body: JSON.stringify({ scores: scoresToSave, send_notification: false }),
       })
 
       if (!res.ok) {
@@ -566,17 +568,52 @@ export default function ExamsPage() {
     }
   }
 
-  const handleConfirmSendNotification = () => {
+  const handleConfirmSendNotification = async () => {
     if (!selectedExam) return
 
     const stats = getNotificationStats()
+    const studentsWithPhone = notificationStudents.filter(s => s.parent_phone)
 
-    toast({
-      title: '알림톡 전송 완료',
-      description: `${stats.withPhone}명의 학부모에게 성적 알림톡을 전송했습니다.`,
-    })
+    if (studentsWithPhone.length === 0) {
+      toast({
+        variant: 'destructive',
+        title: '발송 실패',
+        description: '학부모 연락처가 등록된 학생이 없습니다.',
+      })
+      return
+    }
 
-    setIsNotificationDialogOpen(false)
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+      const studentIds = studentsWithPhone.map(s => s.id)
+
+      const res = await fetch(`${apiUrl}/api/exams/${selectedExam.id}/scores/notify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ student_ids: studentIds }),
+      })
+
+      interface NotifyResponse { error?: string; message?: string }
+      const data = await res.json() as NotifyResponse
+
+      if (!res.ok) {
+        throw new Error(data.error || '알림 발송 실패')
+      }
+
+      toast({
+        title: '알림톡 발송 예약 완료',
+        description: data.message || `${stats.withPhone}명의 학부모에게 알림톡이 1분 내에 발송됩니다.`,
+      })
+
+      setIsNotificationDialogOpen(false)
+    } catch (error: any) {
+      console.error('[Exam Notification] Error:', error)
+      toast({
+        variant: 'destructive',
+        title: '알림 발송 실패',
+        description: error.message || '알림톡 발송 중 오류가 발생했습니다.',
+      })
+    }
   }
 
   const parseBulkScores = (text: string): Array<{ name: string; score: number; feedback?: string }> => {

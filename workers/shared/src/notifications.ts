@@ -27,14 +27,6 @@ export interface SolapiConfig {
   senderPhone?: string; // SOLAPI_SENDER_PHONE (발신번호)
 }
 
-// Legacy - PPURIO 호환성 유지 (deprecated)
-export interface PpurioConfig {
-  account?: string;
-  authKey?: string;
-  senderProfile?: string;
-  password?: string;
-  senderKey?: string;
-}
 
 export type NotificationType =
   | "late" | "absent"
@@ -43,6 +35,35 @@ export type NotificationType =
   | "daily_report" | "lesson_report"
   | "exam_result"
   | "assignment_new" | "assignment";
+
+// DB에 저장되는 세부 알림 타입
+export type DbNotificationType =
+  | "class_late" | "class_absent"
+  | "study_late" | "study_absent"
+  | "commute_late" | "commute_absent"
+  | "academy_checkin" | "academy_checkout"
+  | "study_checkin" | "study_checkout"
+  | "study_out" | "study_return"
+  | "daily_report" | "lesson_report"
+  | "exam_result"
+  | "assignment_new" | "assignment";
+
+/**
+ * DB type을 템플릿 type으로 변환
+ * class_late → late, study_absent → absent, academy_checkin → checkin 등
+ */
+export function toTemplateType(dbType: string): NotificationType {
+  // late 계열
+  if (dbType.endsWith('_late')) return 'late';
+  // absent 계열
+  if (dbType.endsWith('_absent')) return 'absent';
+  // checkin 계열
+  if (dbType.endsWith('_checkin')) return 'checkin';
+  // checkout 계열
+  if (dbType.endsWith('_checkout')) return 'checkout';
+  // 나머지는 그대로
+  return dbType as NotificationType;
+}
 
 export interface NotificationParams {
   orgId: string;
@@ -79,7 +100,7 @@ export interface NotificationResult {
 // ============================================================
 
 export const DEFAULT_TEMPLATES: Record<string, string> = {
-  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{예정시간}})에 아직 도착하지 않아 안내드립니다. 확인 부탁드립니다.',
+  'late': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 예정 시간({{시간}})에 아직 도착하지 않아 안내드립니다. 확인 부탁드립니다.',
   'absent': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 오늘 예정된 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
   'checkin': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!',
   'checkout': '{{기관명}}입니다, 학부모님.\n\n{{학생명}} 학생이 {{시간}}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다.',
@@ -192,7 +213,7 @@ export async function sendTelegram(
  */
 export async function sendTelegramWithSolapiFormat(
   config: TelegramConfig,
-  type: NotificationType,
+  type: NotificationType | string,  // DB type도 허용 (class_late 등)
   variables: Record<string, string>,
   recipientPhone?: string
 ): Promise<{ success: boolean; error?: string }> {
@@ -203,9 +224,11 @@ export async function sendTelegramWithSolapiFormat(
     return { success: false, error: 'TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not configured' };
   }
 
-  const templateConfig = SOLAPI_TEMPLATE_CONFIGS[type];
+  // DB type을 템플릿 type으로 변환 (class_late → late, academy_checkin → checkin 등)
+  const templateType = toTemplateType(type);
+  const templateConfig = SOLAPI_TEMPLATE_CONFIGS[templateType];
   if (!templateConfig) {
-    console.error(`[Telegram/Solapi] Unknown type: ${type}`);
+    console.error(`[Telegram/Solapi] Unknown type: ${type} (mapped to ${templateType})`);
     return { success: false, error: `Unknown type: ${type}` };
   }
 
@@ -264,61 +287,61 @@ interface TemplateConfig {
   variables: string[]; // 변수 목록 (기관명, 학생명 등)
 }
 
-// Solapi 템플릿 설정 - Solapi 대시보드에서 등록된 템플릿 ID
+// Solapi 템플릿 설정 - Solapi 대시보드에서 등록된 템플릿 ID (2024-12-04 승인)
 // 변수는 #{변수명} 형태로 Solapi에 등록되어 있음
 export const SOLAPI_TEMPLATE_CONFIGS: Record<NotificationType, TemplateConfig> = {
   // 지각 알림: 기관명, 학생명, 시간
   late: {
-    templateId: "7omf6A4JxL",
+    templateId: "KA01TP251204073512160e3wLOmjadHo",
     variables: ["기관명", "학생명", "시간"],
   },
   // 결석 알림: 기관명, 학생명
   absent: {
-    templateId: "grzUv3iBJ8",
+    templateId: "KA01TP251204073716590X9PIO4lqHJO",
     variables: ["기관명", "학생명"],
   },
   // 등원 알림: 기관명, 학생명, 시간
   checkin: {
-    templateId: "09nmpwYZnv",
+    templateId: "KA01TP2512040736374033MaMtCvbrOU",
     variables: ["기관명", "학생명", "시간"],
   },
   // 하원 알림: 기관명, 학생명, 시간
   checkout: {
-    templateId: "TJygY5dhpe",
+    templateId: "KA01TP251204073555285nNM7Zije4g6",
     variables: ["기관명", "학생명", "시간"],
   },
   // 외출 알림: 기관명, 학생명, 시간
   study_out: {
-    templateId: "a4Qhq4ubGx",
+    templateId: "KA01TP251204073126106rpWtFqsElst",
     variables: ["기관명", "학생명", "시간"],
   },
   // 복귀 알림: 기관명, 학생명, 시간
   study_return: {
-    templateId: "ncH60rIuUj",
+    templateId: "KA01TP251204073216240Al5TN6oZpK1",
     variables: ["기관명", "학생명", "시간"],
   },
   // 당일 학습 진행 결과: 기관명, 학생명, 날짜, 총학습시간, 완료과목 (Cron 자동 발송)
   daily_report: {
-    templateId: "6dkVxZdXta",
+    templateId: "KA01TP251204073400351Ji007ORdhMl",
     variables: ["기관명", "학생명", "날짜", "총학습시간", "완료과목"],
   },
   // 수업일지 알림: 기관명, 학생명, 오늘수업, 학습포인트, 선생님코멘트, 원장님코멘트, 숙제, 복습팁 (강사 수동 발송)
   lesson_report: {
-    templateId: "gcrkaJcXt7",
+    templateId: "KA01TP251204072710607rwTlsMrEZev",
     variables: ["기관명", "학생명", "오늘수업", "학습포인트", "선생님코멘트", "원장님코멘트", "숙제", "복습팁"],
   },
   // 시험관리 알림: 기관명, 학생명, 시험명, 점수
   exam_result: {
-    templateId: "KfVANY1h0J",
+    templateId: "KA01TP251204073020148HJTQIvTPKBy",
     variables: ["기관명", "학생명", "시험명", "점수"],
   },
   // 과제관리 알림: 기관명, 학생명, 과제, 마감일
   assignment_new: {
-    templateId: "s2crA6UhRd",
+    templateId: "KA01TP251204072838441p4prMiI6EES",
     variables: ["기관명", "학생명", "과제", "마감일"],
   },
   assignment: {
-    templateId: "s2crA6UhRd",
+    templateId: "KA01TP251204072838441p4prMiI6EES",
     variables: ["기관명", "학생명", "과제", "마감일"],
   },
 };
@@ -358,7 +381,7 @@ async function createSolapiAuthHeader(apiKey: string, apiSecret: string): Promis
 export async function sendSolapiAlimtalk(
   config: SolapiConfig,
   params: {
-    type: NotificationType;
+    type: NotificationType | string;  // DB type도 허용 (class_late 등)
     phone: string;
     recipientName?: string;
     variables: Record<string, string>;
@@ -371,9 +394,11 @@ export async function sendSolapiAlimtalk(
     return { success: true, messageId: `mock_${Date.now()}` };
   }
 
-  const templateConfig = SOLAPI_TEMPLATE_CONFIGS[params.type];
+  // DB type을 템플릿 type으로 변환 (class_late → late, academy_checkin → checkin 등)
+  const templateType = toTemplateType(params.type);
+  const templateConfig = SOLAPI_TEMPLATE_CONFIGS[templateType];
   if (!templateConfig) {
-    console.error(`[Solapi] Unknown type: ${params.type}`);
+    console.error(`[Solapi] Unknown type: ${params.type} (mapped to ${templateType})`);
     return { success: false, error: `Unknown type: ${params.type}` };
   }
 
@@ -450,6 +475,81 @@ export async function sendSolapiAlimtalk(
 }
 
 /**
+ * Solapi SMS 발송 함수
+ * 알림톡 대신 일반 SMS로 메시지 발송
+ */
+export async function sendSolapiSms(
+  config: SolapiConfig,
+  params: {
+    phone: string;
+    message: string;
+    recipientName?: string;
+  }
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { apiKey, apiSecret, senderPhone } = config;
+
+  if (!apiKey || !apiSecret || !senderPhone) {
+    console.log(`[Solapi SMS] Dev mode - Would send SMS to ${params.phone}`);
+    return { success: true, messageId: `mock_sms_${Date.now()}` };
+  }
+
+  // 전화번호 정규화 (하이픈 제거)
+  const normalizedPhone = params.phone.replace(/[^0-9]/g, "");
+
+  try {
+    // HMAC-SHA256 인증 헤더 생성
+    const authHeader = await createSolapiAuthHeader(apiKey, apiSecret);
+
+    // SMS 발송 요청
+    const requestBody = {
+      message: {
+        to: normalizedPhone,
+        from: senderPhone,
+        text: params.message,
+        type: params.message.length > 90 ? "LMS" : "SMS", // 90자 초과 시 LMS
+      },
+    };
+
+    console.log(`[Solapi SMS] Sending to ${normalizedPhone}:`, {
+      length: params.message.length,
+      type: requestBody.message.type,
+    });
+
+    const response = await fetch("https://api.solapi.com/messages/v4/send", {
+      method: "POST",
+      headers: {
+        Authorization: authHeader,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    const result = await response.json() as {
+      groupId?: string;
+      messageId?: string;
+      statusCode?: string;
+      statusMessage?: string;
+      errorCode?: string;
+      errorMessage?: string;
+    };
+
+    if (response.ok && !result.errorCode) {
+      console.log(`[Solapi SMS] Sent successfully:`, {
+        groupId: result.groupId,
+        messageId: result.messageId,
+      });
+      return { success: true, messageId: result.messageId || result.groupId };
+    }
+
+    console.error("[Solapi SMS] Send failed:", result);
+    return { success: false, error: result.errorMessage || result.statusMessage || `API 오류` };
+  } catch (error) {
+    console.error("[Solapi SMS] Error:", error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
  * Solapi 템플릿 ID 업데이트 함수 (런타임에 호출 가능)
  */
 export function updateSolapiTemplateId(type: NotificationType, templateId: string): void {
@@ -471,19 +571,6 @@ export function updateAllSolapiTemplateIds(templateIds: Partial<Record<Notificat
   console.log(`[Solapi] Templates updated:`, templateIds);
 }
 
-// Legacy PPURIO 함수 (deprecated - Solapi로 대체됨)
-export async function sendPpurioAlimtalk(
-  config: PpurioConfig,
-  params: {
-    type: NotificationType;
-    phone: string;
-    recipientName?: string;
-    variables: Record<string, string>;
-  }
-): Promise<{ success: boolean; messageKey?: string; error?: string }> {
-  console.warn("[PPURIO] Deprecated - Use sendSolapiAlimtalk instead");
-  return { success: false, error: "PPURIO deprecated - use Solapi" };
-}
 
 // ============================================================
 // 잔액 확인 및 차감 (pg client 버전)
@@ -713,8 +800,7 @@ export async function recordMessageLogPostgres(
 export interface SendNotificationPostgresParams {
   sql: PostgresSql;
   telegramConfig: TelegramConfig;
-  solapiConfig?: SolapiConfig;  // Solapi로 변경 (PPURIO 대체)
-  ppurioConfig?: PpurioConfig;  // Legacy 호환성
+  solapiConfig?: SolapiConfig;  // Solapi 알림톡
   orgId: string;
   orgName: string;
   studentId: string;

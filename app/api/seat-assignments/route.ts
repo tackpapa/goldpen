@@ -449,7 +449,7 @@ export async function POST(request: Request) {
     // Check if student exists
     const { data: student, error: studentError } = await supabase
       .from('students')
-      .select('id, name')
+      .select('id, name, campuses')
       .eq('id', validated.studentId)
       .eq('org_id', orgId)
       .single()
@@ -484,6 +484,24 @@ export async function POST(request: Request) {
     if (assignError) {
       console.error('[SeatAssignments POST] Error:', assignError)
       return Response.json({ error: '좌석 배정 실패', details: assignError.message }, { status: 500 })
+    }
+
+    // 학생의 campuses 배열에 "독서실" 추가 (없으면)
+    const currentCampuses = student.campuses || []
+    if (!currentCampuses.includes('독서실')) {
+      const updatedCampuses = [...currentCampuses, '독서실']
+      const { error: campusError } = await supabase
+        .from('students')
+        .update({ campuses: updatedCampuses })
+        .eq('id', validated.studentId)
+        .eq('org_id', orgId)
+
+      if (campusError) {
+        console.error('[SeatAssignments POST] Failed to update campuses:', campusError)
+        // 좌석 배정은 성공했으므로 경고만 로그
+      } else {
+        console.log(`[SeatAssignments POST] Added "독서실" to campuses for student ${student.name}`)
+      }
     }
 
     return Response.json({

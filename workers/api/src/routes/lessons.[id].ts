@@ -204,7 +204,37 @@ app.post("/notify", async (c) => {
         queueItems
       );
 
-      console.log(`[lessons/:id/notify] Queued ${queueResult.insertedCount}/${queueItems.length} notifications`);
+      console.log(`[lessons/:id/notify] Queued ${queueResult.insertedCount}/${queueItems.length} lesson_report notifications`);
+
+      // 숙제가 있으면 과제 알림도 함께 발송
+      let assignmentQueued = 0;
+      const homeworkText = homework_assigned || lesson.homework_assigned;
+      if (homeworkText && homeworkText.trim() !== '' && homeworkText !== '-') {
+        // 마감일: 수업일 + 7일 (기본값)
+        const lessonDate = new Date(lesson.lesson_date);
+        const dueDate = new Date(lessonDate);
+        dueDate.setDate(dueDate.getDate() + 7);
+        const dueDateStr = dueDate.toISOString().split('T')[0];
+
+        // assignment_new 알림 큐에 추가
+        const assignmentQueueItems: NotificationQueuePayload[] = (studentsResult.rows as any[]).map((student) => ({
+          student_id: student.id,
+          class_id: lesson.class_id,
+          class_name: lesson.class_name || '수업',
+          title: homeworkText,
+          due_date: dueDateStr,
+        }));
+
+        const assignmentQueueResult = await insertNotificationQueueBatch(
+          client,
+          lesson.org_id,
+          'assignment_new',
+          assignmentQueueItems
+        );
+
+        assignmentQueued = assignmentQueueResult.insertedCount;
+        console.log(`[lessons/:id/notify] Queued ${assignmentQueued}/${assignmentQueueItems.length} assignment_new notifications`);
+      }
 
       // notification_sent 업데이트
       await client.query(
@@ -215,6 +245,7 @@ app.post("/notify", async (c) => {
       return {
         success: true,
         queued: queueResult.insertedCount,
+        assignmentQueued,
         total_students: studentsResult.rows.length,
         studentNames: (studentsResult.rows as any[]).map(s => s.name),
       };
