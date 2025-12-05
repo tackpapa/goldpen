@@ -662,17 +662,20 @@ export async function checkAndDeductBalance(
 export async function checkAndDeductBalancePostgres(
   sql: PostgresSql,
   orgId: string,
-  orgName: string
+  orgName: string,
+  messageType: 'sms' | 'kakao_alimtalk' = 'kakao_alimtalk'
 ): Promise<BalanceCheckResult> {
   try {
-    // 1. 알림톡 가격 조회
+    // 1. 메시지 타입에 따른 가격 조회
     const pricingRows = await sql<{ price: number; cost: number }[]>`
       SELECT price, cost FROM message_pricing
-      WHERE message_type = 'kakao_alimtalk' AND is_active = true
+      WHERE message_type = ${messageType} AND is_active = true
       LIMIT 1
     `;
-    const price = pricingRows[0]?.price ?? 100;
-    const cost = pricingRows[0]?.cost ?? 12;
+    // 폴백 가격: DB에서 조회 실패 시 기본값 (message_pricing 테이블 설정 참고)
+    const defaultPrices = { sms: { price: 55, cost: 18 }, kakao_alimtalk: { price: 50, cost: 13 } };
+    const price = pricingRows[0]?.price ?? defaultPrices[messageType].price;
+    const cost = pricingRows[0]?.cost ?? defaultPrices[messageType].cost;
 
     // 2. 현재 잔액 확인
     const balanceRows = await sql<{ credit_balance: number }[]>`
@@ -725,11 +728,13 @@ export async function checkAndDeductBalancePostgres(
     };
   } catch (error) {
     console.error(`[Balance] Error for ${orgName}:`, error);
+    // 에러 시에도 messageType에 맞는 기본 가격 반환
+    const errorPrices = { sms: { price: 55, cost: 18 }, kakao_alimtalk: { price: 50, cost: 13 } };
     return {
       success: false,
       currentBalance: 0,
-      price: 100,
-      cost: 12,
+      price: errorPrices[messageType].price,
+      cost: errorPrices[messageType].cost,
       error: String(error)
     };
   }
@@ -772,7 +777,8 @@ export async function recordMessageLogPostgres(
   price: number,
   cost: number,
   status: 'sent' | 'failed',
-  suffix: string = ''
+  suffix: string = '',
+  messageType: 'sms' | 'kakao_alimtalk' = 'kakao_alimtalk'
 ): Promise<void> {
   try {
     await sql`
@@ -782,7 +788,7 @@ export async function recordMessageLogPostgres(
         total_price, total_cost, profit,
         status, description
       ) VALUES (
-        ${orgId}, 'kakao_alimtalk', 1,
+        ${orgId}, ${messageType}, 1,
         ${price}, ${cost},
         ${price}, ${cost}, ${price - cost},
         ${status}, ${`${type}: ${studentName}${suffix}`}
@@ -810,6 +816,7 @@ export interface SendNotificationPostgresParams {
   recipientName?: string;
   message: string;
   templateVariables?: Record<string, string>; // 추가 템플릿 변수
+  messageType?: 'sms' | 'kakao_alimtalk'; // 메시지 타입 (가격 조회용)
 }
 
 export async function sendNotificationWithBalancePostgres(
@@ -828,19 +835,20 @@ export async function sendNotificationWithBalancePostgres(
     recipientName,
     message,
     templateVariables,
+    messageType = 'kakao_alimtalk', // 기본값 알림톡
   } = params;
 
-  console.log(`[Notification] 시작: ${orgName} - ${studentName} (${type})`);
+  console.log(`[Notification] 시작: ${orgName} - ${studentName} (${type}) [${messageType}]`);
 
-  // 1. 잔액 확인 및 차감
-  const balanceResult = await checkAndDeductBalancePostgres(sql, orgId, orgName);
+  // 1. 잔액 확인 및 차감 (메시지 타입에 따른 가격 조회)
+  const balanceResult = await checkAndDeductBalancePostgres(sql, orgId, orgName, messageType);
 
   if (!balanceResult.success) {
     // 잔액 부족 - 실패 기록
     await recordMessageLogPostgres(
       sql, orgId, type, studentName,
       balanceResult.price, balanceResult.cost,
-      'failed', ' (잔액부족)'
+      'failed', ' (잔액부족)', messageType
     );
     return { success: false, error: balanceResult.error };
   }
@@ -857,7 +865,7 @@ export async function sendNotificationWithBalancePostgres(
   await recordMessageLogPostgres(
     sql, orgId, type, studentName,
     balanceResult.price, balanceResult.cost,
-    'sent', ''
+    'sent', '', messageType
   );
 
   // 4. notification_logs 기록 (알림톡 통계용)

@@ -88,35 +88,7 @@ function timeToMinutes(timeStr: string): number {
   return hours * 60 + minutes;
 }
 
-// 기본 메시지 템플릿 (통합 - 모든 알림 타입)
-const DEFAULT_TEMPLATES: Record<string, string> = {
-  // 출결 알림
-  'late': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 등원 일정 시간({{예정시간}})이 지났는데 아직 도착하지 않았습니다. 확인 부탁드립니다.',
-  'absent': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 오늘 등원 일정에 출석하지 않아 결석 처리되었습니다. 사유 확인이 필요하시면 연락 부탁드립니다.',
-  'checkin': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 안전하게 도착했습니다. 오늘도 열심히 공부하겠습니다!',
-  'checkout': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 일과를 마치고 귀가했습니다. 안전하게 귀가하길 바랍니다.',
-  // 독서실 전용
-  'study_out': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 잠시 외출합니다.',
-  'study_return': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생이 {{시간}}에 복귀했습니다.',
-  // 학습 리포트
-  'daily_report': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생의 {{날짜}} 학습 현황을 전해드립니다.\n\n오늘 총 {{총학습시간}} 동안 열심히 공부했고, {{완료과목}} 과목을 완료했습니다. 꾸준히 노력하는 모습이 대견합니다!',
-  // 수업 리포트 (PPURIO 변수: 기관명, 학생명, 오늘수업, 학습포인트, 선생님, 원장님, 숙제, 복습팁)
-  'lesson_report': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생의 수업 리포트입니다.\n\n📚 오늘 수업: {{오늘수업}}\n💡 학습 포인트: {{학습포인트}}\n👨‍🏫 선생님 코멘트: {{선생님}}\n👔 원장님 코멘트: {{원장님}}\n📝 숙제: {{숙제}}\n📖 복습 팁: {{복습팁}}\n\n오늘도 수고했어요!',
-  // 시험/과제 알림
-  'exam_result': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생의 시험 결과를 안내드립니다.\n\n{{시험명}}: {{점수}}\n\n열심히 준비한 만큼 좋은 결과로 이어지길 바랍니다!',
-  'assignment': '[{{기관명}}] 학부모님 안녕하세요.\n\n{{학생명}} 학생에게 새 과제가 등록되었습니다.\n\n📝 과제: {{과제명}}\n📅 마감일: {{마감일}}\n\n과제 제출 잊지 마세요!',
-}
-
-// 템플릿 변수 치환 함수
-function fillTemplate(template: string, variables: Record<string, string>): string {
-  let result = template
-  for (const [key, value] of Object.entries(variables)) {
-    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value)
-  }
-  return result
-}
-
-// 조직 설정에서 템플릿 가져오기
+// 조직 설정에서 템플릿 가져오기 (DEFAULT_TEMPLATES, fillTemplate는 shared/notifications에서 import)
 const templateCache: Record<string, { templates: Record<string, string>; timestamp: number }> = {}
 const CACHE_TTL = 5 * 60 * 1000 // 5분 캐시
 
@@ -907,13 +879,11 @@ async function processCommuteAbsence(
 
 type NotificationType =
   | "late" | "absent"
-  | "checkin" | "checkout"
   | "daily_report"
   | "commute_late" | "commute_absent";
 
 // DB에 저장되는 실제 type (notification_logs_type_check constraint)
 type DbNotificationType =
-  | "study_late" | "study_absent"
   | "class_late" | "class_absent"
   | "commute_late" | "commute_absent"
   | "academy_checkin" | "academy_checkout"
@@ -922,30 +892,13 @@ type DbNotificationType =
   | "daily_report" | "lesson_report" | "exam_result" | "assignment_new";
 
 // context에 따라 DB type 변환
-function toDbNotificationType(type: NotificationType, context?: 'class' | 'study' | 'academy' | 'commute'): DbNotificationType {
-  // commute_late/commute_absent는 직접 DB type으로 사용
-  if (type === 'commute_late') {
-    return 'commute_late';
-  }
-  if (type === 'commute_absent') {
-    return 'commute_absent';
-  }
-  if (type === 'late') {
-    return context === 'class' ? 'class_late' : 'study_late';
-  }
-  if (type === 'absent') {
-    return context === 'class' ? 'class_absent' : 'study_absent';
-  }
-  if (type === 'checkin') {
-    return context === 'academy' ? 'academy_checkin' : 'study_checkin';
-  }
-  if (type === 'checkout') {
-    return context === 'academy' ? 'academy_checkout' : 'study_checkout';
-  }
-  if (type === 'daily_report') {
-    return 'daily_report';  // daily_report는 그대로 유지 (lesson_report와 구분)
-  }
-  return 'study_late'; // fallback
+function toDbNotificationType(type: NotificationType): DbNotificationType {
+  if (type === 'commute_late') return 'commute_late';
+  if (type === 'commute_absent') return 'commute_absent';
+  if (type === 'late') return 'class_late';
+  if (type === 'absent') return 'class_absent';
+  if (type === 'daily_report') return 'daily_report';
+  return 'daily_report'; // fallback
 }
 
 interface NotificationParams {
@@ -974,7 +927,6 @@ async function sendNotification(
     studentId,
     studentName,
     type,
-    context,
     classId,
     targetDate,
     scheduledTime,
@@ -983,8 +935,8 @@ async function sendNotification(
     templateVariables,
   } = params;
 
-  // DB에 저장할 때는 context에 맞는 type으로 변환
-  const dbType = toDbNotificationType(type, context);
+  // DB에 저장할 때는 type을 DB type으로 변환
+  const dbType = toDbNotificationType(type);
 
   try {
     const existing = await sql`
@@ -1002,16 +954,23 @@ async function sendNotification(
       return;
     }
 
-    // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용)
-    const balanceResult = await checkAndDeductBalancePostgres(sql, orgId, orgName);
+    // 🔴 org_settings에서 use_sms 설정 조회 (가격 계산 및 발송 방식 결정용)
+    const orgSettingsResult = await sql`
+      SELECT settings FROM org_settings WHERE org_id = ${orgId}
+    `;
+    const useSms = orgSettingsResult[0]?.settings?.use_sms === true;
+    const messageType: 'sms' | 'kakao_alimtalk' = useSms ? 'sms' : 'kakao_alimtalk';
+
+    // 🔴 잔액 확인 및 차감 (shared 라이브러리 사용) - messageType 전달
+    const balanceResult = await checkAndDeductBalancePostgres(sql, orgId, orgName, messageType);
 
     if (!balanceResult.success) {
       console.log(`[Notification] 잔액 부족으로 건너뜀: ${orgName} - ${studentName} (${dbType})`);
-      // 잔액 부족 시 실패 기록
+      // 잔액 부족 시 실패 기록 - messageType 전달
       await recordMessageLogPostgres(
         sql, orgId, dbType as SharedNotificationType, studentName,
         balanceResult.price, balanceResult.cost,
-        'failed', ' (잔액부족)'
+        'failed', ' (잔액부족)', messageType
       );
       return;
     }
@@ -1024,11 +983,11 @@ async function sendNotification(
       dbType as SharedNotificationType, studentName
     );
 
-    // 메시지 로그 기록 (성공)
+    // 메시지 로그 기록 (성공) - messageType 전달
     await recordMessageLogPostgres(
       sql, orgId, dbType as SharedNotificationType, studentName,
       balanceResult.price, balanceResult.cost,
-      'sent', ''
+      'sent', '', messageType
     );
 
     await sql`
@@ -1071,12 +1030,7 @@ async function sendNotification(
         senderPhone: env.SOLAPI_SENDER_PHONE,
       };
 
-      // organization 설정에서 SMS/알림톡 선택 확인 (org_settings 테이블 사용)
-      const orgSettings = await sql`
-        SELECT settings FROM org_settings WHERE org_id = ${orgId}
-      `;
-      const useSms = orgSettings[0]?.settings?.use_sms === true;
-
+      // 🔴 위에서 이미 조회한 useSms 사용 (중복 조회 제거)
       if (useSms) {
         // SMS 발송 - 템플릿에서 메시지 생성
         const templateType = toTemplateType(dbType);
@@ -1347,6 +1301,13 @@ async function processNotificationQueue(
         timeZone: "Asia/Seoul"
       });
 
+      // org_settings에서 use_sms 설정 조회 (메시지 타입 결정용)
+      const orgSettingsResult = await sql`
+        SELECT settings FROM org_settings WHERE org_id = ${student.org_id}
+      `;
+      const useSms = orgSettingsResult[0]?.settings?.use_sms === true;
+      const messageType: 'sms' | 'kakao_alimtalk' = useSms ? 'sms' : 'kakao_alimtalk';
+
       // ============================================================
       // 타입별 직접 처리 (API 호출 제거)
       // ============================================================
@@ -1380,6 +1341,7 @@ async function processNotificationQueue(
           recipientPhone: student.parent_phone,
           message: checkinMessage,
           templateVariables: { 시간: timeStr },
+          messageType,
         });
 
         if (!notificationResult.success) {
@@ -1459,6 +1421,7 @@ async function processNotificationQueue(
           recipientPhone: student.parent_phone,
           message: checkoutMessage,
           templateVariables: { 시간: timeStr },
+          messageType,
         });
 
         if (!notificationResult.success) {
@@ -1502,6 +1465,7 @@ async function processNotificationQueue(
           recipientPhone: student.parent_phone,
           message: outMessage,
           templateVariables: { 시간: timeStr },
+          messageType,
         });
 
         if (!notificationResult.success) {
@@ -1567,6 +1531,7 @@ async function processNotificationQueue(
           recipientPhone: student.parent_phone,
           message: returnMessage,
           templateVariables: { 시간: timeStr },
+          messageType,
         });
 
         if (!notificationResult.success) {
@@ -1611,6 +1576,7 @@ async function processNotificationQueue(
           type: 'assignment_new',
           recipientPhone: student.parent_phone,
           message: assignmentMessage,
+          messageType,
           templateVariables: {
             기관명: student.org_name,
             학생명: student.name,
@@ -1661,6 +1627,7 @@ async function processNotificationQueue(
           type: 'exam_result',
           recipientPhone: student.parent_phone,
           message: examMessage,
+          messageType,
           templateVariables: {
             기관명: student.org_name,
             학생명: student.name,
@@ -1714,6 +1681,7 @@ async function processNotificationQueue(
           type: 'lesson_report',
           recipientPhone: student.parent_phone,
           message: lessonMessage,
+          messageType,
           templateVariables: {
             기관명: student.org_name,
             학생명: student.name,

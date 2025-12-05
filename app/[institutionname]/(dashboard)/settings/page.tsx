@@ -89,6 +89,17 @@ interface ServiceUsage {
   cost: number
 }
 
+// SMS Usage Type (알림톡과 동일한 구조)
+interface SmsUsage {
+  id: string
+  date: string
+  type: string
+  recipient: string
+  count: number
+  cost: number
+  status: 'success' | 'failed'
+}
+
 interface UsageSummary {
   type: string
   count: number
@@ -144,6 +155,8 @@ export default function SettingsPage() {
   const [institutionName, setInstitutionName] = useState<string>('')
   const [branches, setBranches] = useState<Branch[]>([])
   const [kakaoTalkUsages, setKakaoTalkUsages] = useState<KakaoTalkUsage[]>([])
+  const [smsUsages, setSmsUsages] = useState<SmsUsage[]>([])
+  const [smsSummary, setSmsSummary] = useState<UsageSummary[]>([])
   const [serviceUsages, setServiceUsages] = useState<ServiceUsage[]>([])
   const [usageSummary, setUsageSummary] = useState<UsageSummary[]>([])
   const [creditTransactions, setCreditTransactions] = useState<CreditTransaction[]>([])
@@ -156,6 +169,7 @@ export default function SettingsPage() {
 
   // 무한 스크롤용 표시 개수
   const [kakaoDisplayCount, setKakaoDisplayCount] = useState(10)
+  const [smsDisplayCount, setSmsDisplayCount] = useState(10)
   const [serviceDisplayCount, setServiceDisplayCount] = useState(10)
   const [creditDisplayCount, setCreditDisplayCount] = useState(10)
 
@@ -227,6 +241,8 @@ export default function SettingsPage() {
               kakaoTalkUsages?: KakaoTalkUsage[]
               serviceUsages?: ServiceUsage[]
               usageSummary?: UsageSummary[]
+              smsUsages?: SmsUsage[]
+              smsSummary?: UsageSummary[]
               creditTransactions?: CreditTransaction[]
               totalAlimtalkCount?: number
               totalAlimtalkCost?: number
@@ -270,6 +286,8 @@ export default function SettingsPage() {
           // billing 데이터 설정
           if (billingRes.ok) {
             if (billingData.kakaoTalkUsages) setKakaoTalkUsages(billingData.kakaoTalkUsages)
+            if (billingData.smsUsages) setSmsUsages(billingData.smsUsages)
+            if (billingData.smsSummary) setSmsSummary(billingData.smsSummary)
             if (billingData.serviceUsages) setServiceUsages(billingData.serviceUsages)
             if (billingData.usageSummary) setUsageSummary(billingData.usageSummary)
             if (billingData.creditTransactions) setCreditTransactions(billingData.creditTransactions)
@@ -342,6 +360,8 @@ export default function SettingsPage() {
         kakaoTalkUsages?: KakaoTalkUsage[]
         serviceUsages?: ServiceUsage[]
         usageSummary?: UsageSummary[]
+        smsUsages?: SmsUsage[]
+        smsSummary?: UsageSummary[]
         creditTransactions?: CreditTransaction[]
         totalAlimtalkCount?: number
         totalAlimtalkCost?: number
@@ -3187,7 +3207,7 @@ export default function SettingsPage() {
               <Tabs value={currentSubTab} onValueChange={handleSubTabChange}>
                 <TabsList>
                   <TabsTrigger value="kakaotalk-usage">알림톡 이용내역</TabsTrigger>
-                  <TabsTrigger value="service-usage">SMS/기타 이용내역</TabsTrigger>
+                  <TabsTrigger value="service-usage">SMS 이용내역</TabsTrigger>
                   <TabsTrigger value="credit-history">충전/차감 내역</TabsTrigger>
                 </TabsList>
 
@@ -3269,37 +3289,59 @@ export default function SettingsPage() {
                   </div>
                 </TabsContent>
 
-                {/* Service Usage History */}
+                {/* SMS Usage History */}
                 <TabsContent value="service-usage" className="space-y-4">
+                  {/* 유형별 집계 */}
+                  {smsSummary.length > 0 && (
+                    <div className="grid gap-3 md:grid-cols-5">
+                      {smsSummary.map((summary) => (
+                        <div key={summary.type} className="rounded-lg border p-3">
+                          <div className="text-xs text-muted-foreground">{summary.type}</div>
+                          <div className="flex items-baseline justify-between mt-1">
+                            <span className="text-lg font-semibold">{summary.count}건</span>
+                            <span className="text-sm text-muted-foreground">₩{summary.cost.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className="rounded-md border">
                     <div className="overflow-auto max-h-[600px]">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50 sticky top-0">
                           <tr className="border-b">
-                            <th className="h-10 px-4 text-left align-middle font-medium">발생일</th>
-                            <th className="h-10 px-4 text-left align-middle font-medium">타입</th>
-                            <th className="h-10 px-4 text-left align-middle font-medium">설명</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">발송일</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">알림 유형</th>
+                            <th className="h-10 px-4 text-left align-middle font-medium">수신자</th>
                             <th className="h-10 px-4 text-right align-middle font-medium">건수</th>
                             <th className="h-10 px-4 text-right align-middle font-medium">비용</th>
+                            <th className="h-10 px-4 text-center align-middle font-medium">상태</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {serviceUsages.length === 0 ? (
+                          {smsUsages.length === 0 ? (
                             <tr>
-                              <td colSpan={5} className="p-8 text-center text-muted-foreground">
-                                SMS/기타 서비스 이용 내역이 없습니다.
+                              <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                                SMS 발송 내역이 없습니다.
                               </td>
                             </tr>
                           ) : (
-                            serviceUsages.slice(0, serviceDisplayCount).map((usage) => (
+                            smsUsages.slice(0, smsDisplayCount).map((usage) => (
                               <tr key={usage.id} className="border-b hover:bg-muted/50">
                                 <td className="p-4 align-middle">{usage.date}</td>
                                 <td className="p-4 align-middle">
-                                  <Badge variant="secondary">{usage.type}</Badge>
+                                  <Badge variant="outline">{getNotificationTypeLabel(usage.type)}</Badge>
                                 </td>
-                                <td className="p-4 align-middle">{usage.description}</td>
+                                <td className="p-4 align-middle text-muted-foreground max-w-xs truncate">
+                                  {usage.recipient?.replace(' (잔액부족)', '') || '-'}
+                                </td>
                                 <td className="p-4 align-middle text-right">{usage.count}</td>
                                 <td className="p-4 align-middle text-right">₩{usage.cost.toLocaleString()}</td>
+                                <td className="p-4 align-middle text-center">
+                                  <Badge variant={usage.status === 'success' ? 'default' : 'destructive'}>
+                                    {usage.status === 'success' ? '성공' : usage.recipient?.includes('잔액부족') ? '잔액부족' : '실패'}
+                                  </Badge>
+                                </td>
                               </tr>
                             ))
                           )}
@@ -3309,15 +3351,15 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">
-                      {serviceDisplayCount < serviceUsages.length
-                        ? `${serviceDisplayCount}건 표시 중 (전체 ${serviceUsages.length}건)`
-                        : `총 ${serviceUsages.length}건`} · 합계: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                      {smsDisplayCount < smsUsages.length
+                        ? `${smsDisplayCount}건 표시 중 (전체 ${smsUsages.length}건)`
+                        : `총 ${smsUsages.length}건`} · 합계: ₩{smsUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
                     </p>
-                    {serviceDisplayCount < serviceUsages.length && (
+                    {smsDisplayCount < smsUsages.length && (
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setServiceDisplayCount(prev => prev + 10)}
+                        onClick={() => setSmsDisplayCount(prev => prev + 10)}
                       >
                         더보기 (+10)
                       </Button>
