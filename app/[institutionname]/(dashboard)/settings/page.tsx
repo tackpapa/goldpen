@@ -3159,8 +3159,9 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* 서비스 플랜 카드 - 나중에 사용할 수 있으므로 hidden 처리 */}
             <Card
-              className="cursor-pointer hover:border-primary transition-colors"
+              className="hidden cursor-pointer hover:border-primary transition-colors"
               onClick={() => setShowPricingPlans(!showPricingPlans)}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
