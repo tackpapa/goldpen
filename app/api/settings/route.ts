@@ -178,11 +178,11 @@ export async function GET(request: Request) {
           .eq('message_type', 'sms')
           .gte('created_at', monthStart)
           .lte('created_at', monthEnd),
-        // 충전 내역만 (최근 50건) - charge 타입만 필터링
+        // 충전 내역만 (최근 50건) - 양수 금액만 필터링 (free/paid 타입)
         db.from('credit_transactions')
           .select('id, type, amount, balance_after, description, created_at')
           .eq('org_id', orgId)
-          .eq('type', 'charge')
+          .gt('amount', 0)
           .order('created_at', { ascending: false })
           .limit(50),
       ])
