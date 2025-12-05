@@ -35,6 +35,13 @@ import {
 import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
 
+interface MessageTypeStats {
+  count: number
+  price: number
+  cost: number
+  profit: number
+}
+
 interface Stats {
   total_count: number
   success_count: number
@@ -43,6 +50,12 @@ interface Stats {
   total_price: number
   total_cost: number
   total_profit: number
+  by_message_type?: {
+    kakao_alimtalk: MessageTypeStats
+    sms: MessageTypeStats
+    lms: MessageTypeStats
+    mms: MessageTypeStats
+  }
 }
 
 interface OrgUsage {
@@ -51,7 +64,11 @@ interface OrgUsage {
   org_type: string
   count: number
   recipients: number
-  cost: number
+  price: number       // 매출
+  cost: number        // 원가
+  profit: number      // 이익
+  kakao_count: number // 카카오 발송 수
+  sms_count: number   // SMS 발송 수
 }
 
 interface RecentUsage {
@@ -61,7 +78,6 @@ interface RecentUsage {
   student_name: string
   type: string
   message: string
-  cost: number
   status: string
   error_message?: string
   sent_at: string
@@ -216,7 +232,7 @@ export default function KakaoPage() {
   if (isLoading) {
     return (
       <div className="space-y-6">
-        <h1 className="text-3xl font-bold">카카오 알림톡 모니터링</h1>
+        <h1 className="text-3xl font-bold">메시지 발송 모니터링</h1>
         <div className="animate-pulse space-y-4">
           <div className="grid gap-4 md:grid-cols-6">
             {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -233,9 +249,9 @@ export default function KakaoPage() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold mb-2">카카오 알림톡 모니터링</h1>
+          <h1 className="text-3xl font-bold mb-2">메시지 발송 모니터링</h1>
           <p className="text-muted-foreground">
-            전체 기관의 알림톡 사용 현황을 확인합니다
+            전체 기관의 알림톡/SMS 발송 현황을 확인합니다
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -279,6 +295,74 @@ export default function KakaoPage() {
           )
         })}
       </div>
+
+      {/* 메시지 타입별 통계 (SMS vs 카카오) */}
+      {stats.by_message_type && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">채널별 발송 현황</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-4">
+              {/* 카카오 알림톡 */}
+              <div className="p-4 rounded-lg bg-yellow-50 border border-yellow-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-yellow-600 font-medium">카카오 알림톡</span>
+                </div>
+                <div className="text-2xl font-bold">{stats.by_message_type.kakao_alimtalk.count.toLocaleString()}건</div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  매출 {stats.by_message_type.kakao_alimtalk.price.toLocaleString()}원
+                </div>
+                <div className="text-xs text-emerald-600">
+                  이익 {stats.by_message_type.kakao_alimtalk.profit.toLocaleString()}원
+                </div>
+              </div>
+
+              {/* SMS */}
+              <div className="p-4 rounded-lg bg-blue-50 border border-blue-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-blue-600 font-medium">SMS</span>
+                </div>
+                <div className="text-2xl font-bold">{stats.by_message_type.sms.count.toLocaleString()}건</div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  매출 {stats.by_message_type.sms.price.toLocaleString()}원
+                </div>
+                <div className="text-xs text-emerald-600">
+                  이익 {stats.by_message_type.sms.profit.toLocaleString()}원
+                </div>
+              </div>
+
+              {/* LMS */}
+              <div className="p-4 rounded-lg bg-purple-50 border border-purple-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-purple-600 font-medium">LMS</span>
+                </div>
+                <div className="text-2xl font-bold">{stats.by_message_type.lms.count.toLocaleString()}건</div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  매출 {stats.by_message_type.lms.price.toLocaleString()}원
+                </div>
+                <div className="text-xs text-emerald-600">
+                  이익 {stats.by_message_type.lms.profit.toLocaleString()}원
+                </div>
+              </div>
+
+              {/* MMS */}
+              <div className="p-4 rounded-lg bg-pink-50 border border-pink-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-pink-600 font-medium">MMS</span>
+                </div>
+                <div className="text-2xl font-bold">{stats.by_message_type.mms.count.toLocaleString()}건</div>
+                <div className="text-sm text-muted-foreground mt-1">
+                  매출 {stats.by_message_type.mms.price.toLocaleString()}원
+                </div>
+                <div className="text-xs text-emerald-600">
+                  이익 {stats.by_message_type.mms.profit.toLocaleString()}원
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 알림 유형별 통계 + 기관별 사용량 */}
       <div className="grid gap-4 md:grid-cols-2">
@@ -354,8 +438,12 @@ export default function KakaoPage() {
                     </div>
                     <div className="text-right">
                       <div className="font-medium">{org.count.toLocaleString()}건</div>
-                      <div className="text-sm text-muted-foreground">
-                        {org.cost.toLocaleString()}원
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {org.kakao_count > 0 && <span className="text-yellow-600">카톡 {org.kakao_count}</span>}
+                        {org.sms_count > 0 && <span className="text-blue-600">SMS {org.sms_count}</span>}
+                      </div>
+                      <div className="text-sm text-emerald-600 font-medium">
+                        {org.price.toLocaleString()}원
                       </div>
                     </div>
                   </div>
@@ -435,13 +523,12 @@ export default function KakaoPage() {
                   <TableHead>수신자</TableHead>
                   <TableHead>유형</TableHead>
                   <TableHead>상태</TableHead>
-                  <TableHead className="text-right">비용</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {recentUsages.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={5} className="h-24 text-center">
                       발송 내역이 없습니다
                     </TableCell>
                   </TableRow>
@@ -475,9 +562,6 @@ export default function KakaoPage() {
                             (!)
                           </span>
                         )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {usage.cost.toLocaleString()}원
                       </TableCell>
                     </TableRow>
                   ))

@@ -14,9 +14,7 @@ const mapHw = (row: any) => ({
   due_date: row.due_date,
   class_id: row.class_id,
   class_name: row.class_name,
-  teacher_id: row.teacher_id,
   status: row.status,
-  submission_url: row.submission_url,
   total_students: row.total_students ?? 0,
   submitted_count: row.submitted_count ?? 0,
   created_at: row.created_at,
@@ -55,12 +53,10 @@ app.post("/", async (c) => {
     const body = await c.req.json();
     const {
       title,
-      description = null,
+      description = '', // NOT NULL 제약조건이므로 빈 문자열 기본값
       due_date = null,
       class_id = null,
-      teacher_id = null,
       status = "active",
-      submission_url = null,
       send_notification = true, // 알림 발송 여부
     } = body || {};
     if (!title) return c.json({ error: "title is required" }, 400);
@@ -91,8 +87,8 @@ app.post("/", async (c) => {
       const finalDueDate = due_date || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
       const { rows } = await client.query(
-        `INSERT INTO homework (org_id, title, description, due_date, class_id, class_name, teacher_id, status, submission_url, total_students, submitted_count)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+        `INSERT INTO homework (org_id, title, description, due_date, class_id, class_name, status, total_students, submitted_count)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
         [
           orgId,
           title,
@@ -100,9 +96,7 @@ app.post("/", async (c) => {
           finalDueDate,
           class_id,
           classRow.name,
-          teacher_id,
           status,
-          submission_url,
           totalStudents,
           0, // 새로 생성된 과제는 제출 수 0
         ],

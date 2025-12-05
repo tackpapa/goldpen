@@ -36,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { Plus, Edit, BookOpen, TrendingUp, Sparkles, Calendar, Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import type { LessonNote } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
 import { Checkbox } from '@/components/ui/checkbox'
 import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
@@ -421,12 +422,26 @@ export default function LessonsPage() {
 
     setIsSendingNotification(true)
     try {
-      // Workers API를 통해 알림톡 발송 (텔레그램 포함)
+      // Supabase 세션에서 access_token 가져오기
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        toast({ title: '인증이 필요합니다. 다시 로그인해주세요.', variant: 'destructive' })
+        setIsSendingNotification(false)
+        return
+      }
+
+      // Workers API (BFF)를 통해 알림톡 발송 - Authorization 헤더로 토큰 전달
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
 
       const notificationResponse = await fetch(`${apiUrl}/api/lessons/${selectedLesson.id}/notify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           lesson_id: selectedLesson.id,
           class_name: selectedLesson.class_name || formData.class_name,
@@ -553,11 +568,25 @@ export default function LessonsPage() {
 
     setIsGeneratingFeedback(true)
     try {
-      // Workers API URL (production)
+      // Supabase 세션에서 access_token 가져오기
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        toast({ title: '인증이 필요합니다. 다시 로그인해주세요.', variant: 'destructive' })
+        setIsGeneratingFeedback(false)
+        return
+      }
+
+      // Workers API (BFF) URL - Authorization 헤더로 토큰 전달
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
       const response = await fetch(`${apiUrl}/api/ai/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           type: 'feedback',
           lesson: {
@@ -612,10 +641,24 @@ export default function LessonsPage() {
 
     setIsGeneratingDirectorFeedback(true)
     try {
+      // Supabase 세션에서 access_token 가져오기
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        toast({ title: '인증이 필요합니다. 다시 로그인해주세요.', variant: 'destructive' })
+        setIsGeneratingDirectorFeedback(false)
+        return
+      }
+
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
       const response = await fetch(`${apiUrl}/api/ai/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           type: 'director_feedback',
           lesson: {
@@ -671,11 +714,21 @@ export default function LessonsPage() {
 
     setIsGeneratingFinalMessage(true)
     try {
+      const supabase = createClient()
+
       // Workers API URL (production)
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+
+      // Get access token for cross-origin API call
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
       const response = await fetch(`${apiUrl}/api/ai/generate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           type: 'alimtalk_variables',  // 뿌리오용 변수 생성
           lesson: {
@@ -800,11 +853,19 @@ export default function LessonsPage() {
       // Workers API로 과제 생성 (알림 발송 로직 포함)
       if (formData.homework_assigned && formData.homework_due_date && formData.class_id) {
         try {
+          const supabase = createClient()
           const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
+
+          // Get access token for cross-origin API call
+          const { data: { session: hwSession } } = await supabase.auth.getSession()
+          const hwAccessToken = hwSession?.access_token
+
           const homeworkResponse = await fetch(`${apiUrl}/api/homework`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${hwAccessToken}`,
+            },
             body: JSON.stringify({
               class_id: formData.class_id,
               title: formData.homework_assigned,

@@ -23,7 +23,7 @@ async function checkSuperAdmin(request: Request) {
   return { authorized: true, user }
 }
 
-// GET /api/admin/kakao - 카카오 알림톡 전체 현황
+// GET /api/admin/kakao - 메시지 발송 전체 현황 (카카오 알림톡 + SMS)
 // 데이터 소스: notification_logs (발송 기록) + message_logs (비용/손익)
 export async function GET(request: Request) {
   try {
@@ -71,12 +71,12 @@ export async function GET(request: Request) {
         return query
       })(),
 
-      // 2. 비용 통계 - message_logs
+      // 2. 비용 통계 - message_logs (카카오 + SMS 모두 포함)
       (() => {
         let query = adminClient
           .from('message_logs')
-          .select('recipient_count, total_price, total_cost, profit')
-          .eq('message_type', 'kakao_alimtalk')
+          .select('message_type, recipient_count, total_price, total_cost, profit')
+          .in('message_type', ['kakao_alimtalk', 'sms', 'lms', 'mms'])
           .gte('created_at', startDate.toISOString())
         if (orgId) query = query.eq('org_id', orgId)
         return query
@@ -88,11 +88,11 @@ export async function GET(request: Request) {
         .select('org_id')
         .gte('created_at', startDate.toISOString()),
 
-      // 4. 기관별 비용 - message_logs
+      // 4. 기관별 비용 - message_logs (카카오 + SMS 모두 포함)
       adminClient
         .from('message_logs')
-        .select('org_id, recipient_count, total_price')
-        .eq('message_type', 'kakao_alimtalk')
+        .select('org_id, message_type, recipient_count, total_price, total_cost')
+        .in('message_type', ['kakao_alimtalk', 'sms', 'lms', 'mms'])
         .gte('created_at', startDate.toISOString()),
 
       // 5. 최근 발송 내역
@@ -143,17 +143,40 @@ export async function GET(request: Request) {
       else failedCount++
     })
 
-    // 2. 비용 통계
+    // 2. 비용 통계 (메시지 타입별 분리)
     const msgData = msgStatsResult.data || []
     let totalRecipients = 0
     let totalPrice = 0
     let totalCost = 0
     let totalProfit = 0
-    msgData.forEach((m) => {
-      totalRecipients += m.recipient_count || 0
-      totalPrice += m.total_price || 0
-      totalCost += m.total_cost || 0
-      totalProfit += m.profit || 0
+
+    // 메시지 타입별 통계
+    const messageTypeStats: Record<string, { count: number; price: number; cost: number; profit: number }> = {
+      kakao_alimtalk: { count: 0, price: 0, cost: 0, profit: 0 },
+      sms: { count: 0, price: 0, cost: 0, profit: 0 },
+      lms: { count: 0, price: 0, cost: 0, profit: 0 },
+      mms: { count: 0, price: 0, cost: 0, profit: 0 },
+    }
+
+    msgData.forEach((m: any) => {
+      const recipients = m.recipient_count || 0
+      const price = m.total_price || 0
+      const cost = m.total_cost || 0
+      const profit = m.profit || 0
+
+      totalRecipients += recipients
+      totalPrice += price
+      totalCost += cost
+      totalProfit += profit
+
+      // 타입별 집계
+      const msgType = m.message_type as string
+      if (messageTypeStats[msgType]) {
+        messageTypeStats[msgType].count += recipients
+        messageTypeStats[msgType].price += price
+        messageTypeStats[msgType].cost += cost
+        messageTypeStats[msgType].profit += profit
+      }
     })
 
     const stats = {
@@ -164,6 +187,8 @@ export async function GET(request: Request) {
       total_price: totalPrice,
       total_cost: totalCost,
       total_profit: totalProfit,
+      // 메시지 타입별 분리 통계
+      by_message_type: messageTypeStats,
     }
 
     // 3. 기관별 사용량
@@ -173,15 +198,22 @@ export async function GET(request: Request) {
       orgCounts[n.org_id] = (orgCounts[n.org_id] || 0) + 1
     })
 
-    // 4. 기관별 비용
+    // 4. 기관별 비용 (SMS + 카카오 통합)
     const orgMsgs = orgMsgsResult.data || []
-    const orgCosts: Record<string, { recipients: number; price: number }> = {}
-    orgMsgs.forEach((m) => {
+    const orgCosts: Record<string, { recipients: number; price: number; cost: number; kakao: number; sms: number }> = {}
+    orgMsgs.forEach((m: any) => {
       if (!orgCosts[m.org_id]) {
-        orgCosts[m.org_id] = { recipients: 0, price: 0 }
+        orgCosts[m.org_id] = { recipients: 0, price: 0, cost: 0, kakao: 0, sms: 0 }
       }
       orgCosts[m.org_id].recipients += m.recipient_count || 0
       orgCosts[m.org_id].price += m.total_price || 0
+      orgCosts[m.org_id].cost += m.total_cost || 0
+      // 타입별 카운트
+      if (m.message_type === 'kakao_alimtalk') {
+        orgCosts[m.org_id].kakao += m.recipient_count || 0
+      } else if (m.message_type === 'sms' || m.message_type === 'lms' || m.message_type === 'mms') {
+        orgCosts[m.org_id].sms += m.recipient_count || 0
+      }
     })
 
     // 기관 정보 가져오기 (별도 쿼리 - 필요한 경우만)
@@ -208,11 +240,15 @@ export async function GET(request: Request) {
         org_type: orgDetails[id]?.type || 'unknown',
         count: orgCounts[id] || 0,
         recipients: orgCosts[id]?.recipients || 0,
-        cost: orgCosts[id]?.price || 0,
+        price: orgCosts[id]?.price || 0,  // 매출
+        cost: orgCosts[id]?.cost || 0,    // 원가
+        profit: (orgCosts[id]?.price || 0) - (orgCosts[id]?.cost || 0),  // 이익
+        kakao_count: orgCosts[id]?.kakao || 0,
+        sms_count: orgCosts[id]?.sms || 0,
       }))
       .sort((a, b) => b.count - a.count)
 
-    // 5. 최근 발송 내역
+    // 5. 최근 발송 내역 (notification_logs에는 비용 정보 없음 - message_logs에서 별도 조회 필요)
     const recentNotifs = recentNotifsResult.data || []
     const recentWithOrg = recentNotifs.map((n: any) => ({
       id: n.id,
@@ -224,7 +260,7 @@ export async function GET(request: Request) {
       status: n.status,
       error_message: n.error_message,
       sent_at: n.created_at,
-      cost: 100,
+      // 비용은 별도의 message_logs 테이블에 기록됨 (stats.by_message_type 참조)
     }))
 
     // 6. 일별 통계 (JavaScript 그룹화 - 7개 쿼리 제거!)

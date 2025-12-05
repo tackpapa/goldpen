@@ -465,18 +465,44 @@ export default function ClassesPage() {
   }
 
   const handleToggleStudent = (studentId: string) => {
-    setSelectedStudents((prev) =>
-      prev.includes(studentId)
-        ? prev.filter((id) => id !== studentId)
-        : [...prev, studentId]
-    )
+    setSelectedStudents((prev) => {
+      // 이미 선택된 학생 해제는 항상 허용
+      if (prev.includes(studentId)) {
+        return prev.filter((id) => id !== studentId)
+      }
+
+      // 정원 확인 (새 반 생성: watch('capacity'), 기존 반: classForAssignment.capacity)
+      const capacity = classForAssignment?.capacity || watch('capacity') || 20
+
+      // 정원 초과 시 추가 선택 방지
+      if (prev.length >= capacity) {
+        toast({
+          title: '정원 초과',
+          description: `최대 ${capacity}명까지만 배정할 수 있습니다.`,
+          variant: 'destructive',
+        })
+        return prev
+      }
+
+      return [...prev, studentId]
+    })
   }
 
   const handleSaveStudentAssignment = () => {
-    if (!classForAssignment) {
+    // 새 반 생성 모드 (classForAssignment가 없거나 id가 없음)
+    // → 드래프트에만 저장하고 API 호출 안 함
+    if (!classForAssignment || !classForAssignment.id) {
+      setSelectedStudentsDraft(selectedStudents)
       setIsAssignStudentDialogOpen(false)
+      setIsDialogOpen(true) // 부모 모달 유지
+      toast({
+        title: '학생 선택 완료',
+        description: `${selectedStudents.length}명의 학생이 선택되었습니다. 반 생성 시 자동으로 배정됩니다.`,
+      })
       return
     }
+
+    // 기존 반 수정 모드 → API로 즉시 배정
     setIsLoading(true)
     const classId = classForAssignment.id
 
@@ -639,10 +665,44 @@ export default function ClassesPage() {
         })
 
         if (response.ok) {
-          toast({
-            title: '생성 완료',
-            description: '반이 생성되었습니다.',
-          })
+          const result = await response.json() as { class?: { id: string } }
+          const newClassId = result.class?.id
+
+          // 드래프트에 학생이 있으면 배정 API 호출
+          if (newClassId && selectedStudentsDraft.length > 0) {
+            try {
+              const assignRes = await fetch(`/api/classes/${newClassId}/assign-students`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ student_ids: selectedStudentsDraft }),
+              })
+              if (assignRes.ok) {
+                toast({
+                  title: '반 생성 및 학생 배정 완료',
+                  description: `반이 생성되고 ${selectedStudentsDraft.length}명의 학생이 배정되었습니다.`,
+                })
+              } else {
+                toast({
+                  title: '반 생성 완료 (학생 배정 실패)',
+                  description: '반은 생성되었으나 학생 배정에 실패했습니다. 반 목록에서 다시 배정해주세요.',
+                  variant: 'destructive',
+                })
+              }
+            } catch {
+              toast({
+                title: '반 생성 완료 (학생 배정 실패)',
+                description: '반은 생성되었으나 학생 배정에 실패했습니다.',
+                variant: 'destructive',
+              })
+            }
+          } else {
+            toast({
+              title: '생성 완료',
+              description: '반이 생성되었습니다.',
+            })
+          }
+
+          setSelectedStudentsDraft([])
           setIsDialogOpen(false)
           reset()
           // SWR 캐시 갱신
@@ -955,7 +1015,15 @@ export default function ClassesPage() {
                 variant="outline"
                 onClick={() => {
                   setClassForAssignment(editingClass || null)
-                  setIsAssignStudentDialogOpen(true)
+                  // 새 반 생성 모드: 드래프트에서 선택 상태 복원
+                  // 기존 반 수정 모드: handleOpenAssignStudentDialog에서 서버 데이터 로드
+                  if (!editingClass) {
+                    setSelectedStudents(selectedStudentsDraft)
+                    setStudentSearchQuery('')
+                    setIsAssignStudentDialogOpen(true)
+                  } else {
+                    handleOpenAssignStudentDialog(editingClass)
+                  }
                 }}
               >
                 <div className="flex items-center gap-2">

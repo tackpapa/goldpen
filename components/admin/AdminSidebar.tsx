@@ -54,8 +54,8 @@ const navigationItems: NavigationItem[] = [
     icon: CreditCard,
   },
   {
-    id: 'kakao',
-    name: '카카오 알림톡',
+    id: 'messaging',
+    name: '메시지 발송',
     href: '/admin/kakao',
     icon: MessageSquare,
   },

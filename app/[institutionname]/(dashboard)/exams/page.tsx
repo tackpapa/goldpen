@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { Exam, ExamScore, Organization } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns/format'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -430,12 +431,24 @@ export default function ExamsPage() {
     }
 
     try {
-      // Workers API로 점수 저장 (알림은 별도 "알림톡 보내기" 버튼으로만 발송)
+      // Supabase 세션에서 access_token 가져오기
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        toast({ title: '인증이 필요합니다. 다시 로그인해주세요.', variant: 'destructive' })
+        return
+      }
+
+      // Workers API (BFF)로 점수 저장 - Authorization 헤더로 토큰 전달
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
       const res = await fetch(`${apiUrl}/api/exams/${selectedExam.id}/scores`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ scores: scoresToSave, send_notification: false }),
       })
 
@@ -584,12 +597,25 @@ export default function ExamsPage() {
     }
 
     try {
+      // Supabase 세션에서 access_token 가져오기
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        toast({ title: '인증이 필요합니다. 다시 로그인해주세요.', variant: 'destructive' })
+        return
+      }
+
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
       const studentIds = studentsWithPhone.map(s => s.id)
 
       const res = await fetch(`${apiUrl}/api/exams/${selectedExam.id}/scores/notify`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ student_ids: studentIds }),
       })
 

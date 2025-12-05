@@ -1,5 +1,6 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import type { Env } from '../env'
+import { withClient } from './db'
 
 /**
  * Cloudflare Workers용 Supabase 클라이언트
@@ -136,24 +137,31 @@ export async function getOrgIdFromRequest(request: Request, env: Env): Promise<s
 
   // 토큰이 없으면 null 반환 (인증 필수)
   if (!token) {
+    console.log('[getOrgId] No token found')
     return null
   }
+  console.log('[getOrgId] Token found, length:', token.length)
 
   // JWT payload에서 org_id 추출 시도
   const payload = decodeJwtPayload(token)
+  console.log('[getOrgId] JWT payload sub:', payload?.sub)
   if (payload) {
     // user_metadata에 org_id가 있는 경우
     if (payload.user_metadata?.org_id) {
+      console.log('[getOrgId] Found org_id in user_metadata:', payload.user_metadata.org_id)
       return payload.user_metadata.org_id
     }
     // app_metadata에 org_id가 있는 경우
     if (payload.app_metadata?.org_id) {
+      console.log('[getOrgId] Found org_id in app_metadata:', payload.app_metadata.org_id)
       return payload.app_metadata.org_id
     }
+    console.log('[getOrgId] No org_id in JWT metadata')
   }
 
   // Supabase에서 user 정보 조회하여 org_id 가져오기
   try {
+    console.log('[getOrgId] Calling supabase.auth.getUser...')
     const supabase = createClient(env)
     const { data: { user }, error } = await supabase.auth.getUser(token)
 
@@ -161,28 +169,41 @@ export async function getOrgIdFromRequest(request: Request, env: Env): Promise<s
       console.error('[getOrgId] Auth error:', error?.message)
       return null // 인증 실패 시 null 반환
     }
+    console.log('[getOrgId] User found:', user.id)
 
     // user_metadata에서 org_id 확인
     const orgId = user.user_metadata?.org_id || user.app_metadata?.org_id
     if (orgId) {
+      console.log('[getOrgId] Found org_id in user metadata:', orgId)
       return orgId
     }
+    console.log('[getOrgId] No org_id in user metadata, checking users table via Hyperdrive...')
 
-    // DB의 org_members 테이블에서 조회
-    const { data: membership } = await supabase
-      .from('org_members')
-      .select('org_id')
-      .eq('user_id', user.id)
-      .single()
+    // Hyperdrive를 통한 직접 DB 쿼리 (RLS 우회)
+    try {
+      const userRecord = await withClient(env, async (client) => {
+        const result = await client.query(
+          'SELECT org_id FROM users WHERE id = $1 LIMIT 1',
+          [user.id]
+        )
+        return result.rows[0]
+      })
 
-    if (membership?.org_id) {
-      return membership.org_id
+      console.log('[getOrgId] Hyperdrive query result:', userRecord)
+
+      if (userRecord?.org_id) {
+        console.log('[getOrgId] Found org_id via Hyperdrive:', userRecord.org_id)
+        return userRecord.org_id
+      }
+    } catch (dbError) {
+      console.error('[getOrgId] Hyperdrive query error:', dbError)
     }
   } catch (err) {
     console.error('[getOrgId] Error:', err)
   }
 
   // org_id를 찾지 못한 경우 null 반환
+  console.log('[getOrgId] No org_id found, returning null')
   return null
 }
 

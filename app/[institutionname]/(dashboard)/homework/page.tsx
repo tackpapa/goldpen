@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import type { Homework, HomeworkSubmission } from '@/lib/types/database'
+import { createClient } from '@/lib/supabase/client'
 import { format } from 'date-fns/format'
 
 // API 응답 타입 정의
@@ -271,7 +272,7 @@ export default function HomeworkPage() {
     setIsHomeworkHistoryDialogOpen(true)
   }
 
-  // 과제 생성 핸들러 - Workers API 호출 (알림 발송 포함)
+  // 과제 생성 핸들러 - Workers API (BFF) 호출 (알림 발송 포함)
   const handleCreateHomework = async () => {
     if (!newHomework.class_id || !newHomework.title) {
       toast({ title: '반과 과제명을 입력해주세요', variant: 'destructive' })
@@ -280,12 +281,24 @@ export default function HomeworkPage() {
 
     setIsCreating(true)
     try {
-      // Workers API로 과제 생성 (알림 발송 로직 포함)
+      // Supabase 세션에서 access_token 가져오기
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+      const accessToken = session?.access_token
+
+      if (!accessToken) {
+        toast({ title: '인증이 필요합니다. 다시 로그인해주세요.', variant: 'destructive' })
+        return
+      }
+
+      // Workers API (BFF)로 과제 생성 - Authorization 헤더로 토큰 전달
       const apiUrl = process.env.NEXT_PUBLIC_WORKERS_API_URL || 'https://goldpen-api.hello-51f.workers.dev'
       const response = await fetch(`${apiUrl}/api/homework`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({
           class_id: newHomework.class_id,
           title: newHomework.title,

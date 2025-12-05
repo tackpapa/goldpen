@@ -1811,7 +1811,7 @@ export default function SettingsPage() {
           <TabsTrigger value="revenue">수입관리</TabsTrigger>
           <TabsTrigger value="expense">지출관리</TabsTrigger>
           <TabsTrigger value="menus">메뉴 관리</TabsTrigger>
-          <TabsTrigger value="kakaotalk">알림톡 설정</TabsTrigger>
+          <TabsTrigger value="kakaotalk">메시지 설정</TabsTrigger>
           <TabsTrigger value="billing">서비스 이용내역</TabsTrigger>
         </TabsList>
 
@@ -2813,10 +2813,10 @@ export default function SettingsPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="h-5 w-5" />
-                알림톡 설정
+                메시지 설정
               </CardTitle>
               <CardDescription>
-                학부모에게 자동으로 발송되는 카카오톡 알림을 설정하세요
+                학부모에게 자동으로 발송되는 알림 메시지를 설정하세요
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -3374,8 +3374,8 @@ export default function SettingsPage() {
             <CardContent>
               <Tabs value={currentSubTab} onValueChange={handleSubTabChange}>
                 <TabsList>
-                  <TabsTrigger value="kakaotalk-usage">알림톡 이용내역</TabsTrigger>
-                  <TabsTrigger value="service-usage">SMS 이용내역</TabsTrigger>
+                  <TabsTrigger value="kakaotalk-usage">카카오 알림톡</TabsTrigger>
+                  <TabsTrigger value="service-usage">SMS</TabsTrigger>
                   <TabsTrigger value="credit-history">충전내역</TabsTrigger>
                 </TabsList>
 

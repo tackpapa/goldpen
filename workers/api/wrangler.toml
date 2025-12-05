@@ -27,8 +27,8 @@ local_protocol = "http"
 [vars]
 # Public variables (non-sensitive)
 NEXT_PUBLIC_APP_URL = "https://goldpen.kr"
-NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkeHh6eWdxampqcHR6bHZncnR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1ODk2NjQsImV4cCI6MjA3OTE2NTY2NH0.kcGWLo6b8NwI5o2JtvGtk6khlDtSzBYSvvDoSfjux44"
+NEXT_PUBLIC_SUPABASE_URL = "https://ipqhhqduppzvsqwwzjkp.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlwcWhocWR1cHB6dnNxd3d6amtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2MzY2MzgsImV4cCI6MjA3OTIxMjYzOH0.BiitPu3RXs-o6BSef3ds4qNUGIzyzMExB4E8TmsoCoE"
 
 # Secrets (set via CLI or Dashboard):
 # wrangler secret put SUPABASE_SERVICE_ROLE_KEY (optional, for admin operations)
@@ -61,8 +61,8 @@ zone_name = "goldpen.kr"
 
 [env.production.vars]
 NEXT_PUBLIC_APP_URL = "https://goldpen.kr"
-NEXT_PUBLIC_SUPABASE_URL = "https://vdxxzygqjjjptzlvgrtw.supabase.co"
-NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZkeHh6eWdxampqcHR6bHZncnR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM1ODk2NjQsImV4cCI6MjA3OTE2NTY2NH0.kcGWLo6b8NwI5o2JtvGtk6khlDtSzBYSvvDoSfjux44"
+NEXT_PUBLIC_SUPABASE_URL = "https://ipqhhqduppzvsqwwzjkp.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlwcWhocWR1cHB6dnNxd3d6amtwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjM2MzY2MzgsImV4cCI6MjA3OTIxMjYzOH0.BiitPu3RXs-o6BSef3ds4qNUGIzyzMExB4E8TmsoCoE"
 # Solapi는 secret으로 설정: wrangler secret put SOLAPI_API_KEY / SOLAPI_API_SECRET / SOLAPI_PF_ID / SOLAPI_SENDER_PHONE
 # PPURIO 설정 (deprecated)
 PPURIO_ACCOUNT = "ekiss"
