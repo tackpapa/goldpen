@@ -358,7 +358,8 @@ export async function GET(request: Request) {
         smsSummary,
         serviceUsages,
         usageSummary,
-        creditTransactions,
+        creditCharges: creditTransactions,
+        creditChargesTotal: creditTransactions.length,
         // 이번 달 총합 (요약 카드용)
         totalAlimtalkCount,
         totalAlimtalkCost,
@@ -383,7 +384,7 @@ export async function GET(request: Request) {
     let kakaoTalkUsages: any[] = []
     let serviceUsages: any[] = []
     let usageSummary: any[] = []
-    let creditTransactions: any[] = []
+    let creditCharges: any[] = []
     let branches: any[] = []
     let rooms: any[] = []
 
@@ -409,7 +410,7 @@ export async function GET(request: Request) {
       kakaoTalkUsages,
       serviceUsages,
       usageSummary,
-      creditTransactions,
+      creditCharges,
     })
   } catch (error: any) {
     console.error('[Settings GET] Unexpected error:', error)
