@@ -3120,9 +3120,9 @@ export default function SettingsPage() {
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">₩{(totalAlimtalkCost + serviceUsages.reduce((sum, item) => sum + item.cost, 0)).toLocaleString()}</div>
+                <div className="text-2xl font-bold">₩{(totalAlimtalkCost + totalSmsCost).toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  알림톡: ₩{totalAlimtalkCost.toLocaleString()} / 서비스: ₩{serviceUsages.reduce((sum, item) => sum + item.cost, 0).toLocaleString()}
+                  알림톡: ₩{totalAlimtalkCost.toLocaleString()} / SMS: ₩{totalSmsCost.toLocaleString()}
                 </p>
               </CardContent>
             </Card>
