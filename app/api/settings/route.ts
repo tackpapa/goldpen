@@ -494,6 +494,22 @@ export async function PUT(request: Request) {
       }
     }
 
+    // 기존 settings를 먼저 가져와서 머지 (덮어쓰기 방지)
+    let mergedSettings = validated.settings
+    if (validated.settings) {
+      const { data: currentOrgSettings } = await db
+        .from('org_settings')
+        .select('settings')
+        .eq('org_id', orgId)
+        .maybeSingle()
+
+      // 기존 settings와 새 settings 머지 (새 값이 우선)
+      mergedSettings = {
+        ...(currentOrgSettings?.settings || {}),
+        ...validated.settings,
+      }
+    }
+
     const { data: orgSettings, error: settingsUpErr } = await db
       .from('org_settings')
       .update({
@@ -503,7 +519,7 @@ export async function PUT(request: Request) {
         phone: validated.phone,
         email: validated.email,
         logo_url: validated.logo_url,
-        settings: validated.settings,
+        settings: mergedSettings,
       })
       .eq('org_id', orgId)
       .select('name, owner_name, address, phone, email, logo_url, settings')

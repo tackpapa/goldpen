@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Server,
   CreditCard,
+  Wallet,
 } from 'lucide-react'
 
 interface NavigationItem {
@@ -52,6 +53,12 @@ const navigationItems: NavigationItem[] = [
     name: '결제내역',
     href: '/admin/payments',
     icon: CreditCard,
+  },
+  {
+    id: 'deposit-requests',
+    name: '입금 신청',
+    href: '/admin/deposit-requests',
+    icon: Wallet,
   },
   {
     id: 'messaging',

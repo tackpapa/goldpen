@@ -500,18 +500,25 @@ export async function sendSolapiSms(
     // HMAC-SHA256 인증 헤더 생성
     const authHeader = await createSolapiAuthHeader(apiKey, apiSecret);
 
-    // SMS 발송 요청
+    // UTF-8 바이트 수 계산 (한글 = 3byte, 영문/숫자 = 1byte)
+    const getByteLength = (str: string): number => {
+      return new TextEncoder().encode(str).length;
+    };
+    const byteLength = getByteLength(params.message);
+
+    // SMS 발송 요청 - 90byte 초과 시 LMS로 전환
     const requestBody = {
       message: {
         to: normalizedPhone,
         from: senderPhone,
         text: params.message,
-        type: params.message.length > 90 ? "LMS" : "SMS", // 90자 초과 시 LMS
+        type: byteLength > 90 ? "LMS" : "SMS", // 90byte 초과 시 LMS
       },
     };
 
     console.log(`[Solapi SMS] Sending to ${normalizedPhone}:`, {
-      length: params.message.length,
+      chars: params.message.length,
+      bytes: byteLength,
       type: requestBody.message.type,
     });
 

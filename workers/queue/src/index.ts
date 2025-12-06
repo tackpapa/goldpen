@@ -294,17 +294,8 @@ export default {
         message = `[테스트] 지원하지 않는 타입: ${type}`;
       }
 
-      // 텔레그램 발송 (모니터링용)
-      const telegramConfig: TelegramConfig = {
-        botToken: env.TELEGRAM_BOT_TOKEN,
-        chatId: env.TELEGRAM_CHAT_ID,
-      };
-
-      let telegramResult: { success: boolean; error?: string } = { success: false, error: 'not sent' };
-      if (telegramConfig.botToken && telegramConfig.chatId) {
-        telegramResult = await sendTelegramWithSolapiFormat(telegramConfig, type as SharedNotificationType, variables, phone);
-        console.log(`[Test] 텔레그램 발송 결과: ${type}`, telegramResult);
-      }
+      // 🔴 텔레그램 비활성화 - 입금 신청에서만 사용 (2024-12-06)
+      let telegramResult: { success: boolean; error?: string } = { success: false, error: 'disabled' };
 
       // Solapi 알림톡 발송
       let solapiResult: { success: boolean; error?: string; messageId?: string } = { success: false, error: 'skipped' };
@@ -1066,7 +1057,7 @@ async function sendNotification(
       return;
     }
 
-    // 트랜잭션 기록 - messageType 전달
+    // 트랜잭션 기록 - messageType 전달 (결제 먼저)
     await recordTransactionPostgres(
       sql, orgId,
       balanceResult.price,
@@ -1075,24 +1066,7 @@ async function sendNotification(
       messageType
     );
 
-    // 메시지 로그 기록 (성공) - messageType 전달
-    await recordMessageLogPostgres(
-      sql, orgId, dbType as SharedNotificationType, studentName,
-      balanceResult.price, balanceResult.cost,
-      'sent', '', messageType
-    );
-
-    await sql`
-      INSERT INTO notification_logs (
-        org_id, student_id, type, class_id, target_date,
-        scheduled_time, recipient_phone, message, status
-      ) VALUES (
-        ${orgId}, ${studentId}, ${dbType}, ${classId || null}, ${targetDate}::date,
-        ${scheduledTime ? sql`${scheduledTime}::time` : sql`NULL`}, ${recipientPhone || null}, ${message}, 'sent'
-      )
-    `;
-
-    console.log(`[Notification] Recorded: ${dbType} for ${studentName} (-${balanceResult.price}원)`);
+    console.log(`[Notification] 결제 완료: ${dbType} for ${studentName} (-${balanceResult.price}원)`);
 
     // Solapi 변수 준비 (type에 따라 다른 변수 필요)
     const solapiVariables: Record<string, string> = {
@@ -1105,13 +1079,11 @@ async function sendNotification(
       solapiVariables["시간"] = scheduledTime;
     }
 
-    // 텔레그램으로 Solapi API 형식 전송 (테스트/모니터링용)
-    // TODO: Solapi 템플릿 승인 후 이 블록 제거
-    const telegramConfig: TelegramConfig = {
-      botToken: env.TELEGRAM_BOT_TOKEN,
-      chatId: env.TELEGRAM_CHAT_ID,
-    };
-    await sendTelegramWithSolapiFormat(telegramConfig, dbType as SharedNotificationType, solapiVariables, recipientPhone);
+    // 🔴 텔레그램 비활성화 - 입금 신청에서만 사용 (2024-12-06)
+
+    // 🔴 2024-12-06: API 호출 결과를 확인한 후 상태 기록하도록 수정
+    let sendStatus: 'sent' | 'failed' = 'sent';
+    let sendError = '';
 
     // Solapi 알림톡/SMS 발송
     if (recipientPhone) {
@@ -1129,23 +1101,68 @@ async function sendNotification(
         const template = DEFAULT_TEMPLATES[templateType] || DEFAULT_TEMPLATES['checkin'];
         const smsMessage = fillTemplate(template, solapiVariables);
 
-        console.log(`[Notification] SMS 발송: ${studentName} - ${dbType}`);
-        await sendSolapiSms(solapiConfig, {
+        console.log(`[Notification] SMS 발송 시도: ${studentName} - ${dbType}`);
+        const smsResult = await sendSolapiSms(solapiConfig, {
           phone: recipientPhone,
           message: smsMessage,
           recipientName: `${studentName} 학부모`,
         });
+
+        // 🔴 API 호출 결과 확인
+        if (smsResult.success) {
+          console.log(`[Notification] SMS 발송 성공: ${studentName} - ${dbType} (messageId: ${smsResult.messageId})`);
+          sendStatus = 'sent';
+        } else {
+          console.error(`[Notification] SMS 발송 실패: ${studentName} - ${dbType} - ${smsResult.error}`);
+          sendStatus = 'failed';
+          sendError = smsResult.error || 'SMS 발송 실패';
+        }
       } else {
         // 카카오 알림톡 발송
-        console.log(`[Notification] 알림톡 발송: ${studentName} - ${dbType}`);
-        await sendSolapiAlimtalk(solapiConfig, {
+        console.log(`[Notification] 알림톡 발송 시도: ${studentName} - ${dbType}`);
+        const alimtalkResult = await sendSolapiAlimtalk(solapiConfig, {
           type: dbType as SharedNotificationType,
           phone: recipientPhone,
           recipientName: `${studentName} 학부모`,
           variables: solapiVariables,
         });
+
+        // 🔴 API 호출 결과 확인
+        if (alimtalkResult.success) {
+          console.log(`[Notification] 알림톡 발송 성공: ${studentName} - ${dbType} (messageId: ${alimtalkResult.messageId})`);
+          sendStatus = 'sent';
+        } else {
+          console.error(`[Notification] 알림톡 발송 실패: ${studentName} - ${dbType} - ${alimtalkResult.error}`);
+          sendStatus = 'failed';
+          sendError = alimtalkResult.error || '알림톡 발송 실패';
+        }
       }
+    } else {
+      // 수신자 전화번호 없음
+      sendStatus = 'failed';
+      sendError = '수신자 전화번호 없음';
+      console.warn(`[Notification] 전화번호 없음: ${studentName}`);
     }
+
+    // 🔴 API 호출 결과 확인 후 메시지 로그 기록
+    await recordMessageLogPostgres(
+      sql, orgId, dbType as SharedNotificationType, studentName,
+      balanceResult.price, balanceResult.cost,
+      sendStatus, sendError, messageType
+    );
+
+    await sql`
+      INSERT INTO notification_logs (
+        org_id, student_id, type, class_id, target_date,
+        scheduled_time, recipient_phone, message, status, error_message
+      ) VALUES (
+        ${orgId}, ${studentId}, ${dbType}, ${classId || null}, ${targetDate}::date,
+        ${scheduledTime ? sql`${scheduledTime}::time` : sql`NULL`}, ${recipientPhone || null}, ${message}, ${sendStatus},
+        ${sendError || null}
+      )
+    `;
+
+    console.log(`[Notification] 기록 완료: ${dbType} for ${studentName} - ${sendStatus}${sendError ? ` (${sendError})` : ''}`);
   } catch (error) {
     console.error(`[Notification] Error for ${studentName}:`, error);
 
@@ -1351,10 +1368,11 @@ async function processNotificationQueue(
 
   console.log(`[NotificationQueue] Found ${pendingNotifications.length} pending notifications`);
 
-  // 🔴 최적화: config 객체를 루프 바깥에서 한 번만 생성
+  // 🔴 텔레그램 비활성화 - 입금 신청에서만 텔레그램 사용
+  // 일반 알림톡에서는 텔레그램 알림 제거 (2024-12-06)
   const telegramConfig: TelegramConfig = {
-    botToken: env.TELEGRAM_BOT_TOKEN,
-    chatId: env.TELEGRAM_CHAT_ID,
+    botToken: undefined,
+    chatId: undefined,
   };
   const solapiConfig: SolapiConfig = {
     apiKey: env.SOLAPI_API_KEY,

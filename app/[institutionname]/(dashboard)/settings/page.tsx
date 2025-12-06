@@ -45,6 +45,7 @@ import type { Organization, Branch, Room, RevenueCategory, ExpenseCategory } fro
 import type { UserRole, PageId } from '@/lib/types/permissions'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Textarea } from '@/components/ui/textarea'
+import { ChargeModal } from '@/components/shared/ChargeModal'
 
 // Default empty states
 const defaultOrganization: Organization = {
@@ -811,6 +812,9 @@ export default function SettingsPage() {
 
   // Service plan view state
   const [showPricingPlans, setShowPricingPlans] = useState(false)
+
+  // Charge modal state
+  const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
 
   // Revenue categories state
   const [revenueCategories, setRevenueCategories] = useState<RevenueCategory[]>([])
@@ -3218,12 +3222,7 @@ export default function SettingsPage() {
                     variant="link"
                     size="sm"
                     className="h-auto p-0 text-xs"
-                    onClick={() => {
-                      toast({
-                        title: '충전 기능',
-                        description: '결제 시스템 연동 예정입니다.',
-                      })
-                    }}
+                    onClick={() => setIsChargeModalOpen(true)}
                   >
                     충전하기
                   </Button>
@@ -4132,6 +4131,13 @@ export default function SettingsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* 충전 모달 */}
+      <ChargeModal
+        open={isChargeModalOpen}
+        onOpenChange={setIsChargeModalOpen}
+        orgSlug={institutionName}
+      />
     </div>
   )
 }

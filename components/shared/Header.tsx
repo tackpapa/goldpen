@@ -10,19 +10,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { LogOut, Menu, Wallet, Plus } from 'lucide-react'
+import { LogOut, Menu, Wallet, Plus, User } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/contexts/auth-context'
 import { MobileSidebar } from './MobileSidebar'
+import { ChargeModal } from './ChargeModal'
 
 export function Header() {
   const router = useRouter()
@@ -32,25 +26,27 @@ export function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [creditBalance, setCreditBalance] = useState<number | null>(null)
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
+  const [orgLogoUrl, setOrgLogoUrl] = useState<string | null>(null)
 
   // URL에서 institution 이름 추출
   const institutionName = pathname?.split('/')[1] || 'goldpen'
 
-  // 충전금 잔액 조회
+  // 충전금 잔액 및 기관 로고 조회
   useEffect(() => {
-    const fetchCreditBalance = async () => {
+    const fetchOrgData = async () => {
       if (!institutionName) return
       try {
         const res = await fetch(`/api/settings?orgSlug=${institutionName}`, { credentials: 'include' })
         if (res.ok) {
-          const data = await res.json() as { organization?: { credit_balance?: number } }
+          const data = await res.json() as { organization?: { credit_balance?: number; logo_url?: string } }
           setCreditBalance(data.organization?.credit_balance ?? 0)
+          setOrgLogoUrl(data.organization?.logo_url || null)
         }
       } catch (error) {
-        console.error('Failed to fetch credit balance:', error)
+        console.error('Failed to fetch org data:', error)
       }
     }
-    fetchCreditBalance()
+    fetchOrgData()
   }, [institutionName])
 
   // useAuth에서 사용자 정보 가져오기
@@ -183,9 +179,13 @@ export function Header() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 md:h-10 md:w-10 rounded-full">
-              <Avatar className="h-8 w-8 md:h-10 md:w-10">
-                <AvatarImage src="/avatars/01.svg" alt="User" />
-                <AvatarFallback>U</AvatarFallback>
+              <Avatar className="h-8 w-8 md:h-10 md:w-10 ring-2 ring-yellow-400">
+                {orgLogoUrl ? (
+                  <AvatarImage src={orgLogoUrl} alt="Organization Logo" />
+                ) : null}
+                <AvatarFallback className="bg-gray-100 dark:bg-gray-800">
+                  <User className="h-4 w-4 md:h-5 md:w-5 text-gray-600 dark:text-gray-300" />
+                </AvatarFallback>
               </Avatar>
             </Button>
           </DropdownMenuTrigger>
@@ -223,19 +223,11 @@ export function Header() {
       <MobileSidebar open={mobileMenuOpen} onOpenChange={setMobileMenuOpen} />
 
       {/* 충전 모달 */}
-      <Dialog open={isChargeModalOpen} onOpenChange={setIsChargeModalOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>충전금 충전</DialogTitle>
-            <DialogDescription>
-              알림톡 발송에 사용되는 충전금을 충전합니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="py-6 text-center text-muted-foreground">
-            충전 기능 준비 중입니다.
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ChargeModal
+        open={isChargeModalOpen}
+        onOpenChange={setIsChargeModalOpen}
+        orgSlug={institutionName}
+      />
     </header>
   )
 }

@@ -46,6 +46,7 @@ import teachers_modal from "./routes/teachers.modal.[id]";
 import test_env from "./routes/test_env";
 import ai_generate from "./routes/ai.generate";
 import attendance_logs from "./routes/attendance-logs";
+import telegram from "./routes/telegram";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -112,6 +113,7 @@ app.route("/api/teachers", teachers);
 app.route("/api/test-env", test_env);
 app.route("/api/ai/generate", ai_generate);
 app.route("/api/attendance-logs", attendance_logs);
+app.route("/api/telegram", telegram);
 
 // 404 handler
 app.notFound((c) => {
