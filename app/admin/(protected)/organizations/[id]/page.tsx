@@ -19,7 +19,6 @@ import {
 } from '@/components/ui/table'
 import {
   ArrowLeft,
-  Building2,
   Users,
   GraduationCap,
   DoorOpen,
@@ -27,15 +26,11 @@ import {
   TrendingUp,
   MessageSquare,
   Settings,
-  Edit,
   User,
   Mail,
   Phone,
   Calendar,
   Wallet,
-  Plus,
-  Minus,
-  ChevronDown,
 } from 'lucide-react'
 import {
   Select,
@@ -44,16 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
+import { AdminCreditModal } from '@/components/admin/AdminCreditModal'
 import { format } from 'date-fns/format'
 import { ko } from 'date-fns/locale'
 
@@ -175,12 +161,6 @@ export default function OrganizationDetailPage({
   const { id } = params
   const router = useRouter()
   const [creditDialogOpen, setCreditDialogOpen] = useState(false)
-  const [creditAmount, setCreditAmount] = useState('')
-  const [creditDescription, setCreditDescription] = useState('')
-  const [creditType, setCreditType] = useState<'charge' | 'deduct'>('charge')
-  // 충전금 타입: 'free' (관리자 무료 부여), 'paid' (유저 직접 결제)
-  const [creditPaymentType, setCreditPaymentType] = useState<'free' | 'paid'>('free')
-  const [isUpdatingCredit, setIsUpdatingCredit] = useState(false)
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
 
   // SWR URL 생성
@@ -194,49 +174,6 @@ export default function OrganizationDetailPage({
   const { data, isLoading, error, mutate } = useSWR<OrganizationResponse>(apiUrl, fetcher, swrOptions)
 
   const organization = data?.organization || null
-
-  const handleCreditUpdate = useCallback(async () => {
-    const amount = Number(creditAmount)
-    if (!creditAmount || isNaN(amount) || amount < 1000 || amount % 1000 !== 0) {
-      alert('1,000원 단위로 금액을 입력해주세요. (최소 1,000원)')
-      return
-    }
-
-    setIsUpdatingCredit(true)
-    try {
-      const finalAmount = creditType === 'charge'
-        ? Math.abs(amount)
-        : -Math.abs(amount)
-
-      const response = await fetch(`/api/admin/organizations/${id}/credit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: finalAmount,
-          credit_type: creditPaymentType, // 'free' (관리자 무료 부여) or 'paid' (유저 직접 결제)
-          description: creditDescription || (creditType === 'charge' ? '충전금 충전' : '충전금 차감'),
-        }),
-      })
-
-      const responseData = await response.json() as { success?: boolean; error?: string; credit_balance?: number }
-
-      if (response.ok && responseData.success) {
-        // SWR 캐시 갱신
-        mutate()
-        setCreditDialogOpen(false)
-        setCreditAmount('')
-        setCreditDescription('')
-        alert(creditType === 'charge' ? '충전이 완료되었습니다.' : '차감이 완료되었습니다.')
-      } else {
-        alert(responseData.error || '처리 중 오류가 발생했습니다.')
-      }
-    } catch (err) {
-      console.error('Credit update failed:', err)
-      alert('처리 중 오류가 발생했습니다.')
-    } finally {
-      setIsUpdatingCredit(false)
-    }
-  }, [id, creditAmount, creditType, creditPaymentType, creditDescription, mutate])
 
   if (isLoading) {
     return (
@@ -434,103 +371,9 @@ export default function OrganizationDetailPage({
                 <Wallet className="h-5 w-5" />
                 충전금 잔액
               </div>
-              <Dialog open={creditDialogOpen} onOpenChange={setCreditDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    충전/차감
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>충전금 관리</DialogTitle>
-                    <DialogDescription>
-                      현재 잔액: {(org.credit_balance || 0).toLocaleString()}원
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="flex gap-2">
-                      <Button
-                        variant={creditType === 'charge' ? 'default' : 'outline'}
-                        onClick={() => setCreditType('charge')}
-                        className="flex-1"
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        충전
-                      </Button>
-                      <Button
-                        variant={creditType === 'deduct' ? 'default' : 'outline'}
-                        onClick={() => setCreditType('deduct')}
-                        className="flex-1"
-                      >
-                        <Minus className="mr-2 h-4 w-4" />
-                        차감
-                      </Button>
-                    </div>
-                    {/* 충전금 타입 선택: free (관리자 무료 부여) or paid (유저 직접 결제) */}
-                    <div>
-                      <label className="text-sm font-medium">충전금 타입</label>
-                      <div className="flex gap-2 mt-1">
-                        <Button
-                          type="button"
-                          variant={creditPaymentType === 'free' ? 'default' : 'outline'}
-                          onClick={() => setCreditPaymentType('free')}
-                          className="flex-1"
-                          size="sm"
-                        >
-                          무료 부여
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={creditPaymentType === 'paid' ? 'default' : 'outline'}
-                          onClick={() => setCreditPaymentType('paid')}
-                          className="flex-1"
-                          size="sm"
-                        >
-                          유저 결제
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {creditPaymentType === 'free'
-                          ? '관리자가 프로모션/보상 등으로 무료 부여'
-                          : '유저가 직접 결제하여 충전'}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">금액 (1,000원 단위)</label>
-                      <Input
-                        type="number"
-                        placeholder="예: 10000"
-                        value={creditAmount}
-                        onChange={(e) => setCreditAmount(e.target.value)}
-                        min={1000}
-                        step={1000}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        1,000원 단위로 입력해주세요
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium">설명 (선택)</label>
-                      <Input
-                        placeholder="변경 사유를 입력하세요"
-                        value={creditDescription}
-                        onChange={(e) => setCreditDescription(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setCreditDialogOpen(false)}>
-                      취소
-                    </Button>
-                    <Button
-                      onClick={handleCreditUpdate}
-                      disabled={isUpdatingCredit || !creditAmount}
-                    >
-                      {isUpdatingCredit ? '처리 중...' : creditType === 'charge' ? '충전하기' : '차감하기'}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <Button variant="outline" size="sm" onClick={() => setCreditDialogOpen(true)}>
+                충전/차감
+              </Button>
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -542,6 +385,16 @@ export default function OrganizationDetailPage({
             </p>
           </CardContent>
         </Card>
+
+        {/* 충전금 관리 모달 */}
+        <AdminCreditModal
+          open={creditDialogOpen}
+          onOpenChange={setCreditDialogOpen}
+          orgId={org.id}
+          orgName={org.name}
+          currentBalance={org.credit_balance || 0}
+          onSuccess={() => mutate()}
+        />
 
         <Card>
           <CardHeader>
