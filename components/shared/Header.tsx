@@ -43,8 +43,8 @@ export function Header() {
       try {
         const res = await fetch(`/api/settings?orgSlug=${institutionName}`, { credentials: 'include' })
         if (res.ok) {
-          const data = await res.json() as { credit_balance?: number }
-          setCreditBalance(data.credit_balance ?? 0)
+          const data = await res.json() as { organization?: { credit_balance?: number } }
+          setCreditBalance(data.organization?.credit_balance ?? 0)
         }
       } catch (error) {
         console.error('Failed to fetch credit balance:', error)
@@ -150,18 +150,24 @@ export function Header() {
           {/* 충전금 잔액 */}
           {creditBalance !== null && (
             <div className="flex items-center gap-1 md:gap-2">
-              <div
-                className={`flex items-center gap-1 px-2 md:px-3 py-1 md:py-1.5 rounded-lg ${
-                  creditBalance < 5000
-                    ? 'bg-red-100 dark:bg-red-900/30'
-                    : 'bg-muted'
-                }`}
-                title={creditBalance < 5000 ? '잔액이 부족하면 알림톡 발송에 실패합니다' : undefined}
-              >
-                <Wallet className={`h-4 w-4 ${creditBalance < 5000 ? 'text-red-500' : 'text-muted-foreground'}`} />
-                <span className={`text-xs md:text-sm font-medium ${creditBalance < 5000 ? 'text-red-600 dark:text-red-400' : ''}`}>
-                  {creditBalance.toLocaleString()}원
-                </span>
+              <div className="flex flex-col items-end">
+                <div
+                  className={`flex items-center gap-1 px-2 md:px-3 py-1 md:py-1.5 rounded-lg ${
+                    creditBalance < 5000
+                      ? 'bg-red-100 dark:bg-red-900/30'
+                      : 'bg-muted'
+                  }`}
+                >
+                  <Wallet className={`h-4 w-4 ${creditBalance < 5000 ? 'text-red-500' : 'text-muted-foreground'}`} />
+                  <span className={`text-xs md:text-sm font-medium ${creditBalance < 5000 ? 'text-red-600 dark:text-red-400' : ''}`}>
+                    {creditBalance.toLocaleString()}원
+                  </span>
+                </div>
+                {creditBalance < 5000 && (
+                  <span className="hidden md:block text-[10px] text-red-500 mt-0.5">
+                    잔액 부족 시 알림톡 발송 실패
+                  </span>
+                )}
               </div>
               <Button
                 variant={creditBalance < 5000 ? 'destructive' : 'default'}
