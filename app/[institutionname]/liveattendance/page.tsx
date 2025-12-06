@@ -370,11 +370,11 @@ export default function LiveAttendancePage() {
   const handleCheckInOut = async () => {
     if (studentId.length !== 4 || isLoading) return
 
-    // Optimistic: 바로 이름/메시지 표시 후 비동기 반영
+    // Optimistic: 먼저 메시지만 표시, 이름은 API 응답 후 표시 (코드 노출 방지)
     const optimisticStatus = attendanceStatus[studentId] === 'checked_in' ? 'checked_out' : 'checked_in'
     setIsLoading(true)
-    setWelcomeName(studentId) // API 응답 전에라도 코드 표시
-    setWelcomeMessage(optimisticStatus === 'checked_in' ? '오늘도 열공하세요!' : '안녕히 가세요!')
+    setWelcomeName('') // 코드 노출 방지 - 빈 문자열로 시작
+    setWelcomeMessage(optimisticStatus === 'checked_in' ? '안녕하세요!' : '안녕히 가세요!')
     setShowWelcome(true)
     setAttendanceStatus((prev) => ({ ...prev, [studentId]: optimisticStatus }))
 
@@ -449,7 +449,7 @@ export default function LiveAttendancePage() {
           <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-blue-500 to-blue-600 z-50">
             <div className="text-center">
               <p className="text-7xl font-bold leading-relaxed">
-                {welcomeName}님<br />{welcomeMessage}
+                {welcomeName ? `${welcomeName}님` : ''}{welcomeName ? <br /> : ''}{welcomeMessage}
               </p>
             </div>
           </div>
