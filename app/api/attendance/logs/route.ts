@@ -150,7 +150,9 @@ export async function POST(request: Request) {
         .single()
 
       if (openSession) {
-        // 이미 체크인 상태면 무시
+        // 이미 체크인 상태여도 seat_assignments는 동기화 (불일치 방지)
+        await syncSeatAssignmentStatus(supabase, orgId, student.id, 'checked_in', now)
+
         return Response.json({
           message: '이미 등원 상태입니다',
           student: { name: student.name }
@@ -200,7 +202,9 @@ export async function POST(request: Request) {
         .single()
 
       if (openError || !openSession) {
-        // 열린 세션이 없으면 그냥 성공 반환 (이미 하원 상태)
+        // 이미 하원 상태여도 seat_assignments는 동기화 (불일치 방지)
+        await syncSeatAssignmentStatus(supabase, orgId, student.id, 'checked_out', now)
+
         return Response.json({
           message: '이미 하원 상태입니다',
           student: { name: student.name }
