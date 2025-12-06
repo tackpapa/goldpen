@@ -7,6 +7,56 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+/**
+ * GET /api/exams/[id]
+ * 시험 상세 조회
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
+    const { id: examId } = await params
+
+    const { data: exam, error } = await db
+      .from('exams')
+      .select(`
+        *,
+        class:classes(id, name),
+        teacher:teachers(id, name),
+        room:rooms(id, name),
+        scores:exam_scores(
+          id, score, student_id,
+          student:students(id, name)
+        )
+      `)
+      .eq('id', examId)
+      .eq('org_id', orgId)
+      .single()
+
+    if (error) {
+      console.error('[Exams GET] Error:', error)
+      return Response.json({ error: '시험 조회 실패', details: error.message }, { status: 500 })
+    }
+
+    if (!exam) {
+      return Response.json({ error: '시험을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    return Response.json({ exam })
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+    console.error('[Exams GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
+  }
+}
+
 const updateExamSchema = z.object({
   class_id: z.string().uuid().optional(),
   teacher_id: z.string().uuid().optional(),

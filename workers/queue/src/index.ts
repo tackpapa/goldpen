@@ -90,7 +90,84 @@ function timeToMinutes(timeStr: string): number {
 
 // 조직 설정에서 템플릿 가져오기 (DEFAULT_TEMPLATES, fillTemplate는 shared/notifications에서 import)
 const templateCache: Record<string, { templates: Record<string, string>; timestamp: number }> = {}
+const settingsCache: Record<string, { settings: Record<string, unknown>; timestamp: number }> = {}
 const CACHE_TTL = 5 * 60 * 1000 // 5분 캐시
+
+// 알림 타입 -> organization.settings 키 매핑
+const NOTIFICATION_SETTING_KEYS: Record<string, string> = {
+  'checkin': 'enable_checkin_notification',
+  'checkout': 'enable_checkout_notification',
+  'study_out': 'enable_outing_notification',
+  'study_return': 'enable_return_notification',
+  'late': 'enable_late_notification',
+  'absent': 'enable_absent_notification',
+  'commute_late': 'enable_late_notification',
+  'commute_absent': 'enable_absent_notification',
+  'class_late': 'enable_late_notification',
+  'class_absent': 'enable_absent_notification',
+  'lesson_report': 'enable_lesson_note_notification',
+  'daily_report': 'enable_daily_report_notification',
+  'exam_result': 'enable_exam_result_notification',
+  'assignment_new': 'enable_assignment_notification',
+};
+
+/**
+ * 알림 타입이 활성화되어 있는지 확인
+ * @param sql - postgres.Sql 인스턴스
+ * @param orgId - 조직 ID
+ * @param type - 알림 타입
+ * @returns 활성화 여부 (true: 활성화, false: 비활성화)
+ */
+async function isNotificationEnabled(
+  sql: postgres.Sql,
+  orgId: string,
+  type: string
+): Promise<boolean> {
+  const settingKey = NOTIFICATION_SETTING_KEYS[type];
+  if (!settingKey) {
+    console.log(`[Notification] Unknown type ${type}, defaulting to enabled`);
+    return true; // 알 수 없는 타입은 기본 활성화
+  }
+
+  // 캐시 확인
+  const cached = settingsCache[orgId];
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    const isEnabled = cached.settings[settingKey] !== false;
+    if (!isEnabled) {
+      console.log(`[Notification] ${type} is disabled for org ${orgId} (cached, ${settingKey}=false)`);
+    }
+    return isEnabled;
+  }
+
+  try {
+    // 알림 설정은 org_settings 테이블에 저장됨
+    const result = await sql`
+      SELECT settings FROM org_settings WHERE org_id = ${orgId}
+    `;
+
+    if (result.length === 0) {
+      console.log(`[Notification] Org settings for ${orgId} not found, defaulting to enabled`);
+      return true;
+    }
+
+    const settings = (result[0].settings || {}) as Record<string, unknown>;
+
+    // 캐시 저장
+    settingsCache[orgId] = { settings, timestamp: Date.now() };
+
+    // 설정값이 명시적으로 false인 경우만 비활성화
+    const isEnabled = settings[settingKey] !== false;
+
+    if (!isEnabled) {
+      console.log(`[Notification] ${type} is disabled for org ${orgId} (${settingKey}=false)`);
+    }
+
+    return isEnabled;
+  } catch (error) {
+    console.error(`[Notification] Error checking setting for ${type}:`, error);
+    return true; // 에러 시 기본 활성화
+  }
+}
 
 async function getOrgTemplates(
   sql: postgres.Sql,
@@ -942,6 +1019,15 @@ async function sendNotification(
   // DB에 저장할 때는 type을 DB type으로 변환
   const dbType = toDbNotificationType(type);
 
+  // ============================================================
+  // 알림 설정 확인 - 비활성화된 알림 타입은 발송하지 않음
+  // ============================================================
+  const isEnabled = await isNotificationEnabled(sql, orgId, type);
+  if (!isEnabled) {
+    console.log(`[Notification] Skipping ${type} for ${studentName} - notification disabled in settings`);
+    return; // 설정에 의해 스킵
+  }
+
   try {
     const existing = await sql`
       SELECT id FROM notification_logs
@@ -1300,6 +1386,21 @@ async function processNotificationQueue(
       }
 
       const student = studentResult[0];
+
+      // ============================================================
+      // 알림 설정 확인 - 비활성화된 알림 타입은 발송하지 않음
+      // ============================================================
+      const isEnabled = await isNotificationEnabled(sql, student.org_id, notification.type);
+      if (!isEnabled) {
+        console.log(`[NotificationQueue] Skipping ${notification.type} for ${student.name} - notification disabled in settings`);
+        await sql`
+          UPDATE notification_queue
+          SET status = 'completed', processed_at = NOW(), error_message = 'Notification disabled in settings'
+          WHERE id = ${notification.id}
+        `;
+        continue;
+      }
+
       const now = new Date();
       const timeStr = now.toLocaleTimeString("ko-KR", {
         hour: "2-digit",

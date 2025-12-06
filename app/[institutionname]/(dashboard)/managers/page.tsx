@@ -303,7 +303,7 @@ export default function ManagersPage() {
         toast({
           title: '임시 비밀번호',
           description: `임시 비밀번호: ${data.tempPassword} (초대 메일 발송 필요)`,
-          duration: 10000,
+          duration: 1000,
         })
       }
 

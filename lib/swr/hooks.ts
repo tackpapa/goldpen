@@ -188,21 +188,6 @@ export function useExpenses() {
   }
 }
 
-// 좌석 목록
-export function useSeats() {
-  const { data, error, isLoading, mutate } = useSWR<{ seats: any[] }>(
-    '/api/seats',
-    fetcher,
-    swrConfig
-  )
-  return {
-    seats: data?.seats || [],
-    isLoading,
-    error,
-    refresh: mutate,
-  }
-}
-
 // 강의실 목록
 export function useRooms() {
   const { data, error, isLoading, mutate } = useSWR<{ rooms: any[] }>(

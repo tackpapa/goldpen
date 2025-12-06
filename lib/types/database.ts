@@ -332,6 +332,19 @@ export interface Organization {
     messageTemplatesParent?: Record<string, string> // 학부모용 메시지 템플릿
     messageTemplatesStudent?: Record<string, string> // 학생용 메시지 템플릿
     gracePeriods?: Record<string, number> // 알림 유예 시간 설정
+    // 카카오톡 알림 설정
+    enable_late_notification?: boolean // 지각 알림
+    enable_absent_notification?: boolean // 결석 알림
+    enable_checkin_notification?: boolean // 입실/등원 알림
+    enable_checkout_notification?: boolean // 퇴실/하원 알림
+    enable_outing_notification?: boolean // 외출 알림
+    enable_return_notification?: boolean // 복귀 알림
+    enable_daily_report_notification?: boolean // 당일 학습 진행 결과
+    enable_lesson_note_notification?: boolean // 수업일지 알림톡 기능
+    enable_exam_result_notification?: boolean // 시험 결과 전송
+    enable_assignment_notification?: boolean // 새 과제 알림
+    // 일일 학습 리포트 발송 시간 (기본값: 22:00)
+    dailyReportTime?: string
   }
   created_at: string
   updated_at: string

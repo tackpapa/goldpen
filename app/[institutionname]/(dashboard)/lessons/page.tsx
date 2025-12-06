@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useAuth } from '@/contexts/auth-context'
+import { useSettings } from '@/lib/swr/hooks'
 
 // Dynamic import for chart components (heavy library - ~200KB)
 const LessonsCharts = dynamic(
@@ -170,6 +171,10 @@ export default function LessonsPage() {
   const userRole = user?.role ?? 'teacher'
   const currentTeacherId = user?.id ?? ''
   const organizationName = org?.name || institutionName // 실제 기관명 (없으면 슬러그 사용)
+
+  // 설정에서 수업일지 알림톡 기능 활성화 여부 확인
+  const { settings: orgSettings } = useSettings()
+  const isLessonNoteNotificationEnabled = orgSettings?.settings?.enable_lesson_note_notification ?? true
 
   // API에서 데이터 가져오기
   useEffect(() => {
@@ -394,6 +399,16 @@ export default function LessonsPage() {
   }
 
   const handleSendNotification = async () => {
+    // 설정에서 수업일지 알림톡이 비활성화된 경우
+    if (!isLessonNoteNotificationEnabled) {
+      toast({
+        title: '설정에서 알림을 활성화하세요',
+        description: '설정 > 카카오톡에서 수업일지 알림톡 기능을 켜주세요.',
+        variant: 'destructive',
+      })
+      return
+    }
+
     // 저장되지 않은 수업일지인 경우 먼저 저장
     if (!isEditing || !selectedLesson) {
       toast({
@@ -1917,15 +1932,17 @@ export default function LessonsPage() {
                 {(userRole === 'owner') && (
                   <Button
                     onClick={handleSendNotification}
-                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent || hasOverLimitVariables}
-                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : hasOverLimitVariables ? "destructive" : "default"}
-                    title={hasOverLimitVariables ? "50자를 초과한 항목이 있습니다" : undefined}
+                    disabled={!isLessonNoteNotificationEnabled || isSendingNotification || (selectedLesson as any)?.notification_sent || hasOverLimitVariables}
+                    variant={!isLessonNoteNotificationEnabled ? "secondary" : (selectedLesson as any)?.notification_sent ? "secondary" : hasOverLimitVariables ? "destructive" : "default"}
+                    title={!isLessonNoteNotificationEnabled ? "설정에서 알림을 활성화하세요" : hasOverLimitVariables ? "50자를 초과한 항목이 있습니다" : undefined}
                   >
                     {isSendingNotification ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         발송 중...
                       </>
+                    ) : !isLessonNoteNotificationEnabled ? (
+                      '알림 비활성화'
                     ) : (selectedLesson as any)?.notification_sent ? (
                       '발송완료'
                     ) : hasOverLimitVariables ? (
@@ -1957,15 +1974,17 @@ export default function LessonsPage() {
                 {(userRole === 'owner') && (
                   <Button
                     onClick={handleSendNotification}
-                    disabled={isSendingNotification || (selectedLesson as any)?.notification_sent || !isSaved || hasOverLimitVariables}
-                    variant={(selectedLesson as any)?.notification_sent ? "secondary" : hasOverLimitVariables ? "destructive" : "default"}
-                    title={hasOverLimitVariables ? "50자를 초과한 항목이 있습니다" : !isSaved ? "먼저 저장해주세요" : undefined}
+                    disabled={!isLessonNoteNotificationEnabled || isSendingNotification || (selectedLesson as any)?.notification_sent || !isSaved || hasOverLimitVariables}
+                    variant={!isLessonNoteNotificationEnabled ? "secondary" : (selectedLesson as any)?.notification_sent ? "secondary" : hasOverLimitVariables ? "destructive" : "default"}
+                    title={!isLessonNoteNotificationEnabled ? "설정에서 알림을 활성화하세요" : hasOverLimitVariables ? "50자를 초과한 항목이 있습니다" : !isSaved ? "먼저 저장해주세요" : undefined}
                   >
                     {isSendingNotification ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         발송 중...
                       </>
+                    ) : !isLessonNoteNotificationEnabled ? (
+                      '알림 비활성화'
                     ) : (selectedLesson as any)?.notification_sent ? (
                       '발송완료'
                     ) : hasOverLimitVariables ? (

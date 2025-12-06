@@ -6,6 +6,50 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+/**
+ * GET /api/rooms/[id]
+ * 강의실 상세 조회
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
+    const { id: roomId } = await params
+
+    const { data: room, error } = await db
+      .from('rooms')
+      .select(`
+        *,
+        seats(id, seat_number, status)
+      `)
+      .eq('id', roomId)
+      .eq('org_id', orgId)
+      .single()
+
+    if (error) {
+      console.error('[Rooms GET] Error:', error)
+      return Response.json({ error: '강의실 조회 실패', details: error.message }, { status: 500 })
+    }
+
+    if (!room) {
+      return Response.json({ error: '강의실을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    return Response.json({ room })
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+    console.error('[Rooms GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
+  }
+}
+
 const updateRoomSchema = z.object({
   name: z.string().min(1, '강의실 이름은 필수입니다').optional(),
   capacity: z.number().int().positive().optional(),

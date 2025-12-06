@@ -592,7 +592,7 @@ export default function LiveScreenPage({ params }: PageProps) {
     //   toast({
     //     title: '오늘은 더 잘 수 없습니다',
     //     variant: 'destructive',
-    //     duration: 3000,
+    //     duration: 1000,
     //   })
     //   return
     // }

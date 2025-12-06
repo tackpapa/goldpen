@@ -1,6 +1,6 @@
-# GOLDPEN_SYS_MAP v3.5
+# GOLDPEN_SYS_MAP v3.7
 # Token-optimized system reference (machine-readable)
-# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync v2)
+# Generated: 2025-11-29 | Updated: 2025-12-06 (full sync v4)
 
 ## ⚠️ RULES (CRITICAL)
 rule1:EDGE_RUNTIME - export const runtime='edge' 필수
@@ -41,12 +41,12 @@ goldpen/
 │ ├ (portal)/my/           # 포털 (dashboard)
 │ ├ admin/(protected)/     # Admin (9 pages)
 │ ├ [institutionname]/     # 기관별 (20 pages)
-│ ├ api/                   # API Routes (97 routes)
+│ ├ api/                   # API Routes (96 routes)
 │ ├ consultation/          # 상담 신청
 │ ├ demo/                  # 데모 페이지 (NEW)
 │ ├ invite/[token]/        # 초대 수락
 │ └ lesson-note/           # 수업노트 공유
-├ components/              # React (75 files)
+├ components/              # React (76 files)
 │ ├ ui/                   # shadcn/ui (30 files)
 │ ├ students/             # 학생 모달/탭 (11 files)
 │ ├ teachers/             # 강사 모달/탭 (6 files)
@@ -72,8 +72,8 @@ goldpen/
 │ └ data/                 # Mock 데이터 (1 file)
 ├ hooks/                   # Custom Hooks (9 files)
 ├ contexts/                # React Context (1 file)
-├ workers/                 # Cloudflare Workers (59 files)
-│ ├ api/                  # Hono API (53 files)
+├ workers/                 # Cloudflare Workers (55 files)
+│ ├ api/                  # Hono API (51 files)
 │ ├ cron/                 # 스케줄 알림 (1 file)
 │ ├ queue/                # 큐 워커 (활성)
 │ ├ shared/               # 공유 (비활성)
@@ -134,7 +134,7 @@ livescreen:
 ├ /[org]/livescreen/[seatNumber] - 학생 스크린
 └ /[org]/liveattendance - 실시간 출결
 
-## API_ROUTES (97)
+## API_ROUTES (96)
 auth:
 ├ /api/auth/login - POST 로그인
 ├ /api/auth/logout - POST 로그아웃
@@ -201,8 +201,6 @@ schedules:
 └ /api/schedules/[id] - PUT/DELETE 수정
 
 seats:
-├ /api/seats - GET/POST 좌석
-├ /api/seats/[id] - PUT/DELETE 수정
 ├ /api/seat-config - GET/PUT 좌석 설정
 └ /api/seat-assignments - GET/POST/PUT 좌석 배정
 
@@ -334,7 +332,7 @@ rls:ALL_TABLES_ENABLED
 ├ policy:role_based (user.role 기반)
 └ policy:row_owner (user_id 기반)
 
-## COMPONENTS (75)
+## COMPONENTS (76)
 ui/ (30 files, shadcn/ui):
 ├ button, input, card, table, badge, avatar
 ├ tabs, dropdown-menu, label, textarea
@@ -406,7 +404,8 @@ landing/ (1 file):
 └ FeatureShowcase - 랜딩 기능 전시
 
 other:
-└ page-permissions.tsx - 페이지 권한
+├ page-permissions.tsx - 페이지 권한
+└ GoogleAnalytics.tsx - GA 추적 (NEW)
 
 ## HOOKS (9)
 ├ use-toast - 토스트 알림
@@ -471,7 +470,7 @@ messaging/:
 email/:
 └ send-invitation.ts - 초대 이메일 발송
 
-## WORKERS (59 files)
+## WORKERS (57 files)
 api/ (workers/api):
 ├ src/index.ts - Hono 메인 (라우터 등록)
 ├ src/env.ts - 환경변수 타입
@@ -719,13 +718,13 @@ vitest:2.1.0
 
 ## STATISTICS
 pages:40
-api_routes:97
-components:75
+api_routes:96
+components:76
 lib_files:34
 hooks:9
-workers_files:59
+workers_files:55
 migrations:89
-total_ts_files:~345
+total_ts_files:~343
 
 ## ROADMAP
 v1.0 (current):
@@ -749,8 +748,24 @@ v1.1 (planned):
 └ [ ] Payment gateway
 
 ---
-# END OF GOLDPEN_SYS_MAP v3.5
-# Generated: 2025-11-29 | Updated: 2025-12-05 (full sync v2)
+# END OF GOLDPEN_SYS_MAP v3.7
+# Generated: 2025-11-29 | Updated: 2025-12-06 (full sync v4)
+#
+# Changes (2025-12-06 v4):
+#   - Workers: 57 → 55 (-2)
+#     - 실제 파일 수 재검증 (src/ 디렉토리만 카운트)
+#   - Middleware 수정:
+#     - 로그인된 사용자가 /login, /demo 접근 시 대시보드로 리다이렉트
+#   - Attendance sync 수정:
+#     - "이미 등원/하원 상태" 응답에서도 seat_assignments 동기화 추가
+#
+# Changes (2025-12-06 v3):
+#   - API Routes: 97 → 96 (-1)
+#     - /api/seats, /api/seats/[id] 라우트 실제로 존재하지 않음 (문서 오류 수정)
+#   - Components: 75 → 76 (+1)
+#     - GoogleAnalytics.tsx 추가 (NEW)
+#   - Workers: 59 → 57 (-2)
+#     - 실제 파일 수 반영 (카운트 오류 수정)
 #
 # Changes (2025-12-05 v2):
 #   - Pages: 39 → 40 (+1)

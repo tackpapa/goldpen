@@ -132,6 +132,70 @@ export type NotificationType =
   | "exam_result"
   | "assignment_new";
 
+// 알림 타입 -> organization.settings 키 매핑
+// 설정 페이지에서 저장하는 키와 알림 타입을 매핑
+export const NOTIFICATION_SETTING_KEYS: Record<NotificationType, string> = {
+  'checkin': 'enable_checkin_notification',
+  'checkout': 'enable_checkout_notification',
+  'study_out': 'enable_outing_notification',
+  'study_return': 'enable_return_notification',
+  'late': 'enable_late_notification',
+  'absent': 'enable_absent_notification',
+  'lesson_report': 'enable_lesson_note_notification',
+  'daily_report': 'enable_daily_report_notification',
+  'exam_result': 'enable_exam_result_notification',
+  'assignment_new': 'enable_assignment_notification',
+};
+
+/**
+ * 알림 타입이 활성화되어 있는지 확인
+ * @param client - DB 클라이언트
+ * @param orgId - 조직 ID
+ * @param type - 알림 타입
+ * @returns 활성화 여부 (true: 활성화, false: 비활성화)
+ */
+export async function isNotificationEnabled(
+  client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> },
+  orgId: string,
+  type: NotificationType
+): Promise<boolean> {
+  const settingKey = NOTIFICATION_SETTING_KEYS[type];
+  if (!settingKey) {
+    console.log(`[Notification] Unknown type ${type}, defaulting to enabled`);
+    return true; // 알 수 없는 타입은 기본 활성화
+  }
+
+  try {
+    // 알림 설정은 org_settings 테이블에 저장됨
+    const result = await client.query(
+      `SELECT settings FROM org_settings WHERE org_id = $1`,
+      [orgId]
+    );
+
+    if (result.rows.length === 0) {
+      console.log(`[Notification] Org settings for ${orgId} not found, defaulting to enabled`);
+      return true;
+    }
+
+    const settings = (result.rows[0] as { settings?: Record<string, unknown> }).settings;
+    if (!settings) {
+      return true; // settings가 없으면 기본 활성화
+    }
+
+    // 설정값이 명시적으로 false인 경우만 비활성화
+    const isEnabled = settings[settingKey] !== false;
+
+    if (!isEnabled) {
+      console.log(`[Notification] ${type} is disabled for org ${orgId} (${settingKey}=false)`);
+    }
+
+    return isEnabled;
+  } catch (error) {
+    console.error(`[Notification] Error checking setting for ${type}:`, error);
+    return true; // 에러 시 기본 활성화
+  }
+}
+
 export interface NotificationParams {
   orgId: string;
   orgName: string;
@@ -187,6 +251,15 @@ export async function insertNotificationQueue(
   type: NotificationType,
   payload: NotificationQueuePayload
 ): Promise<{ success: boolean; id?: string; error?: string }> {
+  // ============================================================
+  // 알림 설정 확인 - 비활성화된 알림 타입은 큐에 넣지 않음
+  // ============================================================
+  const isEnabled = await isNotificationEnabled(client, orgId, type);
+  if (!isEnabled) {
+    console.log(`[NotificationQueue] Skipping ${type} for student ${payload.student_id} - notification disabled in settings`);
+    return { success: true }; // 설정에 의해 스킵된 것은 성공으로 처리
+  }
+
   try {
     const result = await client.query(
       `INSERT INTO notification_queue (org_id, type, payload, status)
@@ -223,6 +296,15 @@ export async function insertNotificationQueueBatch(
 ): Promise<{ success: boolean; insertedCount: number; error?: string }> {
   if (items.length === 0) {
     return { success: true, insertedCount: 0 };
+  }
+
+  // ============================================================
+  // 알림 설정 확인 - 비활성화된 알림 타입은 큐에 넣지 않음
+  // ============================================================
+  const isEnabled = await isNotificationEnabled(client, orgId, type);
+  if (!isEnabled) {
+    console.log(`[NotificationQueue] Skipping batch insert for ${type} (${items.length} items) - notification disabled in settings`);
+    return { success: true, insertedCount: 0 }; // 설정에 의해 스킵된 것은 성공으로 처리
   }
 
   try {
@@ -278,6 +360,15 @@ export async function sendNotification(
     metadata,
     templateVariables,
   } = params;
+
+  // ============================================================
+  // 알림 설정 확인 - 비활성화된 알림 타입은 발송하지 않음
+  // ============================================================
+  const isEnabled = await isNotificationEnabled(client, orgId, type);
+  if (!isEnabled) {
+    console.log(`[Notification] Skipping ${type} for ${studentName} - notification disabled in settings`);
+    return { success: true }; // 설정에 의해 스킵된 것은 성공으로 처리
+  }
 
   const today = new Date().toISOString().split("T")[0];
 

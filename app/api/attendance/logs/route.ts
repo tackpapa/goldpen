@@ -122,10 +122,10 @@ export async function POST(request: Request) {
       return Response.json({ error: 'code와 action이 필요합니다' }, { status: 400 })
     }
 
-    // 학생 코드로 학생 조회
+    // 학생 코드로 학생 조회 (parent_phone 포함)
     const { data: student, error: studentError } = await supabase
       .from('students')
-      .select('id, name, student_code')
+      .select('id, name, student_code, parent_phone')
       .eq('org_id', orgId)
       .eq('student_code', code)
       .single()
@@ -183,6 +183,9 @@ export async function POST(request: Request) {
       // 🎯 seat_assignments 동기화: 학생의 좌석 상태를 checked_in으로 업데이트
       await syncSeatAssignmentStatus(supabase, orgId, student.id, 'checked_in', now)
 
+      // 🔔 등원 알림 발송 (notification_queue에 삽입)
+      await insertNotificationQueue(supabase, orgId, student.id, 'checkin')
+
       return Response.json({
         message: '등원 처리 완료',
         student: { name: student.name }
@@ -233,6 +236,9 @@ export async function POST(request: Request) {
 
       // 🎯 seat_assignments 동기화: 학생의 좌석 상태를 checked_out으로 업데이트
       await syncSeatAssignmentStatus(supabase, orgId, student.id, 'checked_out', now)
+
+      // 🔔 하원 알림 발송 (notification_queue에 삽입)
+      await insertNotificationQueue(supabase, orgId, student.id, 'checkout')
 
       return Response.json({
         message: '하원 처리 완료',
@@ -512,5 +518,76 @@ async function syncSeatAssignmentStatus(
     }
   } catch (error) {
     console.error('[syncSeatAssignment] Unexpected error:', error)
+  }
+}
+
+/**
+ * 알림 설정 키 매핑
+ */
+const NOTIFICATION_SETTING_KEYS: Record<string, string> = {
+  'checkin': 'enable_checkin_notification',
+  'checkout': 'enable_checkout_notification',
+  'study_out': 'enable_outing_notification',
+  'study_return': 'enable_return_notification',
+}
+
+/**
+ * notification_queue 테이블에 알림 삽입
+ * - Queue Worker가 1분마다 처리
+ * - 알림 설정이 꺼져있으면 삽입하지 않음
+ */
+async function insertNotificationQueue(
+  supabase: any,
+  orgId: string,
+  studentId: string,
+  type: 'checkin' | 'checkout' | 'study_out' | 'study_return'
+): Promise<void> {
+  try {
+    // 1. 알림 설정 확인 (org_settings 테이블)
+    const settingKey = NOTIFICATION_SETTING_KEYS[type]
+    if (!settingKey) {
+      console.log(`[NotificationQueue] Unknown type: ${type}`)
+      return
+    }
+
+    const { data: orgSettings, error: settingsError } = await supabase
+      .from('org_settings')
+      .select('settings')
+      .eq('org_id', orgId)
+      .maybeSingle()
+
+    if (settingsError) {
+      console.error('[NotificationQueue] Settings fetch error:', settingsError)
+      return
+    }
+
+    // 설정값이 명시적으로 false인 경우만 비활성화 (기본값은 활성화)
+    const settings = orgSettings?.settings || {}
+    const isEnabled = settings[settingKey] !== false
+
+    if (!isEnabled) {
+      console.log(`[NotificationQueue] ${type} is disabled for org ${orgId} (${settingKey}=false)`)
+      return
+    }
+
+    // 2. notification_queue에 삽입
+    const payload = { student_id: studentId }
+
+    const { error: insertError } = await supabase
+      .from('notification_queue')
+      .insert({
+        org_id: orgId,
+        type,
+        payload,
+        status: 'pending',
+      })
+
+    if (insertError) {
+      console.error('[NotificationQueue] Insert error:', insertError)
+    } else {
+      console.log(`[NotificationQueue] Inserted: ${type} for student ${studentId}`)
+    }
+  } catch (error) {
+    console.error('[NotificationQueue] Unexpected error:', error)
   }
 }

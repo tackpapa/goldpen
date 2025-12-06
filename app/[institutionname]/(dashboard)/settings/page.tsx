@@ -64,6 +64,18 @@ const defaultOrganization: Organization = {
     notification_enabled: false,
     use_sms: false,
     use_kakao: false,
+    // 카카오톡 알림 설정 기본값 (모두 활성화)
+    enable_late_notification: true,
+    enable_absent_notification: true,
+    enable_checkin_notification: true,
+    enable_checkout_notification: true,
+    enable_outing_notification: true,
+    enable_return_notification: true,
+    enable_daily_report_notification: true,
+    enable_lesson_note_notification: true,
+    enable_exam_result_notification: true,
+    enable_assignment_notification: true,
+    dailyReportTime: '22:00',
   },
   created_at: '',
   updated_at: '',
@@ -405,6 +417,11 @@ export default function SettingsPage() {
             if (savedGracePeriods) {
               setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
             }
+            // 일일 학습 리포트 발송 시간 로드
+            const savedDailyReportTime = org.settings?.dailyReportTime as string | undefined
+            if (savedDailyReportTime) {
+              setDailyReportTime(savedDailyReportTime)
+            }
             // 메뉴 설정 초기화
             const savedEnabledMenus = org.settings?.enabledMenus as string[] | undefined
             const savedMenuOrder = org.settings?.menuOrder as string[] | undefined
@@ -468,6 +485,11 @@ export default function SettingsPage() {
               const savedGracePeriods = org.settings?.gracePeriods as Record<string, number> | undefined
               if (savedGracePeriods) {
                 setGracePeriods(prev => ({ ...prev, ...savedGracePeriods }))
+              }
+              // 일일 학습 리포트 발송 시간 로드
+              const savedDailyReportTime = org.settings?.dailyReportTime as string | undefined
+              if (savedDailyReportTime) {
+                setDailyReportTime(savedDailyReportTime)
               }
               // 메뉴 설정 초기화
               const savedEnabledMenus = org.settings?.enabledMenus as string[] | undefined
@@ -705,12 +727,21 @@ export default function SettingsPage() {
 
   // 일일 학습 리포트 발송 시간 변경 핸들러
   const handleDailyReportTimeChange = async (time: string) => {
+    const prevTime = dailyReportTime
+    const prevSettings = organization.settings
     setDailyReportTime(time)
     // DB에 저장
     const nextSettings = { ...organization.settings, dailyReportTime: time }
     setOrganization({ ...organization, settings: nextSettings })
-    await persistOrganization({ settings: nextSettings })
-    toast({ title: '설정 저장', description: `일일 학습 리포트 발송 시간이 ${time.replace(':', '시 ')}분으로 변경되었습니다.` })
+    try {
+      await persistOrganization({ settings: nextSettings })
+      toast({ title: '설정 저장', description: `일일 학습 리포트 발송 시간이 ${time.replace(':', '시 ')}분으로 변경되었습니다.` })
+    } catch (e) {
+      // 롤백
+      setDailyReportTime(prevTime)
+      setOrganization({ ...organization, settings: prevSettings })
+      toast({ title: '저장 실패', description: '설정 저장 중 오류가 발생했습니다.', variant: 'destructive' })
+    }
   }
 
   // 알림 유예 시간 변경 핸들러
@@ -956,6 +987,17 @@ export default function SettingsPage() {
       use_sms: 'SMS 사용',
       use_kakao: '카카오메세지 사용',
       notification_enabled: '알림',
+      // 카카오톡 알림 설정
+      enable_late_notification: '지각 알림',
+      enable_absent_notification: '결석 알림',
+      enable_checkin_notification: '입실/등원 알림',
+      enable_checkout_notification: '퇴실/하원 알림',
+      enable_outing_notification: '외출 알림',
+      enable_return_notification: '복귀 알림',
+      enable_daily_report_notification: '당일 학습 진행 결과',
+      enable_lesson_note_notification: '수업일지 알림톡',
+      enable_exam_result_notification: '시험 결과 전송',
+      enable_assignment_notification: '새 과제 알림',
     }
     toast({
       title: '설정 변경',
@@ -2882,7 +2924,10 @@ export default function SettingsPage() {
                         학생이 등록한 스케줄(수업/commute)에 맞게 도착하지 않았을 때
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_late_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_late_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('late', 'parent')}>템플릿 설정</Button>
@@ -2916,7 +2961,10 @@ export default function SettingsPage() {
                         학생이 예정된 일정에 출석하지 않아 결석 처리되었을 때
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_absent_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_absent_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('absent', 'parent')}>템플릿 설정</Button>
@@ -2931,7 +2979,10 @@ export default function SettingsPage() {
                         학생이 도착했을 때
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_checkin_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_checkin_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkin', 'parent')}>템플릿 설정</Button>
@@ -2946,7 +2997,10 @@ export default function SettingsPage() {
                         학생이 귀가했을 때
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_checkout_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_checkout_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('checkout', 'parent')}>템플릿 설정</Button>
@@ -2968,7 +3022,10 @@ export default function SettingsPage() {
                         학생이 외출했을 때
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_outing_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_outing_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_out', 'parent')}>템플릿 설정</Button>
@@ -2983,7 +3040,10 @@ export default function SettingsPage() {
                         학생이 외출 후 복귀했을 때
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_return_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_return_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('study_return', 'parent')}>템플릿 설정</Button>
@@ -3008,7 +3068,10 @@ export default function SettingsPage() {
                         💡 학생이 하루에 여러 번 입실/퇴실해도 플래너는 하루 단위로 유지되며, 설정 시간에 한 번만 전송됩니다
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_daily_report_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_daily_report_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('daily_report', 'parent')}>템플릿 설정</Button>
@@ -3052,7 +3115,10 @@ export default function SettingsPage() {
                         수업일지 작성 후 AI 생성 알림톡을 학부모에게 발송
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_lesson_note_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_lesson_note_notification')}
+                    />
                   </div>
                   <div className="text-xs text-muted-foreground bg-blue-50 p-3 rounded border border-blue-200">
                     📝 수업일지 작성, AI 피드백 생성, 알림톡 발송은 <strong>수업일지 페이지</strong>에서 진행해주세요.
@@ -3074,7 +3140,10 @@ export default function SettingsPage() {
                         시험 결과 입력 → 관리자 승인 → 전송
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_exam_result_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_exam_result_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('exam_result', 'parent')}>템플릿 설정</Button>
@@ -3099,7 +3168,10 @@ export default function SettingsPage() {
                         수업일지에서 숙제 등록 시 자동 전송
                       </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch
+                      checked={organization.settings.enable_assignment_notification ?? true}
+                      onCheckedChange={() => handleToggleSetting('enable_assignment_notification')}
+                    />
                   </div>
                   <div className="flex items-center justify-end pt-2 border-t">
                     <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenTemplateModal('assignment_new', 'parent')}>템플릿 설정</Button>

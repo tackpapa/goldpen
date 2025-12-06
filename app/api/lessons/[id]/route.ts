@@ -6,6 +6,53 @@ export const runtime = 'edge'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+/**
+ * GET /api/lessons/[id]
+ * 수업 상세 조회
+ */
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { db, orgId } = await getSupabaseWithOrg(request)
+    const { id: lessonId } = await params
+
+    const { data: lesson, error } = await db
+      .from('lessons')
+      .select(`
+        *,
+        class:classes(id, name),
+        teacher:teachers(id, name),
+        room:rooms(id, name),
+        student:students(id, name)
+      `)
+      .eq('id', lessonId)
+      .eq('org_id', orgId)
+      .single()
+
+    if (error) {
+      console.error('[Lessons GET] Error:', error)
+      return Response.json({ error: '수업 조회 실패', details: error.message }, { status: 500 })
+    }
+
+    if (!lesson) {
+      return Response.json({ error: '수업을 찾을 수 없습니다' }, { status: 404 })
+    }
+
+    return Response.json({ lesson })
+  } catch (error: any) {
+    if (error?.message === 'AUTH_REQUIRED') {
+      return Response.json({ error: '인증이 필요합니다' }, { status: 401 })
+    }
+    if (error?.message === 'PROFILE_NOT_FOUND') {
+      return Response.json({ error: '프로필을 찾을 수 없습니다' }, { status: 404 })
+    }
+    console.error('[Lessons GET] Unexpected error:', error)
+    return Response.json({ error: '서버 오류가 발생했습니다', details: error.message }, { status: 500 })
+  }
+}
+
 const updateLessonSchema = z.object({
   title: z.string().min(1).optional(),
   description: z.string().optional(),

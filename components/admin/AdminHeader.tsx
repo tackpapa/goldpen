@@ -13,13 +13,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { LogOut, User, Shield } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useToast } from '@/hooks/use-toast'
 
 export function AdminHeader() {
   const router = useRouter()
   const { toast } = useToast()
-  const supabase = createClient()
   const [userName, setUserName] = useState<string>('Super Admin')
   const [userEmail, setUserEmail] = useState<string>('')
 
@@ -47,12 +45,19 @@ export function AdminHeader() {
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut()
-      toast({
-        title: '로그아웃 완료',
-        description: '성공적으로 로그아웃되었습니다.',
+      const response = await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
       })
-      router.push('/login')
+      if (response.ok) {
+        toast({
+          title: '로그아웃 완료',
+          description: '성공적으로 로그아웃되었습니다.',
+        })
+        router.push('/login')
+      } else {
+        throw new Error('Logout failed')
+      }
     } catch (error) {
       toast({
         title: '로그아웃 실패',

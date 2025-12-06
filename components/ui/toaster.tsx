@@ -39,7 +39,7 @@ export function Toaster() {
   if (!container) return null
 
   return createPortal(
-    <ToastProvider>
+    <ToastProvider duration={1000}>
       {toasts.map(function ({ id, title, description, action, ...props }) {
         return (
           <Toast key={id} {...props}>

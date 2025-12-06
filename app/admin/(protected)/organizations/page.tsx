@@ -380,7 +380,7 @@ export default function OrganizationsPage() {
         }
       )
 
-      const data = await response.json()
+      const data = await response.json() as { error?: string }
 
       if (response.ok) {
         toast({ title: '완전 삭제 완료', description: `"${hardDeleteModal.orgName}" 조직이 완전히 삭제되었습니다.` })
