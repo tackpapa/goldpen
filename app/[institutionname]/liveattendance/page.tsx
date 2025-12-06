@@ -389,12 +389,9 @@ export default function LiveAttendancePage() {
         }),
       })
 
-      if (response.ok) {
-        const data = await response.json() as { student?: { name?: string } }
-        // 이름 보정
-        if (data.student?.name) setWelcomeName(data.student.name)
-        // 상태는 이미 옵티 적용됨
-      } else if (response.status === 404) {
+      const data = await response.json() as { success?: boolean; error?: string; student?: { name?: string } }
+
+      if (data.error === 'student_not_found' || data.success === false) {
         // 학생을 찾을 수 없음 - 빨간색 에러 모달 표시
         setShowWelcome(false)
         setAttendanceStatus((prev) => ({ ...prev, [studentId]: attendanceStatus[studentId] || 'checked_out' }))
@@ -402,6 +399,10 @@ export default function LiveAttendancePage() {
         setShowError(true)
         setTimeout(() => setShowError(false), 2000)
         return
+      } else if (response.ok) {
+        // 이름 보정
+        if (data.student?.name) setWelcomeName(data.student.name)
+        // 상태는 이미 옵티 적용됨
       } else {
         // 기타 실패 시 롤백
         setAttendanceStatus((prev) => ({ ...prev, [studentId]: attendanceStatus[studentId] || 'checked_out' }))

@@ -132,7 +132,7 @@ export async function POST(request: Request) {
 
     if (studentError || !student) {
       console.error('[AttendanceLogs POST] Student not found for code:', code)
-      return Response.json({ error: '학생을 찾을 수 없습니다' }, { status: 404 })
+      return Response.json({ success: false, error: 'student_not_found' })
     }
 
     const now = new Date()
