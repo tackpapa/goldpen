@@ -248,12 +248,40 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 인증된 사용자가 로그인/회원가입 페이지 접근 시 대시보드로 리다이렉트
+  // 인증된 사용자가 로그인/회원가입/데모 페이지 접근 시 대시보드로 리다이렉트
   if (request.nextUrl.pathname.startsWith('/login') ||
-      request.nextUrl.pathname.startsWith('/signup')) {
-    if (user) {
-      // 기관 slug를 추출할 수 없으므로 기본 루트로만 돌려보내고,
-      // 클라이언트에서 기관 선택/경로 이동을 처리하도록 한다.
+      request.nextUrl.pathname.startsWith('/signup') ||
+      request.nextUrl.pathname.startsWith('/demo')) {
+    if (user && supabaseUrl && supabaseKey) {
+      try {
+        // 사용자의 기관 정보 조회
+        const supabase = createServerClient(supabaseUrl, supabaseKey, {
+          cookies: { get: () => undefined, set: () => undefined, remove: () => undefined },
+        })
+
+        const { data: userData } = await supabase
+          .from('users')
+          .select('role, org_id, organizations(slug)')
+          .eq('id', user.id)
+          .single()
+
+        if (userData) {
+          // super_admin은 admin 대시보드로
+          if (userData.role === 'super_admin') {
+            return NextResponse.redirect(new URL('/admin/dashboard', request.url))
+          }
+
+          // 일반 사용자는 기관 대시보드로
+          const orgSlug = (userData.organizations as any)?.slug
+          if (orgSlug) {
+            return NextResponse.redirect(new URL(`/${orgSlug}/overview`, request.url))
+          }
+        }
+      } catch {
+        // DB 조회 실패 시 기본 동작
+      }
+
+      // org 정보를 가져오지 못한 경우 루트로 (fallback)
       return NextResponse.redirect(new URL('/', request.url))
     }
   }
