@@ -1,6 +1,6 @@
-# GOLDPEN_SYS_MAP v3.7
+# GOLDPEN_SYS_MAP v3.8
 # Token-optimized system reference (machine-readable)
-# Generated: 2025-11-29 | Updated: 2025-12-06 (full sync v4)
+# Generated: 2025-11-29 | Updated: 2025-12-07 (full sync v5)
 
 ## ⚠️ RULES (CRITICAL)
 rule1:EDGE_RUNTIME - export const runtime='edge' 필수
@@ -36,28 +36,28 @@ cron:cloudflare-scheduled (workers/cron)
 
 ## PROJECT_STRUCTURE
 goldpen/
-├ app/                      # Next.js App Router (40 pages)
+├ app/                      # Next.js App Router (41 pages)
 │ ├ (auth)/                # 인증 (login, signup)
 │ ├ (portal)/my/           # 포털 (dashboard)
-│ ├ admin/(protected)/     # Admin (9 pages)
+│ ├ admin/(protected)/     # Admin (10 pages)
 │ ├ [institutionname]/     # 기관별 (20 pages)
-│ ├ api/                   # API Routes (96 routes)
+│ ├ api/                   # API Routes (98 routes)
 │ ├ consultation/          # 상담 신청
 │ ├ demo/                  # 데모 페이지 (NEW)
 │ ├ invite/[token]/        # 초대 수락
 │ └ lesson-note/           # 수업노트 공유
-├ components/              # React (76 files)
+├ components/              # React (78 files)
 │ ├ ui/                   # shadcn/ui (30 files)
 │ ├ students/             # 학생 모달/탭 (11 files)
 │ ├ teachers/             # 강사 모달/탭 (6 files)
 │ ├ managers/             # 매니저 모달/탭 (4 files)
 │ ├ livescreen/           # 라이브스크린 (9 files)
 │ ├ dashboard/            # 대시보드 위젯 (4 files)
-│ ├ admin/                # Admin (2 files)
+│ ├ admin/                # Admin (3 files)
 │ ├ seats/                # 좌석 (1 file)
-│ ├ charts/               # 차트 (2 files) NEW
+│ ├ charts/               # 차트 (2 files)
 │ ├ landing/              # 랜딩 (1 file)
-│ └ shared/               # 공통 (4 files)
+│ └ shared/               # 공통 (5 files)
 ├ lib/                     # 유틸/설정 (34 files)
 │ ├ supabase/             # DB 클라이언트 (4 files)
 │ ├ types/                # 타입 정의 (4 files)
@@ -72,18 +72,18 @@ goldpen/
 │ └ data/                 # Mock 데이터 (1 file)
 ├ hooks/                   # Custom Hooks (9 files)
 ├ contexts/                # React Context (1 file)
-├ workers/                 # Cloudflare Workers (55 files)
-│ ├ api/                  # Hono API (51 files)
+├ workers/                 # Cloudflare Workers (56 files)
+│ ├ api/                  # Hono API (52 files)
 │ ├ cron/                 # 스케줄 알림 (1 file)
-│ ├ queue/                # 큐 워커 (활성)
-│ ├ shared/               # 공유 (비활성)
+│ ├ queue/                # 큐 워커 (1 file)
+│ ├ shared/               # 공유 유틸 (2 files)
 │ └ tail-logger/          # 로그 (비활성)
 ├ supabase/                # DB
 │ └ migrations/           # SQL (89 files)
 └ docs/                    # 문서
   └ kakao.md              # 카카오 가이드
 
-## PAGES (40)
+## PAGES (41)
 root:
 ├ / - 홈 (리다이렉트)
 ├ /login - 로그인
@@ -105,8 +105,9 @@ admin:
 ├ /admin/audit-logs - 감사 로그
 ├ /admin/kakao - 카카오 관리
 ├ /admin/plans - 요금제 관리
-├ /admin/infrastructure - 인프라 현황 (NEW)
-└ /admin/payments - 결제 관리 (NEW)
+├ /admin/infrastructure - 인프라 현황
+├ /admin/payments - 결제 관리
+└ /admin/deposit-requests - 입금 신청 관리 (NEW)
 
 dashboard:
 ├ /[org] - 대시보드 (기본 리다이렉트) NEW
@@ -134,7 +135,7 @@ livescreen:
 ├ /[org]/livescreen/[seatNumber] - 학생 스크린
 └ /[org]/liveattendance - 실시간 출결
 
-## API_ROUTES (96)
+## API_ROUTES (98)
 auth:
 ├ /api/auth/login - POST 로그인
 ├ /api/auth/logout - POST 로그아웃
@@ -257,18 +258,22 @@ misc:
 admin:
 ├ /api/admin/organizations - GET/POST 기관
 ├ /api/admin/organizations/[id] - GET/PUT/DELETE 상세
-├ /api/admin/organizations/[id]/credit - GET/PUT 크레딧 (NEW)
+├ /api/admin/organizations/[id]/credit - GET/PUT 크레딧
 ├ /api/admin/users - GET/POST 사용자
 ├ /api/admin/audit-logs - GET 감사 로그
 ├ /api/admin/kakao - GET/POST 카카오
 ├ /api/admin/plans - GET/POST 요금제
 ├ /api/admin/plans/[id] - PUT/DELETE 수정
-├ /api/admin/infrastructure - GET 인프라 현황 (NEW)
-├ /api/admin/message-pricing - GET/POST 메시지 요금 (NEW)
-├ /api/admin/payments - GET 결제 내역 (NEW)
+├ /api/admin/infrastructure - GET 인프라 현황
+├ /api/admin/message-pricing - GET/POST 메시지 요금
+├ /api/admin/payments - GET 결제 내역
+├ /api/admin/deposit-requests - GET/PUT 입금 신청 (NEW)
 ├ /api/admin/stats/overview - GET Admin 통계
-├ /api/admin/stats/credits - GET 크레딧 통계 (NEW)
-└ /api/admin/stats/messages - GET 메시지 통계 (NEW)
+├ /api/admin/stats/credits - GET 크레딧 통계
+└ /api/admin/stats/messages - GET 메시지 통계
+
+credit:
+└ /api/credit-charge-requests - GET/POST 충전 요청 (NEW)
 
 ## DB_SCHEMA (89 migrations)
 core:
@@ -332,7 +337,7 @@ rls:ALL_TABLES_ENABLED
 ├ policy:role_based (user.role 기반)
 └ policy:row_owner (user_id 기반)
 
-## COMPONENTS (76)
+## COMPONENTS (78)
 ui/ (30 files, shadcn/ui):
 ├ button, input, card, table, badge, avatar
 ├ tabs, dropdown-menu, label, textarea
@@ -387,11 +392,12 @@ dashboard/ (4 files):
 ├ WidgetWrapper - 래퍼
 └ WidgetManager - 관리
 
-shared/ (4 files):
+shared/ (5 files):
 ├ Header - 헤더
 ├ Sidebar - 사이드바
 ├ MobileSidebar - 모바일 사이드바
-└ Breadcrumb - 브레드크럼
+├ Breadcrumb - 브레드크럼
+└ ChargeModal - 충전 모달 (NEW)
 
 seats/ (1 file):
 └ StudentPlannerModal - 학생 계획 모달
@@ -403,9 +409,14 @@ charts/ (2 files) NEW:
 landing/ (1 file):
 └ FeatureShowcase - 랜딩 기능 전시
 
+admin/ (3 files):
+├ AdminHeader - Admin 헤더
+├ AdminSidebar - Admin 사이드바
+└ AdminCreditModal - 크레딧 충전 모달 (NEW)
+
 other:
 ├ page-permissions.tsx - 페이지 권한
-└ GoogleAnalytics.tsx - GA 추적 (NEW)
+└ GoogleAnalytics.tsx - GA 추적
 
 ## HOOKS (9)
 ├ use-toast - 토스트 알림
@@ -470,7 +481,7 @@ messaging/:
 email/:
 └ send-invitation.ts - 초대 이메일 발송
 
-## WORKERS (57 files)
+## WORKERS (56 files)
 api/ (workers/api):
 ├ src/index.ts - Hono 메인 (라우터 등록)
 ├ src/env.ts - 환경변수 타입
@@ -717,14 +728,14 @@ wrangler:4.47.0
 vitest:2.1.0
 
 ## STATISTICS
-pages:40
-api_routes:96
-components:76
+pages:41
+api_routes:98
+components:78
 lib_files:34
 hooks:9
-workers_files:55
+workers_files:56
 migrations:89
-total_ts_files:~343
+total_ts_files:~350
 
 ## ROADMAP
 v1.0 (current):
@@ -748,8 +759,23 @@ v1.1 (planned):
 └ [ ] Payment gateway
 
 ---
-# END OF GOLDPEN_SYS_MAP v3.7
-# Generated: 2025-11-29 | Updated: 2025-12-06 (full sync v4)
+# END OF GOLDPEN_SYS_MAP v3.8
+# Generated: 2025-11-29 | Updated: 2025-12-07 (full sync v5)
+#
+# Changes (2025-12-07 v5):
+#   - Pages: 40 → 41 (+1)
+#     - /admin/deposit-requests 입금 신청 관리 페이지 추가
+#   - API Routes: 96 → 98 (+2)
+#     - /api/admin/deposit-requests (입금 신청 관리)
+#     - /api/credit-charge-requests (충전 요청)
+#   - Components: 76 → 78 (+2)
+#     - AdminCreditModal - Admin 크레딧 충전 모달 (VAT 계산 포함)
+#     - ChargeModal - 사용자 충전 요청 모달
+#   - Workers: 55 → 56 (+1)
+#     - workers/shared/src/notifications.ts 실제 카운트 반영
+#   - Bug Fix: SMS 바이트 계산 오류 수정
+#     - 한글 = 3bytes, 90byte 초과 시 LMS로 자동 전환
+#     - TextEncoder 사용하여 정확한 바이트 계산
 #
 # Changes (2025-12-06 v4):
 #   - Workers: 57 → 55 (-2)
