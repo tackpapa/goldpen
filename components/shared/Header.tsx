@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -10,8 +10,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { LogOut, Menu } from 'lucide-react'
+import { LogOut, Menu, Wallet, Plus } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/contexts/auth-context'
@@ -23,9 +30,28 @@ export function Header() {
   const { toast } = useToast()
   const { user, logout, isLoading } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [creditBalance, setCreditBalance] = useState<number | null>(null)
+  const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
 
   // URL에서 institution 이름 추출
   const institutionName = pathname?.split('/')[1] || 'goldpen'
+
+  // 충전금 잔액 조회
+  useEffect(() => {
+    const fetchCreditBalance = async () => {
+      if (!institutionName) return
+      try {
+        const res = await fetch(`/api/settings?orgSlug=${institutionName}`, { credentials: 'include' })
+        if (res.ok) {
+          const data = await res.json() as { credit_balance?: number }
+          setCreditBalance(data.credit_balance ?? 0)
+        }
+      } catch (error) {
+        console.error('Failed to fetch credit balance:', error)
+      }
+    }
+    fetchCreditBalance()
+  }, [institutionName])
 
   // useAuth에서 사용자 정보 가져오기
   const userRole = user?.role || null
@@ -119,6 +145,36 @@ export function Header() {
           </div>
         </div>
 
+        {/* 충전금 잔액 & 사용자 프로필 */}
+        <div className="flex items-center gap-2 md:gap-4">
+          {/* 충전금 잔액 */}
+          {creditBalance !== null && (
+            <div className="flex items-center gap-1 md:gap-2">
+              <div
+                className={`flex items-center gap-1 px-2 md:px-3 py-1 md:py-1.5 rounded-lg ${
+                  creditBalance < 5000
+                    ? 'bg-red-100 dark:bg-red-900/30'
+                    : 'bg-muted'
+                }`}
+                title={creditBalance < 5000 ? '잔액이 부족하면 알림톡 발송에 실패합니다' : undefined}
+              >
+                <Wallet className={`h-4 w-4 ${creditBalance < 5000 ? 'text-red-500' : 'text-muted-foreground'}`} />
+                <span className={`text-xs md:text-sm font-medium ${creditBalance < 5000 ? 'text-red-600 dark:text-red-400' : ''}`}>
+                  {creditBalance.toLocaleString()}원
+                </span>
+              </div>
+              <Button
+                variant={creditBalance < 5000 ? 'destructive' : 'default'}
+                size="sm"
+                className="h-7 md:h-8 px-2 md:px-3 text-xs md:text-sm"
+                onClick={() => setIsChargeModalOpen(true)}
+              >
+                <Plus className="h-3 w-3 md:h-4 md:w-4 mr-1" />
+                충전
+              </Button>
+            </div>
+          )}
+
         {/* 사용자 프로필 */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -156,10 +212,26 @@ export function Header() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        </div>
       </div>
 
       {/* 모바일 사이드바 */}
       <MobileSidebar open={mobileMenuOpen} onOpenChange={setMobileMenuOpen} />
+
+      {/* 충전 모달 */}
+      <Dialog open={isChargeModalOpen} onOpenChange={setIsChargeModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>충전금 충전</DialogTitle>
+            <DialogDescription>
+              알림톡 발송에 사용되는 충전금을 충전합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6 text-center text-muted-foreground">
+            충전 기능 준비 중입니다.
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   )
 }
