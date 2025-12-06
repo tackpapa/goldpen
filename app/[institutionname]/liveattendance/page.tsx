@@ -51,6 +51,8 @@ export default function LiveAttendancePage() {
   const [attendanceStatus, setAttendanceStatus] = useState<Record<string, 'checked_in' | 'checked_out'>>({})
   const [seatAssignments, setSeatAssignments] = useState<Array<{ seatNumber: number; studentId: string; studentCode: string; studentName: string; status: string; sessionStartTime?: string; remainingMinutes?: number }>>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [showError, setShowError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   // Usage time expired alerts
   // 사용시간 만료 모달 제거
@@ -392,8 +394,16 @@ export default function LiveAttendancePage() {
         // 이름 보정
         if (data.student?.name) setWelcomeName(data.student.name)
         // 상태는 이미 옵티 적용됨
+      } else if (response.status === 404) {
+        // 학생을 찾을 수 없음 - 빨간색 에러 모달 표시
+        setShowWelcome(false)
+        setAttendanceStatus((prev) => ({ ...prev, [studentId]: attendanceStatus[studentId] || 'checked_out' }))
+        setErrorMessage('코드를 잘못 입력하셨어요')
+        setShowError(true)
+        setTimeout(() => setShowError(false), 2000)
+        return
       } else {
-        // 실패 시 롤백
+        // 기타 실패 시 롤백
         setAttendanceStatus((prev) => ({ ...prev, [studentId]: attendanceStatus[studentId] || 'checked_out' }))
         setWelcomeMessage('처리 실패')
         setTimeout(() => setShowWelcome(false), 800)
@@ -439,6 +449,17 @@ export default function LiveAttendancePage() {
             <div className="text-center">
               <p className="text-7xl font-bold leading-relaxed">
                 {welcomeName}님<br />{welcomeMessage}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Error Message - Full Screen Red Overlay (fixed to cover entire screen) */}
+        {showError && (
+          <div className="fixed inset-0 flex items-center justify-center bg-gradient-to-br from-red-500 to-red-600 z-[100]">
+            <div className="text-center">
+              <p className="text-6xl font-bold text-white leading-relaxed">
+                {errorMessage}
               </p>
             </div>
           </div>
